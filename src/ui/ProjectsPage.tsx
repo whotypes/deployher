@@ -15,6 +15,10 @@ type Project = {
 export type ProjectsPageData = {
   projects: Project[];
   user?: LayoutUser | null;
+  github: {
+    linked: boolean;
+    hasRepoAccess: boolean;
+  };
 };
 
 const getStatusClass = (status?: string) => {
@@ -32,86 +36,8 @@ const getStatusClass = (status?: string) => {
   }
 };
 
-const scripts = `
-  document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('create-project-form');
-    const submitBtn = document.getElementById('submit-btn');
-    const notification = document.getElementById('notification');
-    
-    form.addEventListener('submit', async function(e) {
-      e.preventDefault();
-      
-      const name = document.getElementById('project-name').value.trim();
-      const repoUrl = document.getElementById('repo-url').value.trim();
-      
-      if (!name || !repoUrl) {
-        showNotification('Please fill in all fields', 'is-danger');
-        return;
-      }
-      
-      submitBtn.classList.add('is-loading');
-      
-      try {
-        const response = await fetch('/projects', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, repoUrl })
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to create project');
-        }
-        
-        showNotification('Project created!', 'is-success');
-        setTimeout(() => {
-          window.location.href = '/projects/' + data.id;
-        }, 500);
-      } catch (err) {
-        showNotification(err.message, 'is-danger');
-      } finally {
-        submitBtn.classList.remove('is-loading');
-      }
-    });
-    
-    function showNotification(message, type) {
-      notification.textContent = message;
-      notification.className = 'notification is-toast ' + type;
-      notification.style.display = 'block';
-      setTimeout(() => {
-        notification.style.display = 'none';
-      }, 3000);
-    }
-    
-    async function handleDelete(projectId, projectName) {
-      if (!confirm('Are you sure you want to delete "' + projectName + '"?')) {
-        return;
-      }
-      
-      try {
-        const response = await fetch('/projects/' + projectId, {
-          method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || 'Failed to delete project');
-        }
-        
-        showNotification('Project deleted', 'is-success');
-        setTimeout(() => window.location.reload(), 500);
-      } catch (err) {
-        showNotification(err.message, 'is-danger');
-      }
-    }
-    
-    window.handleDelete = handleDelete;
-  });
-`;
-
 const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
-  <Layout title="Projects · Placeholder" currentPath="/projects" scripts={scripts} user={data.user ?? null}>
+  <Layout title="Projects · Placeholder" currentPath="/projects" scriptSrc="/assets/projects-page.js" user={data.user ?? null}>
     <div id="notification" className="notification is-toast" style={{ display: "none" }} />
 
     <h1 className="title">Projects</h1>
@@ -172,6 +98,36 @@ const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
       </div>
 
       <div className="column is-4">
+        <div className="box" id="github-import">
+          <h3 className="subtitle is-5">GitHub repositories</h3>
+          <p className="mb-3" style={{ color: "#888" }}>
+            Link GitHub repo access to pick a repository without pasting URLs.
+          </p>
+          <div className="mb-3">
+            <span className={`tag ${data.github.hasRepoAccess ? "is-success" : "is-light"}`}>
+              {data.github.hasRepoAccess
+                ? "Repo access granted"
+                : data.github.linked
+                  ? "Repo access not granted"
+                  : "GitHub not linked"}
+            </span>
+          </div>
+          {data.github.hasRepoAccess ? (
+            <button id="github-select-btn" type="button" className="button is-link is-fullwidth">
+              Choose repository
+            </button>
+          ) : (
+            <button id="github-connect-btn" type="button" className="button is-link is-fullwidth">
+              Grant GitHub repo access
+            </button>
+          )}
+          <p className="help">
+            {data.github.hasRepoAccess
+              ? "Select a repository to create a project."
+              : "You'll be redirected to GitHub to approve access."}
+          </p>
+        </div>
+
         <div className="box" id="new">
           <h3 className="subtitle is-5">New Project</h3>
           <form id="create-project-form">
@@ -217,6 +173,42 @@ const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
             </div>
           </form>
         </div>
+      </div>
+    </div>
+
+    <div id="github-modal" className="modal">
+      <div className="modal-background" data-github-close="true" />
+      <div className="modal-card">
+        <header className="modal-card-head">
+          <p className="modal-card-title">Choose a GitHub repository</p>
+          <button className="delete" aria-label="close" data-github-close="true" />
+        </header>
+        <section className="modal-card-body">
+          <div className="field">
+            <label className="label" htmlFor="github-repo-search">
+              Filter
+            </label>
+            <div className="control">
+              <input
+                id="github-repo-search"
+                className="input"
+                type="text"
+                placeholder="owner/repo"
+                aria-label="Filter GitHub repositories"
+              />
+            </div>
+          </div>
+          <div id="github-repo-status" className="notification is-light" style={{ display: "none" }} />
+          <div id="github-repo-list" style={{ maxHeight: "320px", overflowY: "auto" }} />
+        </section>
+        <footer className="modal-card-foot">
+          <button id="github-create-btn" className="button is-success" disabled>
+            Create project
+          </button>
+          <button type="button" className="button" data-github-close="true">
+            Cancel
+          </button>
+        </footer>
       </div>
     </div>
   </Layout>
