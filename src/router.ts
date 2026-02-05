@@ -1,4 +1,9 @@
 import {
+  type ProtectedRouteHandler,
+  type PublicRouteHandler,
+  requireSession
+} from "./auth/session";
+import {
   extractDeploymentIdFromHost,
   servePathBasedPreview,
   serveSubdomainPreview,
@@ -6,12 +11,22 @@ import {
   SHORT_ID_REGEX,
   UUID_REGEX
 } from "./routes/preview";
+import * as account from "./routes/account";
 import * as deployments from "./routes/deployments";
-import * as files from "./routes/files";
 import * as pages from "./routes/pages";
 import * as projects from "./routes/projects";
-import { json, type AnyHandler, type RequestWithParams } from "./http/helpers";
+import { json } from "./http/helpers";
 import { auth } from "../auth";
+
+type PublicRoute = {
+  pattern: string;
+  methods: Partial<Record<string, PublicRouteHandler>>;
+};
+
+type ProtectedRoute = {
+  pattern: string;
+  methods: Partial<Record<string, ProtectedRouteHandler>>;
+};
 
 const matchRoute = (
   pattern: string,
@@ -45,68 +60,68 @@ const matchRoute = (
   return { match: true, params };
 };
 
-const routeTable: Array<{
-  pattern: string;
-  methods: Partial<Record<string, AnyHandler>>;
-}> = [
+const publicRoutes: PublicRoute[] = [
+  { pattern: "/login", methods: { GET: pages.loginPage } },
+  { pattern: "/health", methods: { GET: pages.health, POST: pages.health } },
+  { pattern: "/preview/*", methods: { GET: servePreview } }
+];
+
+const protectedRoutes: ProtectedRoute[] = [
   { pattern: "/", methods: { GET: pages.dashboardPage } },
   { pattern: "/dashboard", methods: { GET: pages.dashboardPage } },
   { pattern: "/projects", methods: { GET: pages.projectsPage, POST: projects.createProject } },
   {
     pattern: "/projects/:id",
     methods: {
-      GET: pages.handleProjectRoute as AnyHandler,
-      PATCH: projects.updateProject as AnyHandler,
-      PUT: projects.updateProject as AnyHandler,
-      DELETE: projects.deleteProject as AnyHandler
+      GET: pages.handleProjectRoute,
+      PATCH: projects.updateProject,
+      PUT: projects.updateProject,
+      DELETE: projects.deleteProject
     }
   },
   {
     pattern: "/projects/:id/deployments",
     methods: {
-      GET: deployments.listDeployments as AnyHandler,
-      POST: deployments.createDeployment as AnyHandler
+      GET: deployments.listDeployments,
+      POST: deployments.createDeployment
     }
   },
   {
     pattern: "/deployments/:id",
-    methods: { GET: pages.handleDeploymentRoute as AnyHandler }
+    methods: { GET: pages.handleDeploymentRoute }
   },
   {
     pattern: "/deployments/:id/log",
-    methods: { GET: deployments.getDeploymentLog as AnyHandler }
+    methods: { GET: deployments.getDeploymentLog }
   },
   {
     pattern: "/deployments/:id/log/stream",
-    methods: { GET: deployments.streamDeploymentLog as AnyHandler }
+    methods: { GET: deployments.streamDeploymentLog }
   },
-  { pattern: "/files", methods: { GET: files.filesPage } },
-  { pattern: "/files/upload", methods: { POST: files.filesUpload } },
-  { pattern: "/files/download", methods: { GET: files.filesDownload } },
-  { pattern: "/health", methods: { GET: pages.health, POST: pages.health } },
+  { pattern: "/account", methods: { GET: account.accountPage } },
+  { pattern: "/account/delete", methods: { POST: account.deleteAccount } },
   { pattern: "/api/projects", methods: { GET: projects.listProjects, POST: projects.createProject } },
   {
     pattern: "/api/projects/:id",
     methods: {
-      GET: projects.getProject as AnyHandler,
-      PATCH: projects.updateProject as AnyHandler,
-      PUT: projects.updateProject as AnyHandler,
-      DELETE: projects.deleteProject as AnyHandler
+      GET: projects.getProject,
+      PATCH: projects.updateProject,
+      PUT: projects.updateProject,
+      DELETE: projects.deleteProject
     }
   },
   {
     pattern: "/api/projects/:id/deployments",
     methods: {
-      GET: deployments.listDeployments as AnyHandler,
-      POST: deployments.createDeployment as AnyHandler
+      GET: deployments.listDeployments,
+      POST: deployments.createDeployment
     }
   },
-  { pattern: "/api/deployments/:id", methods: { GET: deployments.getDeployment as AnyHandler } },
+  { pattern: "/api/deployments/:id", methods: { GET: deployments.getDeployment } },
   {
     pattern: "/api/deployments/:id/log",
-    methods: { GET: deployments.getDeploymentLog as AnyHandler }
-  },
-  { pattern: "/preview/*", methods: { GET: servePreview } }
+    methods: { GET: deployments.getDeploymentLog }
+  }
 ];
 
 export const router = async (req: Request): Promise<Response> => {
@@ -139,17 +154,34 @@ export const router = async (req: Request): Promise<Response> => {
     }
   }
 
-  for (const route of routeTable) {
+  for (const route of publicRoutes) {
     const { match, params } = matchRoute(route.pattern, pathname);
     if (match) {
       const handler = route.methods[method];
       if (handler) {
-        const reqWithParams = req as RequestWithParams;
-        reqWithParams.params = params;
+        const reqWithParams = Object.assign(req, { params });
         return handler(reqWithParams);
       }
     }
   }
 
+  for (const route of protectedRoutes) {
+    const { match, params } = matchRoute(route.pattern, pathname);
+    if (match) {
+      const handler = route.methods[method];
+      if (handler) {
+        const result = await requireSession(req, pathname);
+        if ("response" in result) {
+          return result.response;
+        }
+        const reqWithSession = Object.assign(req, { params, session: result.session });
+        return handler(reqWithSession);
+      }
+    }
+  }
+
+  if (pages.wantsHtml(req)) {
+    return pages.notFoundPage();
+  }
   return json({ error: "Not Found" }, { status: 404 });
 };

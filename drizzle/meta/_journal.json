@@ -36,6 +36,13 @@
       "when": 1770289997775,
       "tag": "0004_yellow_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1770292323395,
+      "tag": "0005_true_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }

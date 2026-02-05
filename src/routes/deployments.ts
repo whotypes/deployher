@@ -1,19 +1,29 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { type RequestWithParamsAndSession } from "../auth/session";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
-import { json, notFound, parseJson, type RequestWithParams } from "../http/helpers";
+import { json, notFound, parseJson } from "../http/helpers";
 import { enqueueDeployment } from "../queue";
 import { getRedisSubscriber, isRedisConfigured } from "../redis";
 import { getText, getTextFromOffset, isStorageConfigured, presign } from "../storage";
 import { generateShortId } from "../utils/shortId";
 
-export const listDeployments = async (req: RequestWithParams<{ id: string }>) => {
+const getProjectForUser = async (projectId: string, userId: string) => {
   const [project] = await db
-    .select({ id: schema.projects.id })
+    .select()
     .from(schema.projects)
-    .where(eq(schema.projects.id, req.params.id))
+    .where(and(eq(schema.projects.id, projectId), eq(schema.projects.userId, userId)))
     .limit(1);
+  return project ?? null;
+};
 
+export const listDeployments = async (req: RequestWithParamsAndSession) => {
+  const projectId = req.params["id"];
+  if (!projectId) {
+    return notFound("Project not found");
+  }
+  const userId = req.session.user.id;
+  const project = await getProjectForUser(projectId, userId);
   if (!project) {
     return notFound("Project not found");
   }
@@ -21,13 +31,13 @@ export const listDeployments = async (req: RequestWithParams<{ id: string }>) =>
   const rows = await db
     .select()
     .from(schema.deployments)
-    .where(eq(schema.deployments.projectId, req.params.id))
+    .where(eq(schema.deployments.projectId, projectId))
     .orderBy(desc(schema.deployments.createdAt));
 
   return json(rows);
 };
 
-export const createDeployment = async (req: RequestWithParams<{ id: string }>) => {
+export const createDeployment = async (req: RequestWithParamsAndSession) => {
   if (!isRedisConfigured()) {
     return json({ error: "Redis is not configured" }, { status: 503 });
   }
@@ -35,12 +45,12 @@ export const createDeployment = async (req: RequestWithParams<{ id: string }>) =
     return json({ error: "S3 storage is not configured" }, { status: 503 });
   }
 
-  const [project] = await db
-    .select()
-    .from(schema.projects)
-    .where(eq(schema.projects.id, req.params.id))
-    .limit(1);
-
+  const projectId = req.params["id"];
+  if (!projectId) {
+    return notFound("Project not found");
+  }
+  const userId = req.session.user.id;
+  const project = await getProjectForUser(projectId, userId);
   if (!project) {
     return notFound("Project not found");
   }
@@ -86,32 +96,52 @@ export const createDeployment = async (req: RequestWithParams<{ id: string }>) =
   return json(deployment, { status: 201 });
 };
 
-export const getDeployment = async (req: RequestWithParams<{ id: string }>) => {
+export const getDeployment = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Deployment not found");
+  }
+  const userId = req.session.user.id;
   const [deployment] = await db
     .select()
     .from(schema.deployments)
-    .where(eq(schema.deployments.id, req.params.id))
+    .where(eq(schema.deployments.id, id))
     .limit(1);
 
   if (!deployment) {
     return notFound("Deployment not found");
   }
 
+  const project = await getProjectForUser(deployment.projectId, userId);
+  if (!project) {
+    return notFound("Deployment not found");
+  }
+
   return json(deployment);
 };
 
-export const getDeploymentLog = async (req: RequestWithParams<{ id: string }>) => {
+export const getDeploymentLog = async (req: RequestWithParamsAndSession) => {
   if (!isStorageConfigured()) {
     return json({ error: "S3 storage is not configured" }, { status: 503 });
   }
 
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Deployment not found");
+  }
+  const userId = req.session.user.id;
   const [deployment] = await db
     .select()
     .from(schema.deployments)
-    .where(eq(schema.deployments.id, req.params.id))
+    .where(eq(schema.deployments.id, id))
     .limit(1);
 
   if (!deployment) {
+    return notFound("Deployment not found");
+  }
+
+  const project = await getProjectForUser(deployment.projectId, userId);
+  if (!project) {
     return notFound("Deployment not found");
   }
 
@@ -126,14 +156,24 @@ export const getDeploymentLog = async (req: RequestWithParams<{ id: string }>) =
 const deploymentLogChannel = (deploymentId: string): string =>
   `deployment:${deploymentId}:logs`;
 
-export const streamDeploymentLog = async (req: RequestWithParams<{ id: string }>) => {
+export const streamDeploymentLog = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Deployment not found");
+  }
+  const userId = req.session.user.id;
   const [deployment] = await db
     .select()
     .from(schema.deployments)
-    .where(eq(schema.deployments.id, req.params.id))
+    .where(eq(schema.deployments.id, id))
     .limit(1);
 
   if (!deployment) {
+    return notFound("Deployment not found");
+  }
+
+  const project = await getProjectForUser(deployment.projectId, userId);
+  if (!project) {
     return notFound("Deployment not found");
   }
 

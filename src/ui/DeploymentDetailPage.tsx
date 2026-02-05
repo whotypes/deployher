@@ -1,4 +1,5 @@
 import { renderToReadableStream } from "react-dom/server";
+import type { LayoutUser } from "./Layout";
 import { Layout } from "./Layout";
 
 type Deployment = {
@@ -21,6 +22,7 @@ type Project = {
 export type DeploymentDetailData = {
   deployment: Deployment;
   project: Project;
+  user?: LayoutUser | null;
 };
 
 const getStatusClass = (status: string) => {
@@ -161,6 +163,7 @@ const DeploymentDetailPage = ({ data }: { data: DeploymentDetailData }) => {
       title={`Deployment ${data.deployment.shortId} · Placeholder`}
       currentPath="/projects"
       scripts={scripts}
+      user={data.user ?? null}
     >
       <input type="hidden" id="deployment-id" value={data.deployment.id} />
       <input type="hidden" id="preview-url" value={data.deployment.previewUrl ?? ""} />

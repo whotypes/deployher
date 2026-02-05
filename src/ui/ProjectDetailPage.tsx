@@ -1,4 +1,5 @@
 import { renderToReadableStream } from "react-dom/server";
+import type { LayoutUser } from "./Layout";
 import { Layout } from "./Layout";
 
 type Deployment = {
@@ -26,6 +27,7 @@ export type ProjectDetailData = {
   project: Project;
   deployments: Deployment[];
   currentPreviewUrl: string | null;
+  user?: LayoutUser | null;
 };
 
 const getStatusClass = (status: string) => {
@@ -153,7 +155,7 @@ const scripts = `
 `;
 
 const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => (
-  <Layout title={`${data.project.name} · Placeholder`} currentPath="/projects" scripts={scripts}>
+  <Layout title={`${data.project.name} · Placeholder`} currentPath="/projects" scripts={scripts} user={data.user ?? null}>
     <div id="notification" className="notification is-toast" style={{ display: "none" }} />
     <input type="hidden" id="project-id" value={data.project.id} />
 

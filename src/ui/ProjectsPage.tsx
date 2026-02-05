@@ -1,4 +1,5 @@
 import { renderToReadableStream } from "react-dom/server";
+import type { LayoutUser } from "./Layout";
 import { Layout } from "./Layout";
 
 type Project = {
@@ -13,6 +14,7 @@ type Project = {
 
 export type ProjectsPageData = {
   projects: Project[];
+  user?: LayoutUser | null;
 };
 
 const getStatusClass = (status?: string) => {
@@ -109,7 +111,7 @@ const scripts = `
 `;
 
 const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
-  <Layout title="Projects · Placeholder" currentPath="/projects" scripts={scripts}>
+  <Layout title="Projects · Placeholder" currentPath="/projects" scripts={scripts} user={data.user ?? null}>
     <div id="notification" className="notification is-toast" style={{ display: "none" }} />
 
     <h1 className="title">Projects</h1>

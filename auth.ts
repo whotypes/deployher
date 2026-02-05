@@ -20,15 +20,16 @@ export const auth = betterAuth({
         github: {
             clientId: githubClientId,
             clientSecret: githubClientSecret,
+            scope: ["user:email", 'repo']
         },
     },
     database: drizzleAdapter(db, {
         provider: "pg",
         schema: {
-            user: users,
-            session: sessions,
-            account: accounts,
-            verification
+            users,
+            sessions,
+            accounts,
+            verifications: verification
         },
         usePlural: true,
         camelCase: true,

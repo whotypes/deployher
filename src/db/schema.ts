@@ -1,5 +1,10 @@
 import { index, pgTable, text, timestamp, uuid, boolean } from "drizzle-orm/pg-core";
 
+/**
+ * Better Auth core schema (user, session, account, verification).
+ * Table names are plural for drizzle adapter with usePlural: true.
+ * See: https://www.better-auth.com/docs/adapters/drizzle
+ */
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   name: text("name"),
@@ -60,6 +65,7 @@ export const verification = pgTable("verification", {
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   repoUrl: text("repo_url").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

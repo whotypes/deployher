@@ -1,20 +1,26 @@
 import type { ReactNode } from "react";
 
+export type LayoutUser = {
+  name: string | null;
+  email: string;
+  image: string | null;
+};
+
 export type LayoutProps = {
   title: string;
   children: ReactNode;
   currentPath?: string;
   scripts?: string;
+  user?: LayoutUser | null;
 };
 
 const navItems = [
   { href: "/", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
-  { href: "/files", label: "Files" },
   { href: "/health", label: "Health" }
 ];
 
-export const Layout = ({ title, children, currentPath = "/", scripts }: LayoutProps) => (
+export const Layout = ({ title, children, currentPath = "/", scripts, user }: LayoutProps) => (
   <html lang="en">
     <head>
       <meta charSet="utf-8" />
@@ -25,9 +31,7 @@ export const Layout = ({ title, children, currentPath = "/", scripts }: LayoutPr
         rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
       />
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
+      <style>{`
             :root {
               color-scheme: dark;
             }
@@ -296,9 +300,7 @@ export const Layout = ({ title, children, currentPath = "/", scripts }: LayoutPr
             strong {
               color: #ededed;
             }
-          `
-        }}
-      />
+          `}</style>
     </head>
     <body>
       <nav className="navbar" role="navigation" aria-label="main navigation">
@@ -333,6 +335,24 @@ export const Layout = ({ title, children, currentPath = "/", scripts }: LayoutPr
               </a>
             ))}
           </div>
+          <div className="navbar-end">
+            {user ? (
+              <>
+                <a href="/account" className="navbar-item" style={{ color: "#888", fontSize: "0.875rem" }} aria-label="Account">
+                  {user.image ? (
+                    <img src={user.image} alt="" width={24} height={24} style={{ borderRadius: 4, marginRight: 8, verticalAlign: "middle" }} />
+                  ) : null}
+                  {user.name ?? user.email}
+                </a>
+                <form id="signout-form" method="post" action="/api/auth/sign-out" className="navbar-item" style={{ padding: 0 }}>
+                  <button type="submit" className="button is-ghost" style={{ color: "#888", background: "transparent", border: "none", cursor: "pointer", fontSize: "0.875rem" }} aria-label="Sign out">
+                    Sign out
+                  </button>
+                </form>
+                <script>{`document.getElementById("signout-form")?.addEventListener("submit",function(e){e.preventDefault();fetch("/api/auth/sign-out",{method:"POST",credentials:"include"}).then(function(){window.location.href="/login";});});`}</script>
+              </>
+            ) : null}
+          </div>
         </div>
       </nav>
 
@@ -346,9 +366,8 @@ export const Layout = ({ title, children, currentPath = "/", scripts }: LayoutPr
         </div>
       </footer>
 
-      {scripts ? (
-        <script dangerouslySetInnerHTML={{ __html: scripts }} />
-      ) : null}
+      <script>{`document.querySelectorAll(".navbar-burger").forEach(function(el){el.addEventListener("click",function(){var id=el.getAttribute("data-target");var menu=id?document.getElementById(id):null;el.classList.toggle("is-active");el.setAttribute("aria-expanded",el.classList.contains("is-active"));if(menu)menu.classList.toggle("is-active");});});`}</script>
+      {scripts ? <script>{scripts}</script> : null}
     </body>
   </html>
 );

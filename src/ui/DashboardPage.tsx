@@ -1,6 +1,7 @@
 import { renderToReadableStream } from "react-dom/server";
 import type { HealthData } from "../health/HealthPage";
 import { formatBytes, formatDuration } from "../utils/format";
+import type { LayoutUser } from "./Layout";
 import { Layout } from "./Layout";
 
 type ProjectSummary = {
@@ -23,6 +24,7 @@ export type DashboardData = {
   health: HealthData;
   projects: ProjectSummary[];
   recentDeployments: DeploymentSummary[];
+  user?: LayoutUser | null;
 };
 
 const getStatusClass = (status: string) => {
@@ -41,7 +43,7 @@ const getStatusClass = (status: string) => {
 };
 
 const DashboardPage = ({ data }: { data: DashboardData }) => (
-  <Layout title="Dashboard · Placeholder" currentPath="/">
+  <Layout title="Dashboard · Placeholder" currentPath="/" user={data.user ?? null}>
     <h1 className="title">Dashboard</h1>
 
     <div className="columns is-multiline">
@@ -148,9 +150,6 @@ const DashboardPage = ({ data }: { data: DashboardData }) => (
       <div className="buttons">
         <a href="/projects#new" className="button is-success">
           New Project
-        </a>
-        <a href="/files" className="button is-info">
-          Files
         </a>
         <a href="/health" className="button is-info">
           System Health

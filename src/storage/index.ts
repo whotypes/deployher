@@ -204,6 +204,25 @@ export async function listObjects(prefix = ""): Promise<ListObjectItem[]> {
   }));
 }
 
+export async function deleteObjectsByPrefix(prefix: string): Promise<void> {
+  const client = getStorageClient();
+  if (!client) return;
+  let continuationToken: string | undefined;
+  do {
+    const result = await client.list(
+      continuationToken
+        ? { prefix, maxKeys: 1000, continuationToken }
+        : { prefix, maxKeys: 1000 }
+    );
+    const contents = result.contents ?? [];
+    for (const c of contents) {
+      if (c.key) await client.file(c.key).delete();
+    }
+    continuationToken =
+      result.isTruncated && result.nextContinuationToken ? result.nextContinuationToken : undefined;
+  } while (continuationToken);
+}
+
 const S3_ACL_VALUES = [
   "private",
   "public-read",

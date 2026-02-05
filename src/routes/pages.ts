@@ -1,4 +1,5 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { getSession, type RequestWithParamsAndSession } from "../auth/session";
 import { getStartedAt, getServer } from "../appContext";
 import { config } from "../config";
 import { db } from "../db/db";
@@ -6,6 +7,7 @@ import * as schema from "../db/schema";
 import { renderHealthPage, type HealthData } from "../health/HealthPage";
 import { json, notFound, type RequestWithParams } from "../http/helpers";
 import { renderDashboardPage, type DashboardData } from "../ui/DashboardPage";
+import { renderNotFoundPage } from "../ui/NotFoundPage";
 import { renderDeploymentDetailPage, type DeploymentDetailData } from "../ui/DeploymentDetailPage";
 import { renderProjectDetailPage, type ProjectDetailData } from "../ui/ProjectDetailPage";
 import { renderProjectsPage, type ProjectsPageData } from "../ui/ProjectsPage";
@@ -15,6 +17,79 @@ import { getProject } from "./projects";
 export const wantsHtml = (req: Request) => {
   const accept = req.headers.get("accept") ?? "";
   return accept.includes("text/html");
+};
+
+export const notFoundPage = async () => {
+  const stream = await renderNotFoundPage();
+  return new Response(stream, {
+    status: 404,
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
+};
+
+const renderLoginPage = (redirectTo: string) => {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in - pdploy</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css" />
+  <style>
+    body { background: #000; color: #ededed; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .box { background: #111; border: 1px solid #333; }
+    .button.is-primary { background: #fff; color: #000; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1 class="title is-4" style="color:#ededed">Sign in</h1>
+    <p class="mb-4" style="color:#888">Use your GitHub account to continue.</p>
+    <button type="button" id="signin" class="button is-primary">Sign in with GitHub</button>
+  </div>
+  <script>
+    document.getElementById("signin").addEventListener("click", async function() {
+      this.disabled = true;
+      const res = await fetch("/api/auth/sign-in/social", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "github", callbackURL: "${redirectTo.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}" })
+      });
+      if (res.redirected) {
+        window.location.href = res.url;
+        return;
+      }
+      const loc = res.headers.get("Location");
+      if (loc) {
+        window.location.href = loc;
+        return;
+      }
+      const data = await res.json().catch(function() { return {}; });
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      this.disabled = false;
+      alert("Sign-in failed. Please try again.");
+    });
+  </script>
+</body>
+</html>`;
+};
+
+export const loginPage = async (req: RequestWithParams) => {
+  const session = await getSession(req);
+  if (session) {
+    const url = new URL(req.url);
+    const redirectTo = url.searchParams.get("redirect") ?? "/";
+    return Response.redirect(new URL(redirectTo, url.origin).toString(), 302);
+  }
+  const url = new URL(req.url);
+  const redirectTo = url.searchParams.get("redirect") ?? "/";
+  const html = renderLoginPage(redirectTo);
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
 };
 
 const buildHealthData = (): HealthData => {
@@ -54,9 +129,14 @@ const buildHealthData = (): HealthData => {
 const buildPreviewUrl = (shortId: string) =>
   `${config.devProtocol}://${shortId}.${config.devDomain}:${config.port}`;
 
-export const dashboardPage = async (req: RequestWithParams) => {
+export const dashboardPage = async (req: RequestWithParamsAndSession) => {
+  const userId = req.session.user.id;
   const healthData = buildHealthData();
-  const projects = await db.select().from(schema.projects).orderBy(desc(schema.projects.createdAt));
+  const projects = await db
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.userId, userId))
+    .orderBy(desc(schema.projects.createdAt));
   const deploymentsWithProjects = await db
     .select({
       deployment: schema.deployments,
@@ -64,11 +144,13 @@ export const dashboardPage = async (req: RequestWithParams) => {
     })
     .from(schema.deployments)
     .leftJoin(schema.projects, eq(schema.deployments.projectId, schema.projects.id))
+    .where(eq(schema.projects.userId, userId))
     .orderBy(desc(schema.deployments.createdAt))
     .limit(10);
 
   const data: DashboardData = {
     health: healthData,
+    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
     projects: projects.map((p) => ({
       id: p.id,
       name: p.name,
@@ -91,8 +173,13 @@ export const dashboardPage = async (req: RequestWithParams) => {
   });
 };
 
-export const projectsPage = async (req: RequestWithParams) => {
-  const projects = await db.select().from(schema.projects).orderBy(desc(schema.projects.createdAt));
+export const projectsPage = async (req: RequestWithParamsAndSession) => {
+  const userId = req.session.user.id;
+  const projects = await db
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.userId, userId))
+    .orderBy(desc(schema.projects.createdAt));
   const projectIds = projects.map((p) => p.id);
   const currentDeployments =
     projectIds.length > 0
@@ -112,6 +199,7 @@ export const projectsPage = async (req: RequestWithParams) => {
 
   const deploymentStatusMap = new Map(currentDeployments.map((d) => [d.id, d.status]));
   const data: ProjectsPageData = {
+    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
     projects: projects.map((p) => ({
       ...p,
       createdAt: p.createdAt.toISOString(),
@@ -128,15 +216,20 @@ export const projectsPage = async (req: RequestWithParams) => {
   });
 };
 
-export const projectDetailPage = async (req: RequestWithParams<{ id: string }>) => {
+export const projectDetailPage = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return wantsHtml(req) ? notFoundPage() : notFound("Project not found");
+  }
+  const userId = req.session.user.id;
   const [project] = await db
     .select()
     .from(schema.projects)
-    .where(eq(schema.projects.id, req.params.id))
+    .where(and(eq(schema.projects.id, id), eq(schema.projects.userId, userId)))
     .limit(1);
 
   if (!project) {
-    return notFound("Project not found");
+    return wantsHtml(req) ? notFoundPage() : notFound("Project not found");
   }
 
   const deployments = await db
@@ -147,6 +240,7 @@ export const projectDetailPage = async (req: RequestWithParams<{ id: string }>) 
   const currentDeployment = deployments.find((d) => d.id === project.currentDeploymentId);
 
   const data: ProjectDetailData = {
+    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
     project: {
       ...project,
       createdAt: project.createdAt.toISOString(),
@@ -170,32 +264,42 @@ export const projectDetailPage = async (req: RequestWithParams<{ id: string }>) 
   });
 };
 
-export const deploymentDetailPage = async (req: RequestWithParams<{ id: string }>) => {
+export const deploymentDetailPage = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return wantsHtml(req) ? notFoundPage() : notFound("Deployment not found");
+  }
+  const userId = req.session.user.id;
   const [deployment] = await db
     .select()
     .from(schema.deployments)
-    .where(eq(schema.deployments.id, req.params.id))
+    .where(eq(schema.deployments.id, id))
     .limit(1);
 
   if (!deployment) {
-    return notFound("Deployment not found");
+    return wantsHtml(req) ? notFoundPage() : notFound("Deployment not found");
   }
 
   const [project] = await db
     .select({ id: schema.projects.id, name: schema.projects.name })
     .from(schema.projects)
-    .where(eq(schema.projects.id, deployment.projectId))
+    .where(and(eq(schema.projects.id, deployment.projectId), eq(schema.projects.userId, userId)))
     .limit(1);
+
+  if (!project) {
+    return wantsHtml(req) ? notFoundPage() : notFound("Deployment not found");
+  }
 
   const previewUrl = buildPreviewUrl(deployment.shortId);
   const data: DeploymentDetailData = {
+    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
     deployment: {
       ...deployment,
       createdAt: deployment.createdAt.toISOString(),
       finishedAt: deployment.finishedAt?.toISOString() ?? null,
       previewUrl
     },
-    project: project ?? { id: deployment.projectId, name: "Unknown" }
+    project: { id: project.id, name: project.name }
   };
 
   const stream = await renderDeploymentDetailPage(data);
@@ -204,14 +308,14 @@ export const deploymentDetailPage = async (req: RequestWithParams<{ id: string }
   });
 };
 
-export const handleProjectRoute = async (req: RequestWithParams<{ id: string }>) => {
+export const handleProjectRoute = async (req: RequestWithParamsAndSession) => {
   if (wantsHtml(req)) {
     return projectDetailPage(req);
   }
   return getProject(req);
 };
 
-export const handleDeploymentRoute = async (req: RequestWithParams<{ id: string }>) => {
+export const handleDeploymentRoute = async (req: RequestWithParamsAndSession) => {
   if (wantsHtml(req)) {
     return deploymentDetailPage(req);
   }
@@ -219,13 +323,18 @@ export const handleDeploymentRoute = async (req: RequestWithParams<{ id: string 
 };
 
 export const health = async (req: RequestWithParams) => {
-  const data = buildHealthData();
+  const healthData = buildHealthData();
   const accept = req.headers.get("accept") ?? "";
   if (accept.includes("text/html")) {
+    const session = await getSession(req);
+    const data: HealthData = {
+      ...healthData,
+      user: session ? { name: session.user.name ?? null, email: session.user.email, image: session.user.image ?? null } : null
+    };
     const stream = await renderHealthPage(data);
     return new Response(stream, {
       headers: { "Content-Type": "text/html; charset=utf-8" }
     });
   }
-  return json(data);
+  return json(healthData);
 };

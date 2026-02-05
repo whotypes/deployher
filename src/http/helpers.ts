@@ -21,5 +21,3 @@ export const parseJson = async <T>(req: Request): Promise<T | null> => {
 export type RequestWithParams<P extends Record<string, string> = Record<string, string>> = Request & {
   params: P;
 };
-
-export type AnyHandler = (req: RequestWithParams) => Response | Promise<Response>;

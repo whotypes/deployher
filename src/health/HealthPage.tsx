@@ -1,4 +1,5 @@
 import { renderToReadableStream } from "react-dom/server";
+import type { LayoutUser } from "../ui/Layout";
 import { Layout } from "../ui/Layout";
 import { formatBytes, formatDuration } from "../utils/format";
 
@@ -28,6 +29,7 @@ export type HealthData = {
     dev: string;
     prod: string;
   };
+  user?: LayoutUser | null;
 };
 
 const getStatusClass = (status: string) => {
@@ -44,7 +46,7 @@ const getStatusClass = (status: string) => {
 };
 
 const HealthPage = ({ data }: { data: HealthData }) => (
-  <Layout title="Health · Placeholder" currentPath="/health">
+  <Layout title="Health · Placeholder" currentPath="/health" user={data.user ?? null}>
     <div className="level">
       <div className="level-left">
         <div className="level-item">
