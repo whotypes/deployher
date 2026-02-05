@@ -40,120 +40,6 @@ const getStatusClass = (status: string) => {
   }
 };
 
-const scripts = `
-  document.addEventListener('DOMContentLoaded', function() {
-    const deploymentId = document.getElementById('deployment-id').value;
-    const previewUrl = document.getElementById('preview-url').value;
-    const statusBadge = document.getElementById('status-badge');
-    const buildingIndicator = document.getElementById('building-indicator');
-    const logOutput = document.getElementById('log-output');
-    const previewSection = document.getElementById('preview-section');
-    const finishedRow = document.getElementById('finished-row');
-    const finishedTime = document.getElementById('finished-time');
-    const loadingPlaceholder = 'Loading logs...\\n';
-
-    let eventSource = null;
-    
-    function connectSSE() {
-      if (eventSource) {
-        eventSource.close();
-      }
-      
-      eventSource = new EventSource('/deployments/' + deploymentId + '/log/stream');
-      
-      eventSource.onmessage = function(event) {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === 'status') {
-            updateStatus(data.status);
-          } else if (data.type === 'log') {
-            appendLog(data.content);
-          } else if (data.type === 'done') {
-            if (data.fullLog !== undefined && data.fullLog !== '') {
-              logOutput.textContent = data.fullLog + (data.fullLog.endsWith('\\n') ? '' : '\\n');
-            } else if (logOutput.textContent === loadingPlaceholder) {
-              logOutput.textContent = 'No log output.\\n';
-            }
-            updateStatus(data.status);
-            eventSource.close();
-            eventSource = null;
-            if (data.status === 'success') {
-              showPreviewButton();
-            }
-            updateFinishedTime();
-          } else if (data.type === 'error') {
-            appendLog('\\n[ERROR] ' + data.content + '\\n');
-            eventSource.close();
-            eventSource = null;
-          }
-        } catch (err) {
-          console.error('Failed to parse SSE data:', err);
-        }
-      };
-      
-      eventSource.onerror = function() {
-        console.error('SSE connection error');
-        eventSource.close();
-        eventSource = null;
-      };
-    }
-    
-    function updateStatus(status) {
-      statusBadge.textContent = status;
-      statusBadge.className = 'tag';
-      
-      switch (status) {
-        case 'success':
-          statusBadge.classList.add('is-success');
-          break;
-        case 'failed':
-          statusBadge.classList.add('is-danger');
-          break;
-        case 'building':
-          statusBadge.classList.add('is-warning');
-          break;
-        case 'queued':
-          statusBadge.classList.add('is-info');
-          break;
-        default:
-          statusBadge.classList.add('is-light');
-      }
-      
-      if (buildingIndicator && (status === 'success' || status === 'failed')) {
-        buildingIndicator.style.display = 'none';
-      }
-    }
-    
-    function appendLog(content) {
-      const scrolledToBottom = logOutput.scrollHeight - logOutput.scrollTop <= logOutput.clientHeight + 50;
-      if (logOutput.textContent === loadingPlaceholder) {
-        logOutput.textContent = content;
-      } else {
-        logOutput.textContent += content;
-      }
-      if (scrolledToBottom) {
-        logOutput.scrollTop = logOutput.scrollHeight;
-      }
-    }
-    
-    function showPreviewButton() {
-      previewSection.innerHTML = '<a href="' + previewUrl + '" target="_blank" rel="noopener noreferrer" class="button is-success">Visit</a>';
-    }
-    
-    function updateFinishedTime() {
-      finishedRow.style.display = 'table-row';
-      finishedTime.textContent = new Date().toLocaleString();
-    }
-    
-    const initialStatus = statusBadge.textContent.trim().toLowerCase();
-    const needsLogStream = initialStatus === 'queued' || initialStatus === 'building' || logOutput.textContent.startsWith('Loading logs');
-    if (needsLogStream) {
-      connectSSE();
-    }
-  });
-`;
-
 const DeploymentDetailPage = ({ data }: { data: DeploymentDetailData }) => {
   const isActive = data.deployment.status === "queued" || data.deployment.status === "building";
   const isSuccess = data.deployment.status === "success";
@@ -162,7 +48,7 @@ const DeploymentDetailPage = ({ data }: { data: DeploymentDetailData }) => {
     <Layout
       title={`Deployment ${data.deployment.shortId} · Placeholder`}
       currentPath="/projects"
-      scripts={scripts}
+      scriptSrc="/assets/deployment-detail-page.js"
       user={data.user ?? null}
     >
       <input type="hidden" id="deployment-id" value={data.deployment.id} />
