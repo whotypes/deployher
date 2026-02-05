@@ -1,8 +1,11 @@
+import path from "path";
 import {
   type ProtectedRouteHandler,
   type PublicRouteHandler,
   requireSession
 } from "./auth/session";
+import { clientOutDir } from "./client/build";
+import { json } from "./http/helpers";
 import {
   extractDeploymentIdFromHost,
   servePathBasedPreview,
@@ -13,10 +16,11 @@ import {
 } from "./routes/preview";
 import * as account from "./routes/account";
 import * as deployments from "./routes/deployments";
+import * as github from "./routes/github";
 import * as pages from "./routes/pages";
 import * as projects from "./routes/projects";
-import { json } from "./http/helpers";
 import { auth } from "../auth";
+import { guessContentType } from "./utils/contentType";
 
 type PublicRoute = {
   pattern: string;
@@ -61,13 +65,14 @@ const matchRoute = (
 };
 
 const publicRoutes: PublicRoute[] = [
+  { pattern: "/", methods: { GET: pages.landingPage } },
   { pattern: "/login", methods: { GET: pages.loginPage } },
   { pattern: "/health", methods: { GET: pages.health, POST: pages.health } },
   { pattern: "/preview/*", methods: { GET: servePreview } }
 ];
 
 const protectedRoutes: ProtectedRoute[] = [
-  { pattern: "/", methods: { GET: pages.dashboardPage } },
+  { pattern: "/home", methods: { GET: pages.dashboardPage } },
   { pattern: "/dashboard", methods: { GET: pages.dashboardPage } },
   { pattern: "/projects", methods: { GET: pages.projectsPage, POST: projects.createProject } },
   {
@@ -100,6 +105,7 @@ const protectedRoutes: ProtectedRoute[] = [
   },
   { pattern: "/account", methods: { GET: account.accountPage } },
   { pattern: "/account/delete", methods: { POST: account.deleteAccount } },
+  { pattern: "/api/github/repos", methods: { GET: github.listRepos } },
   { pattern: "/api/projects", methods: { GET: projects.listProjects, POST: projects.createProject } },
   {
     pattern: "/api/projects/:id",
@@ -133,6 +139,21 @@ export const router = async (req: Request): Promise<Response> => {
   const deploymentIdInfo = extractDeploymentIdFromHost(host);
   if (deploymentIdInfo) {
     return serveSubdomainPreview(req, deploymentIdInfo);
+  }
+
+  if (pathname.startsWith("/assets/") && method === "GET") {
+    const subPath = pathname.slice("/assets".length).replace(/^\/+/, "") || "";
+    const resolved = path.resolve(clientOutDir, subPath);
+    if (!resolved.startsWith(clientOutDir)) {
+      return json({ error: "Not Found" }, { status: 404 });
+    }
+    const file = Bun.file(resolved);
+    if (!(await file.exists())) {
+      return json({ error: "Not Found" }, { status: 404 });
+    }
+    return new Response(file, {
+      headers: { "Content-Type": guessContentType(resolved) }
+    });
   }
 
   if (pathname.startsWith("/api/auth")) {
