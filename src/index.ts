@@ -1,0 +1,35 @@
+import { config } from "./config";
+import { setServer, setStartedAt } from "./appContext";
+import { json } from "./http/helpers";
+import { router } from "./router";
+import { checkStorageConnectivity, isStorageConfigured } from "./storage";
+import { startBuildWorkers } from "./workers";
+
+setStartedAt(Date.now());
+
+const server = Bun.serve({
+  port: config.port,
+  hostname: config.hostname,
+  development: config.env !== "production",
+  fetch: router,
+  error(error) {
+    console.error(error);
+    return json({ error: "Internal Server Error" }, { status: 500 });
+  }
+});
+
+setServer(server);
+
+console.log(
+  `API server running in ${config.env} mode at http://${server.hostname}:${server.port}`,
+);
+
+startBuildWorkers().catch((err) => {
+  console.error("Failed to start build workers:", err);
+});
+
+if (isStorageConfigured()) {
+  checkStorageConnectivity().then(({ ok, message }) => {
+    if (!ok && message) console.error(message);
+  });
+}

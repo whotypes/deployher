@@ -1,0 +1,1 @@
+ALTER TABLE "deployments" ADD COLUMN "build_log_key" text;

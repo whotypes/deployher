@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  garage:
+    image: dxflrs/garage:v2.2.0
+    container_name: garage
+    restart: unless-stopped
+    ports:
+      - "3900:3900"     # S3 API
+      - "3901:3901"     # RPC
+      - "3902:3902"     # Web UI
+      - "3903:3903"     # Admin
+    environment:
+      GARAGE_RPC_SECRET: "${GARAGE_RPC_SECRET}"
+      GARAGE_ADMIN_TOKEN: "${GARAGE_ADMIN_TOKEN}"
+      GARAGE_METRICS_TOKEN: "${GARAGE_METRICS_TOKEN}"
+    volumes:
+      - ./infra/garage.dev.toml:/etc/garage.toml
+      - ./infra/meta:/var/lib/garage/meta
+      - ./infra/data:/var/lib/garage/data
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: placeholder
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d placeholder"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

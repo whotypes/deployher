@@ -1,0 +1,26 @@
+{
+  "scripts": {
+    "migrate": "bun migrate.ts",
+    "seed": "bun seed.ts",
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
+    "garage": "docker exec -ti garage /garage"
+  },
+  "dependencies": {
+    "better-auth": "^1.4.18",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.1",
+    "pg": "^8.18.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.8",
+    "@types/pg": "^8.16.0",
+    "@types/react-dom": "^19.2.3",
+    "bun-types": "^1.3.8",
+    "drizzle-kit": "^0.31.8"
+  }
+}
