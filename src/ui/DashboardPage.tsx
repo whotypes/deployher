@@ -43,7 +43,7 @@ const getStatusClass = (status: string) => {
 };
 
 const DashboardPage = ({ data }: { data: DashboardData }) => (
-  <Layout title="Dashboard · Placeholder" currentPath="/" user={data.user ?? null}>
+  <Layout title="Dashboard · Placeholder" currentPath="/dashboard" user={data.user ?? null}>
     <h1 className="title">Dashboard</h1>
 
     <div className="columns is-multiline">

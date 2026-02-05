@@ -7,6 +7,7 @@ import * as schema from "../db/schema";
 import { renderHealthPage, type HealthData } from "../health/HealthPage";
 import { json, notFound, type RequestWithParams } from "../http/helpers";
 import { renderDashboardPage, type DashboardData } from "../ui/DashboardPage";
+import { renderLandingPage } from "../ui/LandingPage";
 import { renderNotFoundPage } from "../ui/NotFoundPage";
 import { renderDeploymentDetailPage, type DeploymentDetailData } from "../ui/DeploymentDetailPage";
 import { renderProjectDetailPage, type ProjectDetailData } from "../ui/ProjectDetailPage";
@@ -81,13 +82,25 @@ export const loginPage = async (req: RequestWithParams) => {
   const session = await getSession(req);
   if (session) {
     const url = new URL(req.url);
-    const redirectTo = url.searchParams.get("redirect") ?? "/";
+    const redirectTo = url.searchParams.get("redirect") ?? "/dashboard";
     return Response.redirect(new URL(redirectTo, url.origin).toString(), 302);
   }
   const url = new URL(req.url);
-  const redirectTo = url.searchParams.get("redirect") ?? "/";
+  const redirectTo = url.searchParams.get("redirect") ?? "/dashboard";
   const html = renderLoginPage(redirectTo);
   return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
+};
+
+export const landingPage = async (req: RequestWithParams) => {
+  const session = await getSession(req);
+  if (session) {
+    const url = new URL(req.url);
+    return Response.redirect(new URL("/dashboard", url.origin).toString(), 302);
+  }
+  const stream = await renderLandingPage();
+  return new Response(stream, {
     headers: { "Content-Type": "text/html; charset=utf-8" }
   });
 };
@@ -175,6 +188,18 @@ export const dashboardPage = async (req: RequestWithParamsAndSession) => {
 
 export const projectsPage = async (req: RequestWithParamsAndSession) => {
   const userId = req.session.user.id;
+  const [githubAccount] = await db
+    .select({ scope: schema.accounts.scope })
+    .from(schema.accounts)
+    .where(and(eq(schema.accounts.userId, userId), eq(schema.accounts.providerId, "github")))
+    .limit(1);
+  const githubScopes = githubAccount?.scope
+    ? githubAccount.scope
+        .split(",")
+        .map((scope) => scope.trim())
+        .filter(Boolean)
+    : [];
+  const hasRepoAccess = githubScopes.includes("repo") || githubScopes.includes("public_repo");
   const projects = await db
     .select()
     .from(schema.projects)
@@ -200,6 +225,10 @@ export const projectsPage = async (req: RequestWithParamsAndSession) => {
   const deploymentStatusMap = new Map(currentDeployments.map((d) => [d.id, d.status]));
   const data: ProjectsPageData = {
     user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
+    github: {
+      linked: Boolean(githubAccount),
+      hasRepoAccess
+    },
     projects: projects.map((p) => ({
       ...p,
       createdAt: p.createdAt.toISOString(),
