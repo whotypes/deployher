@@ -1,4 +1,5 @@
 node_modules
+dist
 infra/meta
 infra/data
 infra/.garage.env
