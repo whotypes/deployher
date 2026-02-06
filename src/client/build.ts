@@ -7,7 +7,8 @@ const clientEntrypoints = [
   path.join(root, "src", "ui", "client", "layout.ts"),
   path.join(root, "src", "ui", "client", "projects-page.ts"),
   path.join(root, "src", "ui", "client", "deployment-detail-page.ts"),
-  path.join(root, "src", "ui", "client", "project-detail-page.ts")
+  path.join(root, "src", "ui", "client", "project-detail-page.ts"),
+  path.join(root, "src", "ui", "client", "account-page.ts")
 ];
 
 const appCssPath = path.join(root, "src", "ui", "client", "app.css");

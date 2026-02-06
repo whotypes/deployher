@@ -105,10 +105,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const showPreviewButton = (): void => {
     if (!previewSection) return;
-    previewSection.innerHTML =
-      '<a href="' +
-      previewUrl +
-      '" target="_blank" rel="noopener noreferrer" class="button is-success">Visit</a>';
+    previewSection.textContent = "";
+
+    const link = document.createElement("a");
+    link.href = previewUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.className = "button is-success";
+    link.textContent = "Visit";
+
+    previewSection.appendChild(link);
   };
 
   const updateFinishedTime = (): void => {

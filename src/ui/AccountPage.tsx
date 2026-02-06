@@ -7,13 +7,18 @@ export type AccountPageData = {
   linkedAccounts: { providerId: string }[];
 };
 
+const PROVIDER_LABELS: Record<string, string> = {
+  github: "GitHub"
+};
+
 const providerLabel = (providerId: string): string => {
-  if (providerId === "github") return "GitHub";
+  const known = PROVIDER_LABELS[providerId.toLowerCase()];
+  if (known) return known;
   return providerId.charAt(0).toUpperCase() + providerId.slice(1);
 };
 
 const AccountPage = ({ data }: { data: AccountPageData }) => (
-  <Layout title="Account · Placeholder" currentPath="/account" user={data.user}>
+  <Layout title="Account · Placeholder" currentPath="/account" user={data.user} scriptSrc="/assets/account-page.js">
     <h1 className="title">Account</h1>
 
     <div className="box">
@@ -68,11 +73,6 @@ const AccountPage = ({ data }: { data: AccountPageData }) => (
           Delete account
         </button>
       </form>
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `document.getElementById("delete-account-form")?.addEventListener("submit",function(e){e.preventDefault();if(!confirm("Delete your account and all data permanently? This cannot be undone."))return;fetch("/account/delete",{method:"POST",credentials:"include"}).then(function(){window.location.href="/login";});});`
-        }}
-      />
     </div>
   </Layout>
 );
