@@ -24,15 +24,16 @@ export const listProjects = async (req: RequestWithParamsAndSession) => {
 };
 
 export const createProject = async (req: RequestWithParamsAndSession) => {
-  const body = await parseJson<{ name?: unknown; repoUrl?: unknown }>(req);
-  if (!body || typeof body.name !== "string" || typeof body.repoUrl !== "string") {
-    return badRequest("name and repoUrl are required");
+  const body = await parseJson<{ name?: unknown; repoUrl?: unknown; branch?: unknown }>(req);
+  if (!body || typeof body.name !== "string" || typeof body.repoUrl !== "string" || typeof body.branch !== "string") {
+    return badRequest("name, repoUrl and branch are required");
   }
 
   const name = body.name.trim();
   const repoUrl = body.repoUrl.trim();
-  if (!name || !repoUrl) {
-    return badRequest("name and repoUrl must be non-empty");
+  const branch = body.branch.trim();
+  if (!name || !repoUrl || !branch) {
+    return badRequest("name, repoUrl and branch must be non-empty");
   }
 
   const normalizedRepoUrl = normalizeGitHubRepoUrl(repoUrl);
@@ -46,6 +47,7 @@ export const createProject = async (req: RequestWithParamsAndSession) => {
     .values({
       name,
       repoUrl: normalizedRepoUrl,
+      branch,
       userId
     })
     .returning();
@@ -77,7 +79,7 @@ export const getProject = async (req: RequestWithParamsAndSession) => {
 };
 
 export const updateProject = async (req: RequestWithParamsAndSession) => {
-  const body = await parseJson<{ name?: unknown; repoUrl?: unknown }>(req);
+  const body = await parseJson<{ name?: unknown; repoUrl?: unknown; branch?: unknown }>(req);
   if (!body) {
     return badRequest("Invalid JSON body");
   }
@@ -102,6 +104,13 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
       return badRequest("repoUrl must be a valid https://github.com/<owner>/<repo> URL");
     }
     updates.repoUrl = normalizedRepoUrl;
+  }
+
+  if (body.branch !== undefined) {
+    if (typeof body.branch !== "string" || !body.branch.trim()) {
+      return badRequest("branch must be a non-empty string");
+    }
+    updates.branch = body.branch.trim();
   }
 
   if (Object.keys(updates).length <= 1) {

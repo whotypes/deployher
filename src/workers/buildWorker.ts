@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { mkdir, mkdtemp, readdir, rm, stat } from "fs/promises";
 import path from "path";
 import { tmpdir } from "os";
@@ -158,19 +158,32 @@ const uploadArtifacts = async (ctx: BuildContext, outputDir: string) => {
   }
 };
 
-const downloadRepo = async (repoUrl: string, targetDir: string, ctx: BuildContext) => {
+const downloadRepo = async (
+  repoUrl: string,
+  branch: string,
+  targetDir: string,
+  ctx: BuildContext,
+  githubToken: string | null
+) => {
   const spec = parseGitHubRepoUrl(repoUrl);
   if (!spec) {
     throw new Error("Only https://github.com/<owner>/<repo> URLs are supported for now.");
   }
-  const zipUrl = buildZipballUrl(spec);
+  const ref = branch.trim();
+  if (!ref) {
+    throw new Error("Branch is required for deployment");
+  }
+  const zipUrl = buildZipballUrl(spec, ref);
   logLine(ctx, `Downloading ${zipUrl}`);
-  const response = await fetch(zipUrl, {
-    headers: {
-      "User-Agent": "vercel-clone-build",
-      Accept: "application/vnd.github+json"
-    }
-  });
+  const headers: Record<string, string> = {
+    "User-Agent": "vercel-clone-build",
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+  if (githubToken) {
+    headers.Authorization = `Bearer ${githubToken}`;
+  }
+  const response = await fetch(zipUrl, { headers });
   if (!response.ok) {
     throw new Error(`GitHub download failed with status ${response.status}`);
   }
@@ -231,13 +244,18 @@ const runNodeBuild = async (repoDir: string, ctx: BuildContext) => {
   }
 };
 
-const buildProject = async (repoUrl: string, ctx: BuildContext) => {
+const buildProject = async (
+  repoUrl: string,
+  branch: string,
+  ctx: BuildContext,
+  githubToken: string | null
+) => {
   if (!isStorageConfigured()) {
     throw new Error("S3 storage is not configured");
   }
   const workDir = await mkdtemp(path.join(tmpdir(), "build-"));
   try {
-    const zipPath = await downloadRepo(repoUrl, workDir, ctx);
+    const zipPath = await downloadRepo(repoUrl, branch, workDir, ctx, githubToken);
     const extractedRoot = await extractRepo(zipPath, path.join(workDir, "repo"), ctx);
     ctx.repoDir = extractedRoot;
 
@@ -281,6 +299,20 @@ const processJob = async (job: DeploymentJob) => {
     throw new Error(`Project not found for deployment ${deployment.id}`);
   }
 
+  let githubToken: string | null = null;
+  if (project.userId) {
+    const [account] = await db
+      .select({ accessToken: schema.accounts.accessToken })
+      .from(schema.accounts)
+      .where(
+        and(eq(schema.accounts.userId, project.userId), eq(schema.accounts.providerId, "github"))
+      )
+      .limit(1);
+    if (account?.accessToken) {
+      githubToken = account.accessToken;
+    }
+  }
+
   await db
     .update(schema.deployments)
     .set({ status: "building" })
@@ -295,7 +327,7 @@ const processJob = async (job: DeploymentJob) => {
   };
   let status: "success" | "failed" = "success";
   try {
-    await buildProject(project.repoUrl, ctx);
+    await buildProject(project.repoUrl, project.branch, ctx, githubToken);
   } catch (error) {
     status = "failed";
     logLine(ctx, `Build error: ${error instanceof Error ? error.message : String(error)}`);
