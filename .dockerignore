@@ -1,0 +1,14 @@
+.git
+.gitignore
+.cursor
+node_modules
+dist
+.env
+.env.*
+infra/meta
+infra/data
+infra/.garage.env
+coverage
+coverage*
+README.md
+docs

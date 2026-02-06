@@ -1,19 +1,43 @@
-version: "3.9"
-
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: release
+    container_name: pdploy-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      SKIP_CLIENT_BUILD: "1"
+      RUN_MIGRATIONS: "1"
+      DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://garage:3900
+    ports:
+      - "3000:3000"
+
   garage:
     image: dxflrs/garage:v2.2.0
     container_name: garage
     restart: unless-stopped
+    env_file:
+      - ./infra/.garage.env
     ports:
-      - "3900:3900"     # S3 API
-      - "3901:3901"     # RPC
-      - "3902:3902"     # Web UI
-      - "3903:3903"     # Admin
-    environment:
-      GARAGE_RPC_SECRET: "${GARAGE_RPC_SECRET}"
-      GARAGE_ADMIN_TOKEN: "${GARAGE_ADMIN_TOKEN}"
-      GARAGE_METRICS_TOKEN: "${GARAGE_METRICS_TOKEN}"
+      - "3900:3900" # S3 API
+      - "3901:3901" # RPC
+      - "3902:3902" # Web UI
+      - "3903:3903" # Admin
     volumes:
       - ./infra/garage.dev.toml:/etc/garage.toml
       - ./infra/meta:/var/lib/garage/meta

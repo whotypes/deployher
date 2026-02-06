@@ -275,7 +275,7 @@ setup_garage_s3() {
 
 ensure_stack() {
   ensure_garage_env
-  dc up -d
+  dc up -d garage postgres redis
   wait_for_postgres
   wait_for_redis
   wait_for_garage
