@@ -43,6 +43,13 @@
       "when": 1770292323395,
       "tag": "0005_true_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770337303229,
+      "tag": "0006_purple_omega_red",
+      "breakpoints": true
     }
   ]
 }

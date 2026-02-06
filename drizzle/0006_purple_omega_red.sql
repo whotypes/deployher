@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "branch" text NOT NULL DEFAULT 'main';
