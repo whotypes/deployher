@@ -5,16 +5,16 @@ import { tmpdir } from "os";
 import { config } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
-import { ackDeployment, dequeueDeployment, type DeploymentJob } from "../queue";
 import { buildZipballUrl, parseGitHubRepoUrl } from "../github";
+import { ackDeployment, dequeueDeployment, type DeploymentJob } from "../queue";
 import { getRedisClient } from "../redis";
 import { isStorageConfigured, upload } from "../storage";
 import { guessContentType } from "../utils/contentType";
+import { detectBuildStrategy } from "./build/registry";
+import type { BuildRuntime, DeploymentBuildStrategy, ServeStrategy } from "./build/types";
 
 const buildPreviewUrl = (shortId: string) =>
   `${config.devProtocol}://${shortId}.${config.devDomain}:${config.port}`;
-
-const BUILD_OUTPUT_DIRS = ["dist", "build", "out", ".next", "public"];
 
 const DEPLOYMENT_LOG_CHANNEL_PREFIX = "deployment:";
 const DEPLOYMENT_LOG_CHANNEL_SUFFIX = ":logs";
@@ -24,13 +24,6 @@ type BuildContext = {
   artifactPrefix: string;
   deploymentId: string;
   logs: string[];
-};
-
-type PackageManager = {
-  name: "bun" | "pnpm" | "yarn" | "npm";
-  install: string[];
-  runBuild: string[];
-  extraEnv?: Record<string, string>;
 };
 
 const publishDeploymentLog = (deploymentId: string, content: string): void => {
@@ -58,10 +51,28 @@ const exists = async (filePath: string): Promise<boolean> => {
   }
 };
 
+const isDirectory = async (filePath: string): Promise<boolean> => {
+  try {
+    const s = await stat(filePath);
+    return s.isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 const readJson = async <T>(filePath: string): Promise<T | null> => {
   try {
     const text = await Bun.file(filePath).text();
     return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+};
+
+const readToml = async <T>(filePath: string): Promise<T | null> => {
+  try {
+    const text = await Bun.file(filePath).text();
+    return Bun.TOML.parse(text) as T;
   } catch {
     return null;
   }
@@ -94,53 +105,13 @@ const resolveBunCli = (): { command: string; env?: Record<string, string> } => {
   };
 };
 
-const detectPackageManager = async (repoDir: string): Promise<PackageManager> => {
-  const bunLock = path.join(repoDir, "bun.lockb");
-  const bunLockText = path.join(repoDir, "bun.lock");
-  const pnpmLock = path.join(repoDir, "pnpm-lock.yaml");
-  const yarnLock = path.join(repoDir, "yarn.lock");
-  const npmLock = path.join(repoDir, "package-lock.json");
-
-  if (await exists(bunLock) || (await exists(bunLockText))) {
-    const bunCli = resolveBunCli();
-    return {
-      name: "bun",
-      install: [bunCli.command, "install", "--frozen-lockfile"],
-      runBuild: [bunCli.command, "run", "build"],
-      ...(bunCli.env && { extraEnv: bunCli.env })
-    };
-  }
-  if (await exists(pnpmLock)) {
-    return {
-      name: "pnpm",
-      install: ["pnpm", "install", "--frozen-lockfile"],
-      runBuild: ["pnpm", "run", "build"]
-    };
-  }
-  if (await exists(yarnLock)) {
-    return {
-      name: "yarn",
-      install: ["yarn", "install", "--frozen-lockfile"],
-      runBuild: ["yarn", "build"]
-    };
-  }
-  if (await exists(npmLock)) {
-    return { name: "npm", install: ["npm", "ci"], runBuild: ["npm", "run", "build"] };
-  }
-  return { name: "npm", install: ["npm", "install"], runBuild: ["npm", "run", "build"] };
-};
-
-const detectOutputDir = async (repoDir: string): Promise<string | null> => {
-  for (const candidate of BUILD_OUTPUT_DIRS) {
-    const full = path.join(repoDir, candidate);
-    try {
-      const s = await stat(full);
-      if (s.isDirectory()) return full;
-    } catch {
-      // ignore
-    }
-  }
-  return null;
+const buildRuntime: BuildRuntime = {
+  exists,
+  isDirectory,
+  readJson,
+  readToml,
+  runCommand,
+  resolveBunCli
 };
 
 const collectFiles = async (rootDir: string): Promise<string[]> => {
@@ -232,66 +203,57 @@ const extractRepo = async (zipPath: string, targetDir: string, ctx: BuildContext
   return path.join(targetDir, rootEntry.name);
 };
 
-const runNodeBuild = async (repoDir: string, ctx: BuildContext) => {
-  const pkg = await readJson<{ scripts?: Record<string, string> }>(path.join(repoDir, "package.json"));
-  if (!pkg) throw new Error("package.json is unreadable");
-  const manager = await detectPackageManager(repoDir);
-  logLine(ctx, `Using ${manager.name} for install/build`);
-  const env = {
-    ...process.env,
-    CI: "1",
-    NODE_ENV: "production",
-    ...(manager.extraEnv ?? {})
-  };
-  logLine(ctx, `Installing dependencies (${manager.install.join(" ")})`);
-  const install = await runCommand(manager.install, { cwd: repoDir, env });
-  if (install.stdout) ctx.logs.push(install.stdout.trim());
-  if (install.stderr) ctx.logs.push(install.stderr.trim());
-  if (install.code !== 0) {
-    throw new Error(`Install failed: ${install.stderr || install.stdout}`);
-  }
-  if (pkg.scripts?.build) {
-    logLine(ctx, `Running build (${manager.runBuild.join(" ")})`);
-    const build = await runCommand(manager.runBuild, { cwd: repoDir, env });
-    if (build.stdout) ctx.logs.push(build.stdout.trim());
-    if (build.stderr) ctx.logs.push(build.stderr.trim());
-    if (build.code !== 0) {
-      throw new Error(`Build failed: ${build.stderr || build.stdout}`);
-    }
-  } else {
-    logLine(ctx, "No build script found; skipping build step");
-  }
-};
-
 const buildProject = async (
   repoUrl: string,
   branch: string,
   ctx: BuildContext,
   githubToken: string | null
-) => {
+): Promise<{ buildStrategy: DeploymentBuildStrategy; serveStrategy: ServeStrategy }> => {
   if (!isStorageConfigured()) {
     throw new Error("S3 storage is not configured");
   }
+
   const workDir = await mkdtemp(path.join(tmpdir(), "build-"));
   try {
     const zipPath = await downloadRepo(repoUrl, branch, workDir, ctx, githubToken);
     const extractedRoot = await extractRepo(zipPath, path.join(workDir, "repo"), ctx);
     ctx.repoDir = extractedRoot;
 
-    if (await exists(path.join(extractedRoot, "package.json"))) {
-      await runNodeBuild(extractedRoot, ctx);
+    const strategy = await detectBuildStrategy(extractedRoot, buildRuntime);
+    if (!strategy) {
+      throw new Error(
+        "Unsupported project type. Expected Node (package.json) or Python (pyproject.toml/requirements.txt)."
+      );
+    }
+
+    logLine(ctx, `Detected build strategy: ${strategy.id}`);
+
+    const result = await strategy.build(
+      extractedRoot,
+      {
+        deploymentId: ctx.deploymentId,
+        logs: ctx.logs,
+        log: (line: string) => logLine(ctx, line)
+      },
+      buildRuntime
+    );
+
+    if (result.serveStrategy === "static") {
+      if (!result.outputDir) {
+        throw new Error(`Build strategy '${result.buildStrategy}' did not provide an output directory`);
+      }
+
+      logLine(ctx, `Uploading artifacts from ${path.basename(result.outputDir)}`);
+      await uploadArtifacts(ctx, result.outputDir);
+      logLine(ctx, "Artifact upload complete");
     } else {
-      throw new Error("Unsupported project type (missing package.json)");
+      logLine(ctx, "Build completed with server serve strategy; skipping static artifact upload");
     }
 
-    const outputDir = await detectOutputDir(extractedRoot);
-    if (!outputDir) {
-      throw new Error(`No build output found. Looked for: ${BUILD_OUTPUT_DIRS.join(", ")}`);
-    }
-
-    logLine(ctx, `Uploading artifacts from ${path.basename(outputDir)}`);
-    await uploadArtifacts(ctx, outputDir);
-    logLine(ctx, "Artifact upload complete");
+    return {
+      buildStrategy: result.buildStrategy,
+      serveStrategy: result.serveStrategy
+    };
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
@@ -345,8 +307,12 @@ const processJob = async (job: DeploymentJob) => {
     logs
   };
   let status: "success" | "failed" = "success";
+  let buildStrategy: DeploymentBuildStrategy = "unknown";
+  let serveStrategy: ServeStrategy = "static";
   try {
-    await buildProject(project.repoUrl, project.branch, ctx, githubToken);
+    const buildResult = await buildProject(project.repoUrl, project.branch, ctx, githubToken);
+    buildStrategy = buildResult.buildStrategy;
+    serveStrategy = buildResult.serveStrategy;
   } catch (error) {
     status = "failed";
     logLine(ctx, `Build error: ${error instanceof Error ? error.message : String(error)}`);
@@ -368,7 +334,14 @@ const processJob = async (job: DeploymentJob) => {
 
     await db
       .update(schema.deployments)
-      .set({ status, finishedAt: new Date(), buildLogKey: uploadedLogKey, previewUrl })
+      .set({
+        status,
+        finishedAt: new Date(),
+        buildLogKey: uploadedLogKey,
+        previewUrl,
+        buildStrategy,
+        serveStrategy
+      })
       .where(eq(schema.deployments.id, deployment.id));
   }
 };
