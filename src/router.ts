@@ -5,6 +5,7 @@ import {
   requireSession
 } from "./auth/session";
 import { clientOutDir } from "./client/build";
+import { getEmbeddedClientAsset } from "./client/embeddedAssets";
 import { json } from "./http/helpers";
 import {
   extractDeploymentIdFromHost,
@@ -150,6 +151,12 @@ export const router = async (req: Request): Promise<Response> => {
     }
     const file = Bun.file(resolved);
     if (!(await file.exists())) {
+      const embeddedAsset = getEmbeddedClientAsset(subPath);
+      if (embeddedAsset) {
+        return new Response(embeddedAsset.blob, {
+          headers: { "Content-Type": embeddedAsset.contentType }
+        });
+      }
       return json({ error: "Not Found" }, { status: 404 });
     }
     return new Response(file, {
