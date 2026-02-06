@@ -30,6 +30,7 @@ type PackageManager = {
   name: "bun" | "pnpm" | "yarn" | "npm";
   install: string[];
   runBuild: string[];
+  extraEnv?: Record<string, string>;
 };
 
 const publishDeploymentLog = (deploymentId: string, content: string): void => {
@@ -82,6 +83,17 @@ const runCommand = async (
   return { code, stdout, stderr };
 };
 
+const resolveBunCli = (): { command: string; env?: Record<string, string> } => {
+  const bunBinary = Bun.which("bun");
+  if (bunBinary) {
+    return { command: bunBinary };
+  }
+  return {
+    command: process.execPath,
+    env: { BUN_BE_BUN: "1" }
+  };
+};
+
 const detectPackageManager = async (repoDir: string): Promise<PackageManager> => {
   const bunLock = path.join(repoDir, "bun.lockb");
   const bunLockText = path.join(repoDir, "bun.lock");
@@ -90,7 +102,13 @@ const detectPackageManager = async (repoDir: string): Promise<PackageManager> =>
   const npmLock = path.join(repoDir, "package-lock.json");
 
   if (await exists(bunLock) || (await exists(bunLockText))) {
-    return { name: "bun", install: ["bun", "install", "--frozen-lockfile"], runBuild: ["bun", "run", "build"] };
+    const bunCli = resolveBunCli();
+    return {
+      name: "bun",
+      install: [bunCli.command, "install", "--frozen-lockfile"],
+      runBuild: [bunCli.command, "run", "build"],
+      ...(bunCli.env && { extraEnv: bunCli.env })
+    };
   }
   if (await exists(pnpmLock)) {
     return {
@@ -222,7 +240,8 @@ const runNodeBuild = async (repoDir: string, ctx: BuildContext) => {
   const env = {
     ...process.env,
     CI: "1",
-    NODE_ENV: "production"
+    NODE_ENV: "production",
+    ...(manager.extraEnv ?? {})
   };
   logLine(ctx, `Installing dependencies (${manager.install.join(" ")})`);
   const install = await runCommand(manager.install, { cwd: repoDir, env });
