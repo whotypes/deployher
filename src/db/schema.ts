@@ -79,6 +79,14 @@ export const deployments = pgTable("deployments", {
   shortId: text("short_id").notNull().unique(),
   projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   artifactPrefix: text("artifact_prefix").notNull(),
+  buildStrategy: text("build_strategy")
+    .notNull()
+    .default("unknown")
+    .$type<"node" | "python" | "unknown">(),
+  serveStrategy: text("serve_strategy")
+    .notNull()
+    .default("static")
+    .$type<"static" | "server">(),
   status: text("status").notNull().default("queued").$type<"queued" | "building" | "success" | "failed">(),
   buildLogKey: text("build_log_key"),
   previewUrl: text("preview_url"),
