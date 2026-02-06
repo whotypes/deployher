@@ -36,7 +36,7 @@ export function normalizeGitHubRepoUrl(repoUrl: string): string | null {
   return spec.branch ? `${base}/tree/${spec.branch}` : base;
 }
 
-export function buildZipballUrl(spec: GitHubRepoSpec): string {
-  const ref = spec.branch?.trim() || "HEAD";
-  return `https://api.github.com/repos/${spec.owner}/${spec.repo}/zipball/${ref}`;
+export function buildZipballUrl(spec: GitHubRepoSpec, ref?: string): string {
+  const resolvedRef = ref ?? spec.branch?.trim() ?? "HEAD";
+  return `https://api.github.com/repos/${spec.owner}/${spec.repo}/zipball/${resolvedRef}`;
 }

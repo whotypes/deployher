@@ -106,6 +106,7 @@ const protectedRoutes: ProtectedRoute[] = [
   { pattern: "/account", methods: { GET: account.accountPage } },
   { pattern: "/account/delete", methods: { POST: account.deleteAccount } },
   { pattern: "/api/github/repos", methods: { GET: github.listRepos } },
+  { pattern: "/api/github/branches", methods: { GET: github.listBranches } },
   { pattern: "/api/projects", methods: { GET: projects.listProjects, POST: projects.createProject } },
   {
     pattern: "/api/projects/:id",
