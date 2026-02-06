@@ -165,6 +165,23 @@ const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
             </div>
 
             <div className="field">
+              <label className="label" htmlFor="project-branch">
+                Branch
+              </label>
+              <div className="control">
+                <input
+                  id="project-branch"
+                  className="input"
+                  type="text"
+                  placeholder="main"
+                  required
+                  aria-label="Branch to deploy"
+                />
+              </div>
+              <p className="help">Branch to deploy (required)</p>
+            </div>
+
+            <div className="field">
               <div className="control">
                 <button id="submit-btn" type="submit" className="button is-success is-fullwidth">
                   Create
@@ -199,7 +216,22 @@ const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
             </div>
           </div>
           <div id="github-repo-status" className="notification is-light" style={{ display: "none" }} />
-          <div id="github-repo-list" style={{ maxHeight: "320px", overflowY: "auto" }} />
+          <div id="github-repo-list" style={{ maxHeight: "260px", overflowY: "auto" }} />
+          <div className="field mt-4" id="github-branch-field">
+            <label className="label" htmlFor="github-branch-select">
+              Branch to deploy <span className="has-text-weight-normal has-text-grey">(required)</span>
+            </label>
+            <div className="control">
+              <select
+                id="github-branch-select"
+                className="input"
+                aria-label="Branch to deploy"
+                disabled
+              >
+                <option value="">Select a repository above first</option>
+              </select>
+            </div>
+          </div>
         </section>
         <footer className="modal-card-foot">
           <button id="github-create-btn" className="button is-success" disabled>

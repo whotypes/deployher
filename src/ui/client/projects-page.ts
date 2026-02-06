@@ -51,10 +51,12 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       const nameInput = getEl("project-name") as HTMLInputElement | null;
       const repoInput = getEl("repo-url") as HTMLInputElement | null;
+      const branchInput = getEl("project-branch") as HTMLInputElement | null;
       const name = nameInput?.value.trim() ?? "";
       const repoUrl = repoInput?.value.trim() ?? "";
-      if (!name || !repoUrl) {
-        showNotification("Please fill in all fields", "is-danger");
+      const branch = branchInput?.value.trim() ?? "";
+      if (!name || !repoUrl || !branch) {
+        showNotification("Please fill in name, repository and branch", "is-danger");
         return;
       }
       submitBtn.classList.add("is-loading");
@@ -62,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const response = await fetch("/projects", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, repoUrl })
+          body: JSON.stringify({ name, repoUrl, branch })
         });
         const data = (await response.json()) as { id?: string; error?: string };
         if (!response.ok) {
@@ -95,12 +97,31 @@ document.addEventListener("DOMContentLoaded", () => {
   let githubSelected: GitHubRepo | null = null;
   let githubLoading = false;
 
+  const githubBranchSelect = getEl("github-branch-select") as HTMLSelectElement | null;
+
   const openGitHubModal = (): void => {
     if (!githubModal) return;
     githubSelected = null;
+    if (githubBranchSelect) {
+      githubBranchSelect.innerHTML = "<option value=\"\">Select a repository above first</option>";
+      githubBranchSelect.disabled = true;
+    }
     if (githubCreateBtn) (githubCreateBtn as HTMLButtonElement).disabled = true;
     githubModal.classList.add("is-active");
     document.documentElement.classList.add("is-clipped");
+  };
+
+  const loadBranches = async (owner: string, repo: string): Promise<string[]> => {
+    const params = new URLSearchParams({ owner, repo });
+    const response = await fetch("/api/github/branches?" + params.toString(), {
+      headers: { Accept: "application/json" }
+    });
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Failed to load branches");
+    }
+    const data = (await response.json()) as { branches?: string[] };
+    return Array.isArray(data.branches) ? data.branches : [];
   };
 
   const closeGitHubModal = (): void => {
@@ -122,10 +143,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const clearRepoStatus = (): void => setRepoStatus("", "is-light");
 
-  const selectRepo = (repo: GitHubRepo): void => {
+  const selectRepo = async (repo: GitHubRepo): Promise<void> => {
     githubSelected = repo;
-    if (githubCreateBtn) (githubCreateBtn as HTMLButtonElement).disabled = false;
+    if (!githubBranchSelect || !githubCreateBtn) return;
+    githubBranchSelect.disabled = true;
+    githubBranchSelect.innerHTML = "<option value=\"\">Loading branches…</option>";
+    (githubCreateBtn as HTMLButtonElement).disabled = true;
+    setRepoStatus("", "");
+    const [owner, repoName] = repo.fullName.split("/");
+    if (!owner || !repoName) {
+      githubBranchSelect.innerHTML = "<option value=\"\">Could not parse repo</option>";
+      return;
+    }
+    try {
+      const branches = await loadBranches(owner, repoName);
+      githubBranchSelect.innerHTML = branches.length
+        ? branches.map((b) => `<option value="${escapeHtml(b)}"${b === "main" ? " selected" : ""}>${escapeHtml(b)}</option>`).join("")
+        : "<option value=\"\">No branches found</option>";
+      githubBranchSelect.disabled = false;
+      (githubCreateBtn as HTMLButtonElement).disabled = branches.length === 0;
+    } catch (err) {
+      githubBranchSelect.innerHTML = "<option value=\"\">Failed to load branches</option>";
+      setRepoStatus(err instanceof Error ? err.message : "Failed to load branches", "is-danger");
+    }
   };
+
+  const escapeHtml = (s: string): string =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 
   const renderRepoList = (list: GitHubRepo[]): void => {
     if (!githubRepoList) return;
@@ -221,13 +265,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (githubCreateBtn) {
     (githubCreateBtn as HTMLButtonElement).addEventListener("click", async () => {
-      if (!githubSelected) return;
+      if (!githubSelected || !githubBranchSelect?.value.trim()) return;
+      const branch = githubBranchSelect.value.trim();
       (githubCreateBtn as HTMLButtonElement).classList.add("is-loading");
       try {
         const response = await fetch("/projects", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: githubSelected.name, repoUrl: githubSelected.htmlUrl })
+          body: JSON.stringify({
+            name: githubSelected.name,
+            repoUrl: githubSelected.htmlUrl,
+            branch
+          })
         });
         const data = (await response.json()) as { id?: string; error?: string };
         if (!response.ok) {

@@ -18,6 +18,7 @@ type Project = {
   id: string;
   name: string;
   repoUrl: string;
+  branch: string;
   createdAt: string;
   updatedAt: string;
   currentDeploymentId: string | null;
@@ -101,6 +102,10 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => (
                     {data.project.repoUrl.replace("https://github.com/", "")}
                   </a>
                 </td>
+              </tr>
+              <tr>
+                <th>Branch</th>
+                <td>{data.project.branch}</td>
               </tr>
               <tr>
                 <th>Created</th>
@@ -207,6 +212,21 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => (
                   type="url"
                   placeholder={data.project.repoUrl}
                   aria-label="GitHub repository URL"
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="edit-branch">
+                Branch
+              </label>
+              <div className="control">
+                <input
+                  id="edit-branch"
+                  className="input"
+                  type="text"
+                  placeholder={data.project.branch}
+                  aria-label="Branch to deploy"
                 />
               </div>
             </div>

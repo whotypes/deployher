@@ -29,15 +29,18 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       const nameInput = getEl("edit-name") as HTMLInputElement | null;
       const repoInput = getEl("edit-repo-url") as HTMLInputElement | null;
+      const branchInput = getEl("edit-branch") as HTMLInputElement | null;
       const name = nameInput?.value.trim() ?? "";
       const repoUrl = repoInput?.value.trim() ?? "";
-      if (!name && !repoUrl) {
+      const branch = branchInput?.value.trim() ?? "";
+      if (!name && !repoUrl && !branch) {
         showNotification("Please provide at least one field to update", "is-warning");
         return;
       }
-      const body: { name?: string; repoUrl?: string } = {};
+      const body: { name?: string; repoUrl?: string; branch?: string } = {};
       if (name) body.name = name;
       if (repoUrl) body.repoUrl = repoUrl;
+      if (branch) body.branch = branch;
       try {
         const response = await fetch("/projects/" + projectId, {
           method: "PATCH",
