@@ -33,10 +33,20 @@ export const extractDeploymentIdFromHost = (
   return null;
 };
 
+const isSafeAssetPath = (assetPath: string): boolean => {
+  if (assetPath.includes("\0")) return false;
+  if (assetPath.startsWith("/")) return false;
+  return !assetPath.split("/").some((segment) => segment === "..");
+};
+
 export const serveDeploymentAsset = async (
   deployment: typeof schema.deployments.$inferSelect,
   assetPath: string
 ): Promise<Response> => {
+  if (!isSafeAssetPath(assetPath)) {
+    return badRequest("Invalid asset path");
+  }
+
   const serveFile = async (filePath: string) => {
     const key = `${deployment.artifactPrefix}/${filePath}`;
     const contentType = guessContentType(filePath);
@@ -78,14 +88,28 @@ export const serveDeploymentAsset = async (
   return notFound(`File not found: ${assetPath}`);
 };
 
-export const serveSubdomainPreview = async (
-  req: Request,
-  idInfo: { id: string; isShortId: boolean }
+const serveDeploymentByStrategy = async (
+  deployment: typeof schema.deployments.$inferSelect,
+  assetPath: string
 ): Promise<Response> => {
-  if (!isStorageConfigured()) {
-    return json({ error: "S3 storage is not configured" }, { status: 503 });
-  }
+  const serveHandlers: Record<
+    "static" | "server",
+    (d: typeof schema.deployments.$inferSelect, p: string) => Promise<Response>
+  > = {
+    static: (d, p) => serveDeploymentAsset(d, p),
+    server: async () =>
+      json(
+        { error: "Runtime preview is not implemented for server deployments yet" },
+        { status: 501 }
+      )
+  };
 
+  const strategy = deployment.serveStrategy ?? "static";
+  const handler = serveHandlers[strategy] ?? serveHandlers.static;
+  return handler(deployment, assetPath);
+};
+
+const getDeploymentByIdInfo = async (idInfo: { id: string; isShortId: boolean }) => {
   const [deployment] = await db
     .select()
     .from(schema.deployments)
@@ -96,6 +120,18 @@ export const serveSubdomainPreview = async (
     )
     .limit(1);
 
+  return deployment ?? null;
+};
+
+export const serveSubdomainPreview = async (
+  req: Request,
+  idInfo: { id: string; isShortId: boolean }
+): Promise<Response> => {
+  if (!isStorageConfigured()) {
+    return json({ error: "S3 storage is not configured" }, { status: 503 });
+  }
+
+  const deployment = await getDeploymentByIdInfo(idInfo);
   if (!deployment) {
     return notFound("Deployment not found");
   }
@@ -124,7 +160,7 @@ export const serveSubdomainPreview = async (
   }
 
   try {
-    return await serveDeploymentAsset(deployment, assetPath);
+    return await serveDeploymentByStrategy(deployment, assetPath);
   } catch (err) {
     console.error("Subdomain preview error:", err);
     return json({ error: "Failed to serve file" }, { status: 500 });
@@ -140,16 +176,7 @@ export const servePathBasedPreview = async (
     return json({ error: "S3 storage is not configured" }, { status: 503 });
   }
 
-  const [deployment] = await db
-    .select()
-    .from(schema.deployments)
-    .where(
-      idInfo.isShortId
-        ? eq(schema.deployments.shortId, idInfo.id)
-        : eq(schema.deployments.id, idInfo.id)
-    )
-    .limit(1);
-
+  const deployment = await getDeploymentByIdInfo(idInfo);
   if (!deployment) {
     return notFound("Deployment not found");
   }
@@ -162,7 +189,7 @@ export const servePathBasedPreview = async (
   }
 
   try {
-    return await serveDeploymentAsset(deployment, assetPath);
+    return await serveDeploymentByStrategy(deployment, assetPath);
   } catch (err) {
     console.error("Path-based preview error:", err);
     return json({ error: "Failed to serve file" }, { status: 500 });
