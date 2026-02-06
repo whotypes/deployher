@@ -12,7 +12,27 @@ const clientEntrypoints = [
 
 const appCssPath = path.join(root, "src", "ui", "client", "app.css");
 
-export const buildClient = async (): Promise<{ success: boolean }> => {
+type BuildClientOptions = {
+  force?: boolean;
+};
+
+const parseBoolean = (value: string | undefined): boolean => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+};
+
+const shouldSkipClientBuild = (force: boolean): boolean => {
+  if (force) return false;
+  return parseBoolean(Bun.env.SKIP_CLIENT_BUILD);
+};
+
+export const buildClient = async (
+  options: BuildClientOptions = {}
+): Promise<{ success: boolean; skipped: boolean }> => {
+  if (shouldSkipClientBuild(Boolean(options.force))) {
+    return { success: true, skipped: true };
+  }
+
   const result = await Bun.build({
     entrypoints: clientEntrypoints,
     outdir: clientOutDir,
@@ -26,5 +46,5 @@ export const buildClient = async (): Promise<{ success: boolean }> => {
   if (await cssFile.exists()) {
     await Bun.write(path.join(clientOutDir, "app.css"), cssFile);
   }
-  return { success: result.success };
+  return { success: result.success, skipped: false };
 };

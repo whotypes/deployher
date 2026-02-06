@@ -10,7 +10,9 @@ setStartedAt(Date.now());
 
 const start = async () => {
   const buildResult = await buildClient();
-  if (!buildResult.success) {
+  if (buildResult.skipped) {
+    console.log("Skipping client asset build at startup (SKIP_CLIENT_BUILD enabled).");
+  } else if (!buildResult.success) {
     console.warn("Client assets may be missing; /assets/* will 404 until build succeeds.");
   }
   const server = Bun.serve({
