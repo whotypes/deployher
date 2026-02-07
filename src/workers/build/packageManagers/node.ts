@@ -35,7 +35,7 @@ const NODE_PACKAGE_MANAGER_DETECTORS: NodePackageManagerDetector[] = [
     lockfiles: ["pnpm-lock.yaml"],
     buildSpec: () => ({
       name: "pnpm",
-      install: ["pnpm", "install", "--frozen-lockfile"],
+      install: ["pnpm", "install", "--frozen-lockfile", "--prod=false"],
       runBuild: ["pnpm", "run", "build"]
     })
   },
@@ -59,10 +59,28 @@ const NODE_PACKAGE_MANAGER_DETECTORS: NodePackageManagerDetector[] = [
   }
 ];
 
+const normalizePackageManager = (value: unknown): NodePackageManagerName | null => {
+  if (typeof value !== "string") return null;
+  const manager = value.split("@")[0]?.trim();
+  if (manager === "bun" || manager === "pnpm" || manager === "yarn" || manager === "npm") {
+    return manager;
+  }
+  return null;
+};
+
 export const detectNodePackageManager = async (
   repoDir: string,
   runtime: BuildRuntime
 ): Promise<NodePackageManager> => {
+  const pkg = await runtime.readJson<{ packageManager?: string }>(path.join(repoDir, "package.json"));
+  const preferredManager = normalizePackageManager(pkg?.packageManager);
+  if (preferredManager) {
+    const detector = NODE_PACKAGE_MANAGER_DETECTORS.find((entry) => entry.name === preferredManager);
+    if (detector) {
+      return detector.buildSpec(runtime);
+    }
+  }
+
   for (const detector of NODE_PACKAGE_MANAGER_DETECTORS) {
     for (const lockfile of detector.lockfiles) {
       if (await runtime.exists(path.join(repoDir, lockfile))) {

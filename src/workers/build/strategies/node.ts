@@ -29,15 +29,22 @@ export const nodeBuildStrategy: BuildStrategy = {
     const manager = await detectNodePackageManager(repoDir, runtime);
     ctx.log(`Using ${manager.name} for install/build`);
 
-    const env = {
+    const installEnv = {
       ...process.env,
       CI: "1",
-      NODE_ENV: "production",
       ...(manager.extraEnv ?? {})
+    };
+    delete installEnv.NODE_ENV;
+    delete installEnv.npm_config_production;
+    delete installEnv.NPM_CONFIG_PRODUCTION;
+    const buildEnv = {
+      ...process.env,
+      CI: "1",
+      NODE_ENV: "production"
     };
 
     ctx.log(`Installing dependencies (${manager.install.join(" ")})`);
-    const install = await runtime.runCommand(manager.install, { cwd: repoDir, env });
+    const install = await runtime.runCommand(manager.install, { cwd: repoDir, env: installEnv });
     if (install.stdout) ctx.logs.push(install.stdout.trim());
     if (install.stderr) ctx.logs.push(install.stderr.trim());
     if (install.code !== 0) {
@@ -46,7 +53,7 @@ export const nodeBuildStrategy: BuildStrategy = {
 
     if (pkg.scripts?.build) {
       ctx.log(`Running build (${manager.runBuild.join(" ")})`);
-      const build = await runtime.runCommand(manager.runBuild, { cwd: repoDir, env });
+      const build = await runtime.runCommand(manager.runBuild, { cwd: repoDir, env: buildEnv });
       if (build.stdout) ctx.logs.push(build.stdout.trim());
       if (build.stderr) ctx.logs.push(build.stderr.trim());
       if (build.code !== 0) {
