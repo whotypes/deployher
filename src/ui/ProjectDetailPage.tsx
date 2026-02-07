@@ -185,6 +185,33 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => (
       <div className="column is-4">
         <div className="box">
           <h3 className="subtitle is-5">Settings</h3>
+          <div className="field">
+            <label className="label" htmlFor="deploy-env-file">
+              Deployment .env (optional)
+            </label>
+            <div className="control">
+              <textarea
+                id="deploy-env-file"
+                className="textarea"
+                rows={7}
+                placeholder={"API_URL=https://example.com\nPUBLIC_KEY=abc123"}
+                aria-label="Deployment .env content"
+              />
+            </div>
+            <p className="help">
+              Used on next deploy only. Max 64 KB.
+            </p>
+            <div className="control mt-2">
+              <input
+                id="deploy-env-upload"
+                className="input"
+                type="file"
+                accept=".env,text/plain"
+                aria-label="Upload env file"
+              />
+            </div>
+          </div>
+
           <form id="edit-project-form">
             <div className="field">
               <label className="label" htmlFor="edit-name">

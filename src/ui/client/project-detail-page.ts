@@ -4,6 +4,7 @@
  */
 
 const getEl = (id: string): HTMLElement | null => document.getElementById(id);
+const MAX_ENV_FILE_SIZE_BYTES = 64 * 1024;
 
 document.addEventListener("DOMContentLoaded", () => {
   const editForm = getEl("edit-project-form") as HTMLFormElement | null;
@@ -11,6 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const deleteBtn = getEl("delete-btn");
   const notification = getEl("notification");
   const projectIdEl = getEl("project-id") as HTMLInputElement | null;
+  const deployEnvText = getEl("deploy-env-file") as HTMLTextAreaElement | null;
+  const deployEnvUpload = getEl("deploy-env-upload") as HTMLInputElement | null;
   const projectId = projectIdEl?.value ?? "";
 
   if (!notification) return;
@@ -23,6 +26,31 @@ document.addEventListener("DOMContentLoaded", () => {
       notification.style.display = "none";
     }, 3000);
   };
+
+  if (deployEnvUpload && deployEnvText) {
+    deployEnvUpload.addEventListener("change", async () => {
+      const file = deployEnvUpload.files?.[0];
+      if (!file) return;
+
+      if (file.size > MAX_ENV_FILE_SIZE_BYTES) {
+        showNotification(
+          `.env file is too large (${file.size} bytes). Max is ${MAX_ENV_FILE_SIZE_BYTES} bytes.`,
+          "is-warning"
+        );
+        deployEnvUpload.value = "";
+        return;
+      }
+
+      try {
+        const text = await file.text();
+        deployEnvText.value = text;
+      } catch {
+        showNotification("Failed to read selected .env file", "is-danger");
+      } finally {
+        deployEnvUpload.value = "";
+      }
+    });
+  }
 
   if (editForm) {
     editForm.addEventListener("submit", async (e) => {
@@ -63,10 +91,24 @@ document.addEventListener("DOMContentLoaded", () => {
     deployBtn.addEventListener("click", async () => {
       (deployBtn as HTMLButtonElement).classList.add("is-loading");
       try {
+        const envFile = deployEnvText?.value ?? "";
+        if (envFile && new Blob([envFile]).size > MAX_ENV_FILE_SIZE_BYTES) {
+          showNotification(
+            `.env file is too large. Max is ${MAX_ENV_FILE_SIZE_BYTES} bytes.`,
+            "is-warning"
+          );
+          return;
+        }
+
+        const payload: { envFile?: string } = {};
+        if (envFile.trim()) {
+          payload.envFile = envFile;
+        }
+
         const response = await fetch("/projects/" + projectId + "/deployments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({})
+          body: JSON.stringify(payload)
         });
         const data = (await response.json()) as { id?: string; error?: string };
         if (!response.ok) {
