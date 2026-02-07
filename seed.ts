@@ -7,6 +7,7 @@ const [project] = await db
   .values({
     name: "CSCD Purity Test",
     repoUrl: "https://github.com/dotcomnerd/cscdpuritytest",
+    branch: "main"
   })
   .returning({ id: schema.projects.id });
 
