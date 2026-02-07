@@ -6,12 +6,20 @@ export const DEPLOY_PROCESSING_KEY = "deployments:processing";
 export type DeploymentJob = {
   deploymentId: string;
   enqueuedAt: string;
+  envFile?: string;
 };
 
-export async function enqueueDeployment(deploymentId: string): Promise<void> {
+export async function enqueueDeployment(
+  deploymentId: string,
+  options: { envFile?: string } = {}
+): Promise<void> {
   const client = await getRedisClient();
   if (!client) throw new Error("Redis is not configured");
-  const payload: DeploymentJob = { deploymentId, enqueuedAt: new Date().toISOString() };
+  const payload: DeploymentJob = {
+    deploymentId,
+    enqueuedAt: new Date().toISOString(),
+    ...(options.envFile ? { envFile: options.envFile } : {})
+  };
   await client.send("RPUSH", [DEPLOY_QUEUE_KEY, JSON.stringify(payload)]);
 }
 
