@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { type RequestWithParamsAndSession } from "../auth/session";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
-import { json, notFound, parseJson } from "../http/helpers";
+import { badRequest, json, notFound, parseJson } from "../http/helpers";
 import { enqueueDeployment } from "../queue";
 import { getRedisSubscriber, isRedisConfigured } from "../redis";
 import { getText, getTextFromOffset, isStorageConfigured, presign } from "../storage";
@@ -16,6 +16,8 @@ const getProjectForUser = async (projectId: string, userId: string) => {
     .limit(1);
   return project ?? null;
 };
+
+const MAX_DEPLOYMENT_ENV_FILE_BYTES = 64 * 1024;
 
 export const listDeployments = async (req: RequestWithParamsAndSession) => {
   const projectId = req.params["id"];
@@ -55,11 +57,23 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
     return notFound("Project not found");
   }
 
-  const body = await parseJson<{ artifactPrefix?: unknown }>(req);
+  const body = await parseJson<{ artifactPrefix?: unknown; envFile?: unknown }>(req);
   const artifactPrefix =
     body && typeof body.artifactPrefix === "string" && body.artifactPrefix.trim()
       ? body.artifactPrefix.trim()
       : `artifacts/${project.id}/${Date.now()}`;
+  if (body && body.envFile !== undefined && typeof body.envFile !== "string") {
+    return badRequest("envFile must be a string");
+  }
+
+  const normalizedEnvFile =
+    body && typeof body.envFile === "string" ? body.envFile.replace(/\r\n?/g, "\n") : "";
+  const envFile = normalizedEnvFile.trim() ? normalizedEnvFile : undefined;
+  if (envFile && Buffer.byteLength(envFile, "utf8") > MAX_DEPLOYMENT_ENV_FILE_BYTES) {
+    return badRequest(
+      `envFile exceeds ${MAX_DEPLOYMENT_ENV_FILE_BYTES} bytes (${Buffer.byteLength(envFile, "utf8")} bytes provided)`
+    );
+  }
 
   const shortId = generateShortId();
 
@@ -83,7 +97,7 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
     .where(eq(schema.projects.id, project.id));
 
   try {
-    await enqueueDeployment(deployment.id);
+    await enqueueDeployment(deployment.id, { envFile });
   } catch (err) {
     console.error("Failed to enqueue deployment:", err);
     await db
