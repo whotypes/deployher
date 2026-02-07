@@ -6,12 +6,14 @@ import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { renderHealthPage, type HealthData } from "../health/HealthPage";
 import { json, notFound, type RequestWithParams } from "../http/helpers";
+import { renderAdminExamplesPage, type AdminExamplesPageData } from "../ui/AdminExamplesPage";
 import { renderDashboardPage, type DashboardData } from "../ui/DashboardPage";
 import { renderLandingPage } from "../ui/LandingPage";
 import { renderNotFoundPage } from "../ui/NotFoundPage";
 import { renderDeploymentDetailPage, type DeploymentDetailData } from "../ui/DeploymentDetailPage";
 import { renderProjectDetailPage, type ProjectDetailData } from "../ui/ProjectDetailPage";
 import { renderProjectsPage, type ProjectsPageData } from "../ui/ProjectsPage";
+import { buildExampleRowsForUser } from "../admin/exampleDeployments";
 import { getDeployment } from "./deployments";
 import { getProject } from "./projects";
 
@@ -332,6 +334,23 @@ export const deploymentDetailPage = async (req: RequestWithParamsAndSession) => 
   };
 
   const stream = await renderDeploymentDetailPage(data);
+  return new Response(stream, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
+};
+
+export const adminExamplesPage = async (req: RequestWithParamsAndSession) => {
+  const userId = req.session.user.id;
+  const data: AdminExamplesPageData = {
+    user: {
+      name: req.session.user.name ?? null,
+      email: req.session.user.email,
+      image: req.session.user.image ?? null
+    },
+    examples: await buildExampleRowsForUser(userId)
+  };
+
+  const stream = await renderAdminExamplesPage(data);
   return new Response(stream, {
     headers: { "Content-Type": "text/html; charset=utf-8" }
   });

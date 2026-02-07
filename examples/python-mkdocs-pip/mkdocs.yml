@@ -1,0 +1,3 @@
+site_name: python-mkdocs-pip
+nav:
+  - Home: index.md

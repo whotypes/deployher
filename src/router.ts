@@ -15,6 +15,7 @@ import {
   SHORT_ID_REGEX,
   UUID_REGEX
 } from "./routes/preview";
+import * as admin from "./routes/admin";
 import * as account from "./routes/account";
 import * as deployments from "./routes/deployments";
 import * as github from "./routes/github";
@@ -92,6 +93,7 @@ const protectedRoutes: ProtectedRoute[] = [
       POST: deployments.createDeployment
     }
   },
+  { pattern: "/admin", methods: { GET: pages.adminExamplesPage } },
   {
     pattern: "/deployments/:id",
     methods: { GET: pages.handleDeploymentRoute }
@@ -124,6 +126,11 @@ const protectedRoutes: ProtectedRoute[] = [
       GET: deployments.listDeployments,
       POST: deployments.createDeployment
     }
+  },
+  { pattern: "/api/admin/examples", methods: { GET: admin.listExamples } },
+  {
+    pattern: "/api/admin/examples/:name/deploy",
+    methods: { POST: admin.createExampleDeployment }
   },
   { pattern: "/api/deployments/:id", methods: { GET: deployments.getDeployment } },
   {

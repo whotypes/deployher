@@ -28,8 +28,8 @@ export const startBuildWorkers = async () => {
     worker.addEventListener("error", (event) => {
       console.error("Build worker error:", event.message);
     });
-    worker.addEventListener("close", (event) => {
-      console.warn(`Build worker exited with code ${event.code}`);
+    worker.addEventListener("close", () => {
+      console.warn("Build worker exited.");
     });
   }
 };

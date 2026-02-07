@@ -1,10 +1,11 @@
 import { and, eq } from "drizzle-orm";
-import { mkdir, mkdtemp, readdir, rm, stat } from "fs/promises";
+import { cp, mkdir, mkdtemp, readdir, rm, stat } from "fs/promises";
 import path from "path";
 import { tmpdir } from "os";
 import { config } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
+import { parseExampleRepoUrl, resolveLocalExample } from "../examples";
 import { buildZipballUrl, parseGitHubRepoUrl } from "../github";
 import { ackDeployment, dequeueDeployment, type DeploymentJob } from "../queue";
 import { getRedisClient } from "../redis";
@@ -108,6 +109,7 @@ const resolveBunCli = (): { command: string; env?: Record<string, string> } => {
 const buildRuntime: BuildRuntime = {
   exists,
   isDirectory,
+  which: Bun.which,
   readJson,
   readToml,
   runCommand,
@@ -215,8 +217,24 @@ const buildProject = async (
 
   const workDir = await mkdtemp(path.join(tmpdir(), "build-"));
   try {
-    const zipPath = await downloadRepo(repoUrl, branch, workDir, ctx, githubToken);
-    const extractedRoot = await extractRepo(zipPath, path.join(workDir, "repo"), ctx);
+    const exampleName = parseExampleRepoUrl(repoUrl);
+    let extractedRoot = "";
+
+    if (exampleName) {
+      const sourceExample = await resolveLocalExample(exampleName);
+      if (!sourceExample) {
+        throw new Error(`Local example not found: ${exampleName}`);
+      }
+      const targetDir = path.join(workDir, "repo", sourceExample.name);
+      logLine(ctx, `Using local example source: ${sourceExample.name}`);
+      await mkdir(path.dirname(targetDir), { recursive: true });
+      await cp(sourceExample.path, targetDir, { recursive: true, force: true });
+      extractedRoot = targetDir;
+    } else {
+      const zipPath = await downloadRepo(repoUrl, branch, workDir, ctx, githubToken);
+      extractedRoot = await extractRepo(zipPath, path.join(workDir, "repo"), ctx);
+    }
+
     ctx.repoDir = extractedRoot;
 
     const strategy = await detectBuildStrategy(extractedRoot, buildRuntime);

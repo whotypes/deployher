@@ -18,6 +18,7 @@ export type LayoutProps = {
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
+  { href: "/admin", label: "Admin" },
   { href: "/health", label: "Health" }
 ];
 
