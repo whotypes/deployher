@@ -31,6 +31,7 @@ export const nodeBuildStrategy: BuildStrategy = {
 
     const installEnv = {
       ...process.env,
+      ...ctx.env,
       CI: "1",
       ...(manager.extraEnv ?? {})
     };
@@ -39,6 +40,7 @@ export const nodeBuildStrategy: BuildStrategy = {
     delete installEnv.NPM_CONFIG_PRODUCTION;
     const buildEnv = {
       ...process.env,
+      ...ctx.env,
       CI: "1",
       NODE_ENV: "production"
     };

@@ -50,6 +50,7 @@ export const pythonBuildStrategy: BuildStrategy = {
 
     const env = {
       ...process.env,
+      ...ctx.env,
       CI: "1",
       PYTHONUNBUFFERED: "1"
     };

@@ -12,6 +12,7 @@ export type BuildExecutionContext = {
   deploymentId: string;
   logs: string[];
   log: (line: string) => void;
+  env: Record<string, string>;
 };
 
 export type RunCommandResult = {

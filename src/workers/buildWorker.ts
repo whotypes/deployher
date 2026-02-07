@@ -19,6 +19,7 @@ const buildPreviewUrl = (shortId: string) =>
 
 const DEPLOYMENT_LOG_CHANNEL_PREFIX = "deployment:";
 const DEPLOYMENT_LOG_CHANNEL_SUFFIX = ":logs";
+const MAX_DEPLOYMENT_ENV_FILE_BYTES = 64 * 1024;
 
 type BuildContext = {
   repoDir: string;
@@ -41,6 +42,65 @@ const logLine = (ctx: BuildContext, line: string) => {
   const formatted = `[${new Date().toISOString()}] ${line}\n`;
   ctx.logs.push(formatted.trimEnd());
   publishDeploymentLog(ctx.deploymentId, formatted);
+};
+
+const parseDeploymentEnvFile = (content: string): Record<string, string> => {
+  const parsed: Record<string, string> = {};
+  const lines = content.split("\n");
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const withoutExport = trimmed.startsWith("export ")
+      ? trimmed.slice("export ".length).trim()
+      : trimmed;
+    const separatorIndex = withoutExport.indexOf("=");
+    if (separatorIndex <= 0) continue;
+
+    const key = withoutExport.slice(0, separatorIndex).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+
+    let value = withoutExport.slice(separatorIndex + 1).trim();
+    if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+      value = value
+        .slice(1, -1)
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\");
+    } else if (value.startsWith("'") && value.endsWith("'") && value.length >= 2) {
+      value = value.slice(1, -1);
+    }
+
+    parsed[key] = value;
+  }
+
+  return parsed;
+};
+
+const prepareDeploymentEnv = async (
+  repoDir: string,
+  envFile: string | undefined,
+  ctx: BuildContext
+): Promise<Record<string, string>> => {
+  if (!envFile) return {};
+
+  const normalized = envFile.replace(/\r\n?/g, "\n");
+  const byteLength = Buffer.byteLength(normalized, "utf8");
+  if (byteLength > MAX_DEPLOYMENT_ENV_FILE_BYTES) {
+    throw new Error(
+      `Deployment .env file is too large (${byteLength} bytes). Max allowed is ${MAX_DEPLOYMENT_ENV_FILE_BYTES} bytes.`
+    );
+  }
+
+  const envFilePath = path.join(repoDir, ".env");
+  await Bun.write(envFilePath, normalized.endsWith("\n") ? normalized : `${normalized}\n`);
+
+  const parsed = parseDeploymentEnvFile(normalized);
+  logLine(ctx, `Applied deployment .env with ${Object.keys(parsed).length} variable(s)`);
+  return parsed;
 };
 
 const exists = async (filePath: string): Promise<boolean> => {
@@ -209,7 +269,8 @@ const buildProject = async (
   repoUrl: string,
   branch: string,
   ctx: BuildContext,
-  githubToken: string | null
+  githubToken: string | null,
+  envFile: string | undefined
 ): Promise<{ buildStrategy: DeploymentBuildStrategy; serveStrategy: ServeStrategy }> => {
   if (!isStorageConfigured()) {
     throw new Error("S3 storage is not configured");
@@ -236,6 +297,7 @@ const buildProject = async (
     }
 
     ctx.repoDir = extractedRoot;
+    const deploymentEnv = await prepareDeploymentEnv(extractedRoot, envFile, ctx);
 
     const strategy = await detectBuildStrategy(extractedRoot, buildRuntime);
     if (!strategy) {
@@ -251,7 +313,8 @@ const buildProject = async (
       {
         deploymentId: ctx.deploymentId,
         logs: ctx.logs,
-        log: (line: string) => logLine(ctx, line)
+        log: (line: string) => logLine(ctx, line),
+        env: deploymentEnv
       },
       buildRuntime
     );
@@ -328,7 +391,13 @@ const processJob = async (job: DeploymentJob) => {
   let buildStrategy: DeploymentBuildStrategy = "unknown";
   let serveStrategy: ServeStrategy = "static";
   try {
-    const buildResult = await buildProject(project.repoUrl, project.branch, ctx, githubToken);
+    const buildResult = await buildProject(
+      project.repoUrl,
+      project.branch,
+      ctx,
+      githubToken,
+      job.envFile
+    );
     buildStrategy = buildResult.buildStrategy;
     serveStrategy = buildResult.serveStrategy;
   } catch (error) {
