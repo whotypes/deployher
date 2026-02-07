@@ -3,9 +3,27 @@
 FROM oven/bun:1.3.5 AS base
 WORKDIR /usr/src/app
 
-# unzip is required by deployment workers when extracting GitHub zipballs.
+# Build worker toolchain:
+# - unzip: extract GitHub zipballs
+# - nodejs/npm/pnpm: Node ecosystem package managers
+# - python3/pip/venv + uv + poetry: Python ecosystem package managers
 RUN apt-get update -qq \
-  && apt-get install -y --no-install-recommends ca-certificates unzip \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    unzip \
+    nodejs \
+    npm \
+    python3 \
+    python3-pip \
+    python3-venv \
+  && ln -sf /usr/bin/python3 /usr/local/bin/python \
+  && ln -sf /usr/bin/pip3 /usr/local/bin/pip \
+  && npm install -g pnpm@10 yarn@1 \
+  && curl -LsSf https://astral.sh/uv/install.sh | sh \
+  && mv /root/.local/bin/uv /usr/local/bin/uv \
+  && python3 -m pip install --no-cache-dir --break-system-packages poetry==1.8.4 \
   && rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps-dev
@@ -35,6 +53,7 @@ COPY --from=deps-prod /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/src ./src
 COPY --from=builder /usr/src/app/drizzle ./drizzle
 COPY --from=builder /usr/src/app/dist/client ./dist/client
+COPY --from=builder /usr/src/app/examples ./examples
 COPY --from=builder /usr/src/app/auth.ts ./auth.ts
 COPY --from=builder /usr/src/app/migrate.ts ./migrate.ts
 COPY --from=builder /usr/src/app/package.json ./package.json
