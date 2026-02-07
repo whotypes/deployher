@@ -17,6 +17,19 @@
 
 Pdploy is a self-hosted deployment platform for web applications. It uses [bun], [drizzle], [postgres], [redis], [garage] (S3-compatible storage), and [docker]. You connect GitHub repos, trigger builds, and serve previews via subdomain or path.
 
+## Build toolchains in Docker
+
+The app container includes the build tools required by the deployment worker:
+
+- Bun
+- Node.js + npm + pnpm + yarn
+- Python 3 + pip
+- uv
+- Poetry
+- `unzip`, `curl`, and `git`
+
+This lets Node and Python deployment strategies run directly inside the app container.
+
 ## Quick start
 
 1. Install [Docker][docker-get] (and [Docker Compose][compose-install] if not bundled).
@@ -44,6 +57,19 @@ bun run migrate && bun run seed && bun run dev
 ```
 
 App: `http://localhost:3000`. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. See [docs/SETUP.md](docs/SETUP.md) for details.
+
+## Example projects
+
+Ready-to-use sample repos live in `/examples`:
+
+- `examples/node-npm-static`
+- `examples/node-pnpm-static`
+- `examples/node-bun-static`
+- `examples/node-yarn-static`
+- `examples/python-mkdocs-pip`
+- `examples/python-pdploy-pip`
+
+See `examples/README.md` for usage.
 
 ## Stack
 

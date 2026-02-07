@@ -21,6 +21,9 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 > [!NOTE]
 > You do not need Bun if you run the full stack in Docker. Use the [Full stack in Docker](#full-stack-in-docker) workflow.
 
+> [!NOTE]
+> The app Docker image includes Bun, Node.js, npm, pnpm, yarn, Python 3, pip, uv, Poetry, and `unzip` so deployment workers can build Node and Python repositories inside the container.
+
 > [!IMPORTANT]
 > 4 GB RAM is recommended for running the full stack.
 
@@ -188,11 +191,24 @@ Deployments can be viewed in two ways:
 
 `/preview/<deploymentId>` redirects to the subdomain preview URL. Build logs and deployment detail pages link to the subdomain URL using `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT`.
 
+## Example deployment repos
+
+Sample repositories for local development are in `examples/`:
+
+- `examples/node-npm-static`
+- `examples/node-pnpm-static`
+- `examples/node-bun-static`
+- `examples/node-yarn-static`
+- `examples/python-mkdocs-pip`
+- `examples/python-pdploy-pip`
+
+Use one of these as a starting point, push it to GitHub, then create a pdploy project pointing at that repo.
+
 ## Build pipeline and workers
 
 Deployments are queued in Redis and processed by build workers (Bun `Worker` threads). Worker count is `BUILD_WORKERS` (default `2`). If `REDIS_URL` is not set or Redis is unreachable, workers do not start and deployments stay queued.
 
-Each worker: dequeues a job, clones the repo from GitHub (zipball), detects package manager from lockfile (`bun.lock`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`), runs install and `build`, looks for output in `dist`, `build`, `out`, `.next`, or `public`, uploads artifacts to S3 under the deployment's `artifactPrefix`, updates deployment status and preview URL. Logs are streamed to Redis pub/sub and persisted to S3; the UI streams from the same channel.
+Each worker: dequeues a job, clones the repo from GitHub (zipball), detects build strategy (Node or Python), installs dependencies via the relevant package manager, runs build, locates output artifacts, uploads them to S3 under the deployment's `artifactPrefix`, and updates deployment status and preview URL. Logs are streamed to Redis pub/sub and persisted to S3; the UI streams from the same channel.
 
 ## Database and migrations
 
