@@ -11,7 +11,7 @@ export type PythonPackageManager = {
 type PythonPackageManagerDetector = {
   name: PythonPackageManagerName;
   lockfiles: string[];
-  buildSpec: () => PythonPackageManager;
+  buildSpec: (pythonCommand: string) => PythonPackageManager;
 };
 
 const PYTHON_PACKAGE_MANAGER_DETECTORS: PythonPackageManagerDetector[] = [
@@ -34,21 +34,32 @@ const PYTHON_PACKAGE_MANAGER_DETECTORS: PythonPackageManagerDetector[] = [
   {
     name: "pip",
     lockfiles: ["requirements.txt"],
-    buildSpec: () => ({
+    buildSpec: (pythonCommand) => ({
       name: "pip",
-      install: ["python", "-m", "pip", "install", "-r", "requirements.txt"]
+      install: [pythonCommand, "-m", "pip", "install", "-r", "requirements.txt"]
     })
   }
 ];
 
+export const resolvePythonCommand = (runtime: BuildRuntime): string => {
+  const python = runtime.which("python");
+  if (python) return "python";
+
+  const python3 = runtime.which("python3");
+  if (python3) return "python3";
+
+  throw new Error("Python executable not found in $PATH (tried: python, python3)");
+};
+
 export const detectPythonPackageManager = async (
   repoDir: string,
-  runtime: BuildRuntime
+  runtime: BuildRuntime,
+  pythonCommand: string
 ): Promise<PythonPackageManager> => {
   for (const detector of PYTHON_PACKAGE_MANAGER_DETECTORS) {
     for (const lockfile of detector.lockfiles) {
       if (await runtime.exists(path.join(repoDir, lockfile))) {
-        return detector.buildSpec();
+        return detector.buildSpec(pythonCommand);
       }
     }
   }

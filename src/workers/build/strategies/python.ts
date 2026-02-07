@@ -1,5 +1,5 @@
 import path from "path";
-import { detectPythonPackageManager } from "../packageManagers/python";
+import { detectPythonPackageManager, resolvePythonCommand } from "../packageManagers/python";
 import type { BuildStrategy } from "../types";
 
 type PyprojectToml = {
@@ -42,7 +42,10 @@ export const pythonBuildStrategy: BuildStrategy = {
       (await runtime.exists(path.join(repoDir, "requirements.txt")));
   },
   async build(repoDir, ctx, runtime) {
-    const manager = await detectPythonPackageManager(repoDir, runtime);
+    const pythonCommand = resolvePythonCommand(runtime);
+    ctx.log(`Using Python executable: ${pythonCommand}`);
+
+    const manager = await detectPythonPackageManager(repoDir, runtime, pythonCommand);
     ctx.log(`Using ${manager.name} for Python dependency install`);
 
     const env = {
@@ -51,8 +54,38 @@ export const pythonBuildStrategy: BuildStrategy = {
       PYTHONUNBUFFERED: "1"
     };
 
-    ctx.log(`Installing dependencies (${manager.install.join(" ")})`);
-    const install = await runtime.runCommand(manager.install, { cwd: repoDir, env });
+    let buildPythonCommand = pythonCommand;
+    let installCommand = manager.install;
+    let commandEnv = env;
+
+    if (manager.name === "pip") {
+      const venvDir = path.join(repoDir, ".pdploy-venv");
+      const venvBinDir = path.join(venvDir, "bin");
+      const venvPython = path.join(venvBinDir, "python");
+
+      ctx.log(`Creating virtual environment (${pythonCommand} -m venv ${venvDir})`);
+      const venvCreate = await runtime.runCommand([pythonCommand, "-m", "venv", venvDir], {
+        cwd: repoDir,
+        env
+      });
+      if (venvCreate.stdout) ctx.logs.push(venvCreate.stdout.trim());
+      if (venvCreate.stderr) ctx.logs.push(venvCreate.stderr.trim());
+      if (venvCreate.code !== 0) {
+        throw new Error(`Virtualenv creation failed: ${venvCreate.stderr || venvCreate.stdout}`);
+      }
+
+      buildPythonCommand = venvPython;
+      installCommand = [venvPython, "-m", "pip", "install", "-r", "requirements.txt"];
+      commandEnv = {
+        ...env,
+        VIRTUAL_ENV: venvDir,
+        PATH: `${venvBinDir}${path.delimiter}${env.PATH ?? ""}`
+      };
+      ctx.log(`Using virtual environment: ${venvDir}`);
+    }
+
+    ctx.log(`Installing dependencies (${installCommand.join(" ")})`);
+    const install = await runtime.runCommand(installCommand, { cwd: repoDir, env: commandEnv });
     if (install.stdout) ctx.logs.push(install.stdout.trim());
     if (install.stderr) ctx.logs.push(install.stderr.trim());
     if (install.code !== 0) {
@@ -63,7 +96,7 @@ export const pythonBuildStrategy: BuildStrategy = {
     let outputDir: string | null = null;
 
     if (await runtime.exists(path.join(repoDir, "mkdocs.yml"))) {
-      buildCommand = ["python", "-m", "mkdocs", "build", "--clean"];
+      buildCommand = [buildPythonCommand, "-m", "mkdocs", "build", "--clean"];
       outputDir = "site";
       ctx.log("Detected mkdocs.yml; using default MkDocs build settings");
     } else {
@@ -83,7 +116,7 @@ export const pythonBuildStrategy: BuildStrategy = {
     }
 
     ctx.log(`Running build (${buildCommand.join(" ")})`);
-    const build = await runtime.runCommand(buildCommand, { cwd: repoDir, env });
+    const build = await runtime.runCommand(buildCommand, { cwd: repoDir, env: commandEnv });
     if (build.stdout) ctx.logs.push(build.stdout.trim());
     if (build.stderr) ctx.logs.push(build.stderr.trim());
     if (build.code !== 0) {

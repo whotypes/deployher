@@ -23,6 +23,7 @@ export type RunCommandResult = {
 export type BuildRuntime = {
   exists: (filePath: string) => Promise<boolean>;
   isDirectory: (filePath: string) => Promise<boolean>;
+  which: (command: string) => string | null;
   readJson: <T>(filePath: string) => Promise<T | null>;
   readToml: <T>(filePath: string) => Promise<T | null>;
   runCommand: (
