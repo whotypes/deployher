@@ -35,6 +35,8 @@ services:
       dockerfile: docker/build-worker.Dockerfile
     user: "0:0"
     restart: unless-stopped
+    deploy:
+      replicas: ${BUILD_WORKERS:-4}
     depends_on:
       node-builder:
         condition: service_completed_successfully
@@ -53,7 +55,9 @@ services:
       DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
-      BUILD_NODE_IMAGE: ${NEXUS_REGISTRY:-localhost:8082}/pdploy-node-builder:latest
+      BUILD_NODE_IMAGE: ${BUILD_NODE_BUILDER_IMAGE:-pdploy-node-builder:latest}
+      BUILD_RECLAIM_IDLE_MS: ${BUILD_RECLAIM_IDLE_MS:-60000}
+      BUILD_ACCOUNT_MAX_CONCURRENT: ${BUILD_ACCOUNT_MAX_CONCURRENT:-4}
       BUILD_WORKDIR: /tmp/pdploy-builds
       DEV_DOMAIN: localhost
       DEV_PROTOCOL: http
