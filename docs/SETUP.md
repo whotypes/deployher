@@ -228,7 +228,7 @@ Deployments are queued in Redis and processed by a standalone worker process (`s
 
 Each worker process: dequeues a job, clones the repo from GitHub (zipball), detects build strategy (Node or Python), installs dependencies via the relevant package manager, runs build, locates output artifacts, uploads them to S3 under the deployment's `artifactPrefix`, and updates deployment status and preview URL. Logs are streamed to Redis pub/sub and persisted to S3; the UI streams from the same channel.
 
-In addition to existing static artifact uploads, the worker now builds and uploads a standardized OCI runtime artifact (`runtime-image.oci.tar`) at `<artifactPrefix>/runtime-image.oci.tar`. This keeps current static preview behavior intact while standardizing deployment outputs for future long-running server workflows.
+In addition to existing static artifact uploads, the worker builds and uploads a container image tarball (`runtime-image.tar`, Docker save format) at `<artifactPrefix>/runtime-image.tar`. This keeps current static preview behavior intact while standardizing deployment outputs for future long-running server workflows.
 
 ## Database and migrations
 

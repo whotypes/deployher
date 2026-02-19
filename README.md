@@ -21,6 +21,7 @@ Pdploy is a self-hosted deployment platform for web applications. It uses [bun],
 
 Deployments are processed by a dedicated build worker service (`build-worker`), not by the app process. The worker has Docker socket access and the full build toolchain, while the app container stays focused on API + web traffic.
 The worker talks to the host Docker daemon through `dockerode` over `/var/run/docker.sock`.
+The queue uses Redis Streams consumer groups, so multiple worker replicas can process deployments concurrently.
 
 The Compose stack includes:
 
@@ -28,9 +29,15 @@ The Compose stack includes:
 - `build-worker`: Redis consumer that runs builds via Docker
 - `pdploy-node-builder:latest`: Node build image with `pnpm` pre-activated via Corepack
 
-## OCI runtime artifacts
+Scale workers:
 
-Each deployment now also emits a standardized OCI runtime artifact (`runtime-image.oci.tar`) under the deployment artifact prefix in object storage. Static deployments continue to upload regular static files for existing preview behavior, so current support remains unchanged while OCI artifacts are produced under the hood for future server runtime orchestration.
+```bash
+docker compose up -d --scale build-worker=4
+```
+
+## Runtime image artifacts
+
+Each deployment emits a container image tarball (`runtime-image.tar`, Docker save format) under the deployment artifact prefix in object storage. Static deployments continue to upload regular static files for existing preview behavior. The image tarball is compatible with `docker load`, containerd, and other runtimes.
 
 ## Quick start
 
@@ -85,7 +92,7 @@ See `examples/README.md` for usage.
 | HTTP / SSR | Bun.serve, React server-rendered pages |
 | Auth | [Better Auth][better-auth] (session, GitHub OAuth) |
 | Database | [postgres] with [drizzle] |
-| Queue | [redis] (BullMQ-style job dequeue) |
+| Queue | [redis] (Streams + consumer groups) |
 | Storage | [garage] (S3-compatible); build artifacts and preview assets |
 | Infra | [docker] and [docker-compose] |
 
