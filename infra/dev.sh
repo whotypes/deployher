@@ -321,7 +321,66 @@ verify_build_worker_docker_access() {
   echo "Docker access OK inside build-worker container."
 }
 
+read_nexus_env() {
+  if [[ ! -f "$BACKEND_ENV_FILE" ]]; then
+    return 1
+  fi
+  NEXUS_REGISTRY="$(grep -E '^NEXUS_REGISTRY=' "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  NEXUS_USER="$(grep -E '^NEXUS_USER=' "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  NEXUS_PASSWORD="$(grep -E '^NEXUS_PASSWORD=' "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  [[ -n "$NEXUS_REGISTRY" ]] && [[ -n "$NEXUS_USER" ]] && [[ -n "$NEXUS_PASSWORD" ]]
+}
+
+ensure_nexus_login() {
+  if ! read_nexus_env; then
+    return 0
+  fi
+
+  echo "Logging in to Nexus registry $NEXUS_REGISTRY..."
+  if echo "$NEXUS_PASSWORD" | docker login "$NEXUS_REGISTRY" -u "$NEXUS_USER" --password-stdin 2>/dev/null; then
+    echo "Nexus login OK."
+  else
+    echo "Nexus login failed. Build-worker may not be able to pull images from $NEXUS_REGISTRY."
+  fi
+}
+
+ensure_nexus_images() {
+  if ! read_nexus_env; then
+    return 0
+  fi
+
+  echo "Syncing build images to Nexus $NEXUS_REGISTRY..."
+
+  local -a images=(
+    "node:22-bookworm"
+    "oven/bun:1"
+    "python:3.12-bookworm"
+    "nginx:alpine"
+  )
+
+  for img in "${images[@]}"; do
+    echo "Pushing $img..."
+    docker pull "$img" 2>/dev/null || true
+    docker tag "$img" "$NEXUS_REGISTRY/$img"
+    docker push "$NEXUS_REGISTRY/$img"
+  done
+
+  echo "Building pdploy-node-builder..."
+  docker build \
+    -f "$SCRIPT_DIR/../docker/node-builder.Dockerfile" \
+    --build-arg "NEXUS_REGISTRY=$NEXUS_REGISTRY" \
+    -t "$NEXUS_REGISTRY/pdploy-node-builder:latest" \
+    "$SCRIPT_DIR/.."
+
+  echo "Pushing pdploy-node-builder..."
+  docker push "$NEXUS_REGISTRY/pdploy-node-builder:latest"
+
+  echo "Nexus images synced."
+}
+
 ensure_app_stack() {
+  ensure_nexus_login
+  ensure_nexus_images
   echo "Building and starting app services..."
   dc up -d --build node-builder app build-worker
   wait_for_app
