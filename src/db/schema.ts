@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, uuid, boolean } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp, uuid, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
  * Better Auth core schema (user, session, account, verification).
@@ -74,6 +74,31 @@ export const projects = pgTable("projects", {
   currentDeploymentId: uuid("current_deployment_id")
 });
 
+export const projectEnvs = pgTable(
+  "project_envs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    isPublic: boolean("is_public").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    index("project_envs_project_id_idx").on(table.projectId),
+    uniqueIndex("project_envs_project_id_key_idx").on(table.projectId, table.key)
+  ]
+);
+
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+
 export const deployments = pgTable("deployments", {
   id: uuid("id").primaryKey().defaultRandom(),
   shortId: text("short_id").notNull().unique(),
@@ -89,6 +114,8 @@ export const deployments = pgTable("deployments", {
     .$type<"static" | "server">(),
   status: text("status").notNull().default("queued").$type<"queued" | "building" | "success" | "failed">(),
   buildLogKey: text("build_log_key"),
+  runtimeImageRef: text("runtime_image_ref"),
+  runtimeImageArtifactKey: text("runtime_image_artifact_key"),
   previewUrl: text("preview_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   finishedAt: timestamp("finished_at", { withTimezone: true })
