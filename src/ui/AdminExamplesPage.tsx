@@ -5,6 +5,7 @@ import { Layout } from "./Layout";
 type BuildSettings = {
   memory: string;
   cpus: string;
+  accountMaxConcurrent: number;
 };
 
 type ExampleDeployment = {
@@ -72,9 +73,9 @@ const AdminExamplesPage = ({ data }: { data: AdminExamplesPageData }) => (
     </p>
 
     <div className="box mb-4">
-      <h2 className="subtitle is-5 mb-3">Build Container</h2>
+      <h2 className="subtitle is-5 mb-3">Build settings</h2>
       <p className="mb-3" style={{ color: "#888", fontSize: "0.9rem" }}>
-        Memory and CPU limits for Docker build containers (e.g. 1g, 512m, 0.5).
+        Container limits (memory, CPUs) and per-account concurrent build limit.
       </p>
       <form id="build-settings-form" className="field is-grouped" style={{ flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
         <div className="field">
@@ -106,6 +107,24 @@ const AdminExamplesPage = ({ data }: { data: AdminExamplesPageData }) => (
               defaultValue={data.buildSettings.cpus}
               placeholder="0.5"
               aria-label="Build container CPU limit"
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="build-account-max-concurrent" className="label is-small">
+            Max concurrent builds per account
+          </label>
+          <div className="control">
+            <input
+              id="build-account-max-concurrent"
+              type="number"
+              name="accountMaxConcurrent"
+              className="input"
+              min={0}
+              max={100}
+              defaultValue={data.buildSettings.accountMaxConcurrent}
+              placeholder="1"
+              aria-label="Max concurrent builds per account"
             />
           </div>
         </div>

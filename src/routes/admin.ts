@@ -109,6 +109,7 @@ export const getBuildSettings = async (_req: RequestWithParamsAndSession) => {
 
 const MEMORY_REGEX = /^\d+(\.\d+)?[kmgKMG]?$/;
 const CPUS_REGEX = /^\d+(\.\d+)?$/;
+const MAX_ACCOUNT_CONCURRENT = 100;
 
 export const updateBuildSettings = async (req: RequestWithParamsAndSession) => {
   let body: Partial<BuildContainerConfig>;
@@ -137,6 +138,16 @@ export const updateBuildSettings = async (req: RequestWithParamsAndSession) => {
       );
     }
     updates.cpus = val;
+  }
+  if (body.accountMaxConcurrent !== undefined) {
+    const n = Number(body.accountMaxConcurrent);
+    if (!Number.isFinite(n) || n < 0 || n > MAX_ACCOUNT_CONCURRENT) {
+      return json(
+        { error: `accountMaxConcurrent must be 0–${MAX_ACCOUNT_CONCURRENT}` },
+        { status: 400 }
+      );
+    }
+    updates.accountMaxConcurrent = Math.floor(n);
   }
   if (Object.keys(updates).length === 0) {
     return json({ error: "No valid fields to update" }, { status: 400 });

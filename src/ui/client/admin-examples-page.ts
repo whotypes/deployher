@@ -95,16 +95,25 @@ document.addEventListener("DOMContentLoaded", () => {
       const formData = new FormData(buildSettingsForm);
       const memory = (formData.get("memory") as string)?.trim() ?? "";
       const cpus = (formData.get("cpus") as string)?.trim() ?? "";
+      const accountMaxConcurrentRaw = (formData.get("accountMaxConcurrent") as string)?.trim() ?? "";
+      const accountMaxConcurrent = accountMaxConcurrentRaw ? parseInt(accountMaxConcurrentRaw, 10) : undefined;
       saveBuildSettingsBtn.classList.add("is-loading");
       try {
+        const payload: { memory?: string; cpus?: string; accountMaxConcurrent?: number } = {};
+        if (memory) payload.memory = memory;
+        if (cpus) payload.cpus = cpus;
+        if (accountMaxConcurrent !== undefined && !isNaN(accountMaxConcurrent)) {
+          payload.accountMaxConcurrent = Math.max(0, Math.min(100, accountMaxConcurrent));
+        }
         const response = await fetch("/api/admin/build-settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ memory, cpus })
+          body: JSON.stringify(payload)
         });
         const data = (await response.json().catch(() => ({}))) as {
           memory?: string;
           cpus?: string;
+          accountMaxConcurrent?: number;
           error?: string;
         };
         if (!response.ok) {
@@ -118,6 +127,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.cpus !== undefined) {
           const cpusInput = buildSettingsForm.querySelector<HTMLInputElement>('[name="cpus"]');
           if (cpusInput) cpusInput.value = data.cpus;
+        }
+        if (data.accountMaxConcurrent !== undefined) {
+          const concInput = buildSettingsForm.querySelector<HTMLInputElement>('[name="accountMaxConcurrent"]');
+          if (concInput) concInput.value = String(data.accountMaxConcurrent);
         }
       } catch (err) {
         showNotification(

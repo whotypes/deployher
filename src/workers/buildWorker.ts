@@ -44,7 +44,6 @@ const RUNTIME_STATIC_BASE_IMAGE = (process.env.RUNTIME_STATIC_BASE_IMAGE ?? "ngi
 const BUILD_WORKDIR_ROOT = (process.env.BUILD_WORKDIR ?? path.join(tmpdir(), "pdploy-builds")).trim();
 const DOCKER_SOCKET_PATH = (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock").trim() || "/var/run/docker.sock";
 const CONTAINER_REPO_DIR = "/workspace";
-const BUILD_ACCOUNT_MAX_CONCURRENT = config.build.accountMaxConcurrent;
 const BUILD_ACCOUNT_SLOT_TTL_MS = Math.max(1000, config.build.accountSlotTtlSeconds * 1000);
 const BUILD_RECLAIM_IDLE_MS = config.build.reclaimIdleMs;
 const BUILD_PENDING_HEARTBEAT_MS = config.build.pendingHeartbeatMs;
@@ -1117,11 +1116,13 @@ export const runLoop = async () => {
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
     try {
       const jobUserId = job.userId?.trim();
-      if (jobUserId && BUILD_ACCOUNT_MAX_CONCURRENT > 0) {
+      const buildConfig = await getBuildContainerConfig();
+      const accountMaxConcurrent = buildConfig.accountMaxConcurrent;
+      if (jobUserId && accountMaxConcurrent > 0) {
         const acquired = await acquireAccountSlot(
           jobUserId,
           job.deploymentId,
-          BUILD_ACCOUNT_MAX_CONCURRENT,
+          accountMaxConcurrent,
           BUILD_ACCOUNT_SLOT_TTL_MS
         );
 
@@ -1147,7 +1148,10 @@ export const runLoop = async () => {
 
       await processJob(job);
     } catch (error) {
-      console.error("Build failed:", error);
+      console.error("Build failed:", error instanceof Error ? error.message : String(error));
+      if (error instanceof Error && error.stack) {
+        console.error(error.stack);
+      }
     } finally {
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
