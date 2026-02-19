@@ -86,6 +86,50 @@ const renderExampleRow = (example: ExampleRow): string => {
 document.addEventListener("DOMContentLoaded", () => {
   const tbody = getEl("admin-examples-tbody");
   const refreshBtn = getEl("refresh-admin-examples") as HTMLButtonElement | null;
+  const buildSettingsForm = getEl("build-settings-form") as HTMLFormElement | null;
+  const saveBuildSettingsBtn = getEl("save-build-settings") as HTMLButtonElement | null;
+
+  if (buildSettingsForm && saveBuildSettingsBtn) {
+    buildSettingsForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const formData = new FormData(buildSettingsForm);
+      const memory = (formData.get("memory") as string)?.trim() ?? "";
+      const cpus = (formData.get("cpus") as string)?.trim() ?? "";
+      saveBuildSettingsBtn.classList.add("is-loading");
+      try {
+        const response = await fetch("/api/admin/build-settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ memory, cpus })
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          memory?: string;
+          cpus?: string;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(data.error ?? "Failed to save build settings");
+        }
+        showNotification("Build settings saved", "is-success");
+        if (data.memory !== undefined) {
+          const memInput = buildSettingsForm.querySelector<HTMLInputElement>('[name="memory"]');
+          if (memInput) memInput.value = data.memory;
+        }
+        if (data.cpus !== undefined) {
+          const cpusInput = buildSettingsForm.querySelector<HTMLInputElement>('[name="cpus"]');
+          if (cpusInput) cpusInput.value = data.cpus;
+        }
+      } catch (err) {
+        showNotification(
+          err instanceof Error ? err.message : "Failed to save build settings",
+          "is-danger"
+        );
+      } finally {
+        saveBuildSettingsBtn.classList.remove("is-loading");
+      }
+    });
+  }
+
   if (!tbody) return;
 
   let pollInterval: ReturnType<typeof setInterval> | null = null;

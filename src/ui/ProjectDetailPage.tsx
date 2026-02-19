@@ -89,198 +89,256 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => (
       </div>
     </div>
 
-    <div className="columns">
-      <div className="column is-8">
-        <div className="box">
-          <h3 className="subtitle is-5">Project Info</h3>
-          <table className="table is-fullwidth">
-            <tbody>
-              <tr>
-                <th style={{ width: "150px" }}>Repository</th>
-                <td>
-                  <a href={data.project.repoUrl} target="_blank" rel="noopener noreferrer">
-                    {data.project.repoUrl.replace("https://github.com/", "")}
-                  </a>
-                </td>
-              </tr>
-              <tr>
-                <th>Branch</th>
-                <td>{data.project.branch}</td>
-              </tr>
-              <tr>
-                <th>Created</th>
-                <td>{new Date(data.project.createdAt).toLocaleString()}</td>
-              </tr>
-              <tr>
-                <th>Updated</th>
-                <td>{new Date(data.project.updatedAt).toLocaleString()}</td>
-              </tr>
-              {data.currentPreviewUrl ? (
+    <div className="tabs is-boxed project-detail-tabs" role="tablist" aria-label="Project detail sections">
+      <ul>
+        <li className="is-active">
+          <button id="project-tab-btn-overview" type="button" className="project-tab-btn is-active" role="tab" aria-selected="true">
+            Overview
+          </button>
+        </li>
+        <li>
+          <button id="project-tab-btn-env" type="button" className="project-tab-btn" role="tab" aria-selected="false">
+            Environment Variables
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <section id="project-tab-overview" role="tabpanel" aria-labelledby="project-tab-btn-overview">
+      <div className="columns">
+        <div className="column is-8">
+          <div className="box">
+            <h3 className="subtitle is-5">Project Info</h3>
+            <table className="table is-fullwidth">
+              <tbody>
                 <tr>
-                  <th>Preview URL</th>
+                  <th style={{ width: "150px" }}>Repository</th>
                   <td>
-                    <a href={data.currentPreviewUrl} target="_blank" rel="noopener noreferrer">
-                      {data.currentPreviewUrl}
+                    <a href={data.project.repoUrl} target="_blank" rel="noopener noreferrer">
+                      {data.project.repoUrl.replace("https://github.com/", "")}
                     </a>
                   </td>
                 </tr>
-              ) : null}
+                <tr>
+                  <th>Branch</th>
+                  <td>{data.project.branch}</td>
+                </tr>
+                <tr>
+                  <th>Created</th>
+                  <td>{new Date(data.project.createdAt).toLocaleString()}</td>
+                </tr>
+                <tr>
+                  <th>Updated</th>
+                  <td>{new Date(data.project.updatedAt).toLocaleString()}</td>
+                </tr>
+                {data.currentPreviewUrl ? (
+                  <tr>
+                    <th>Preview URL</th>
+                    <td>
+                      <a href={data.currentPreviewUrl} target="_blank" rel="noopener noreferrer">
+                        {data.currentPreviewUrl}
+                      </a>
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="box">
+            <h3 className="subtitle is-5">Deployments</h3>
+            {data.deployments.length === 0 ? (
+              <p style={{ color: "#666" }}>No deployments yet. Click "Deploy" to create one.</p>
+            ) : (
+              <table className="table is-fullwidth is-hoverable">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Preview</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.deployments.map((deployment) => (
+                    <tr key={deployment.id}>
+                      <td>
+                        <a href={`/deployments/${deployment.id}`}>{deployment.shortId}</a>
+                        {deployment.id === data.project.currentDeploymentId ? (
+                          <span className="tag is-info ml-2" style={{ fontSize: "0.625rem" }}>
+                            current
+                          </span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span className={`tag ${getStatusClass(deployment.status)}`}>
+                          {deployment.status}
+                        </span>
+                      </td>
+                      <td>{new Date(deployment.createdAt).toLocaleString()}</td>
+                      <td>
+                        {deployment.status === "success" && deployment.previewUrl ? (
+                          <a
+                            href={deployment.previewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="button is-small is-link"
+                          >
+                            Visit
+                          </a>
+                        ) : (
+                          <span style={{ color: "#444" }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        <div className="column is-4">
+          <div className="box">
+            <h3 className="subtitle is-5">Settings</h3>
+            <div className="field">
+              <label className="label" htmlFor="deploy-env-file">
+                Deployment .env (optional)
+              </label>
+              <div className="control">
+                <textarea
+                  id="deploy-env-file"
+                  className="textarea"
+                  rows={7}
+                  placeholder={"API_URL=https://example.com\nPUBLIC_KEY=abc123"}
+                  aria-label="Deployment .env content"
+                />
+              </div>
+              <p className="help">
+                Used on next deploy only. Max 64 KB.
+              </p>
+              <div className="control mt-2">
+                <input
+                  id="deploy-env-upload"
+                  className="input"
+                  type="file"
+                  accept=".env,text/plain"
+                  aria-label="Upload env file"
+                />
+              </div>
+            </div>
+
+            <form id="edit-project-form">
+              <div className="field">
+                <label className="label" htmlFor="edit-name">
+                  Name
+                </label>
+                <div className="control">
+                  <input
+                    id="edit-name"
+                    className="input"
+                    type="text"
+                    placeholder={data.project.name}
+                    aria-label="Project name"
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="edit-repo-url">
+                  Repository URL
+                </label>
+                <div className="control">
+                  <input
+                    id="edit-repo-url"
+                    className="input"
+                    type="url"
+                    placeholder={data.project.repoUrl}
+                    aria-label="GitHub repository URL"
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="edit-branch">
+                  Branch
+                </label>
+                <div className="control">
+                  <input
+                    id="edit-branch"
+                    className="input"
+                    type="text"
+                    placeholder={data.project.branch}
+                    aria-label="Branch to deploy"
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <div className="control">
+                  <button type="submit" className="button is-info is-fullwidth">
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div className="box">
+            <h3 className="subtitle is-5" style={{ color: "#f00" }}>
+              Danger Zone
+            </h3>
+            <p className="mb-3" style={{ color: "#888" }}>
+              Deleting a project will also delete all its deployments.
+            </p>
+            <button id="delete-btn" type="button" className="button is-danger is-fullwidth">
+              Delete Project
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="project-tab-env"
+      role="tabpanel"
+      aria-labelledby="project-tab-btn-env"
+      style={{ display: "none" }}
+    >
+      <div className="box">
+        <h3 className="subtitle is-5">Environment Variables</h3>
+        <p className="help mb-3">
+          Public variables are injected during build. Private variables are stored for future runtime use.
+        </p>
+        <div className="table-container">
+          <table className="table is-fullwidth env-editor-table">
+            <thead>
+              <tr>
+                <th style={{ width: "24%" }}>Key</th>
+                <th>Value</th>
+                <th style={{ width: "20%" }}>Scope</th>
+                <th style={{ width: "120px" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="project-env-rows">
+              <tr id="project-env-empty">
+                <td colSpan={4} style={{ color: "#666" }}>
+                  No environment variables yet.
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
-
-        <div className="box">
-          <h3 className="subtitle is-5">Deployments</h3>
-          {data.deployments.length === 0 ? (
-            <p style={{ color: "#666" }}>No deployments yet. Click "Deploy" to create one.</p>
-          ) : (
-            <table className="table is-fullwidth is-hoverable">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Preview</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.deployments.map((deployment) => (
-                  <tr key={deployment.id}>
-                    <td>
-                      <a href={`/deployments/${deployment.id}`}>{deployment.shortId}</a>
-                      {deployment.id === data.project.currentDeploymentId ? (
-                        <span className="tag is-info ml-2" style={{ fontSize: "0.625rem" }}>
-                          current
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>
-                      <span className={`tag ${getStatusClass(deployment.status)}`}>
-                        {deployment.status}
-                      </span>
-                    </td>
-                    <td>{new Date(deployment.createdAt).toLocaleString()}</td>
-                    <td>
-                      {deployment.status === "success" && deployment.previewUrl ? (
-                        <a
-                          href={deployment.previewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="button is-small is-link"
-                        >
-                          Visit
-                        </a>
-                      ) : (
-                        <span style={{ color: "#444" }}>—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      <div className="column is-4">
-        <div className="box">
-          <h3 className="subtitle is-5">Settings</h3>
-          <div className="field">
-            <label className="label" htmlFor="deploy-env-file">
-              Deployment .env (optional)
-            </label>
-            <div className="control">
-              <textarea
-                id="deploy-env-file"
-                className="textarea"
-                rows={7}
-                placeholder={"API_URL=https://example.com\nPUBLIC_KEY=abc123"}
-                aria-label="Deployment .env content"
-              />
-            </div>
-            <p className="help">
-              Used on next deploy only. Max 64 KB.
-            </p>
-            <div className="control mt-2">
-              <input
-                id="deploy-env-upload"
-                className="input"
-                type="file"
-                accept=".env,text/plain"
-                aria-label="Upload env file"
-              />
-            </div>
-          </div>
-
-          <form id="edit-project-form">
-            <div className="field">
-              <label className="label" htmlFor="edit-name">
-                Name
-              </label>
-              <div className="control">
-                <input
-                  id="edit-name"
-                  className="input"
-                  type="text"
-                  placeholder={data.project.name}
-                  aria-label="Project name"
-                />
-              </div>
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="edit-repo-url">
-                Repository URL
-              </label>
-              <div className="control">
-                <input
-                  id="edit-repo-url"
-                  className="input"
-                  type="url"
-                  placeholder={data.project.repoUrl}
-                  aria-label="GitHub repository URL"
-                />
-              </div>
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="edit-branch">
-                Branch
-              </label>
-              <div className="control">
-                <input
-                  id="edit-branch"
-                  className="input"
-                  type="text"
-                  placeholder={data.project.branch}
-                  aria-label="Branch to deploy"
-                />
-              </div>
-            </div>
-
-            <div className="field">
-              <div className="control">
-                <button type="submit" className="button is-info is-fullwidth">
-                  Save Changes
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-
-        <div className="box">
-          <h3 className="subtitle is-5" style={{ color: "#f00" }}>
-            Danger Zone
-          </h3>
-          <p className="mb-3" style={{ color: "#888" }}>
-            Deleting a project will also delete all its deployments.
-          </p>
-          <button id="delete-btn" type="button" className="button is-danger is-fullwidth">
-            Delete Project
+        <div className="buttons mt-4">
+          <button id="project-env-add" type="button" className="button is-info">
+            Add Row
+          </button>
+          <button id="project-env-save" type="button" className="button is-success">
+            Save Variables
           </button>
         </div>
       </div>
-    </div>
+    </section>
   </Layout>
 );
 

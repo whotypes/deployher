@@ -2,6 +2,11 @@ import { renderToReadableStream } from "react-dom/server";
 import type { LayoutUser } from "./Layout";
 import { Layout } from "./Layout";
 
+type BuildSettings = {
+  memory: string;
+  cpus: string;
+};
+
 type ExampleDeployment = {
   id: string;
   shortId: string;
@@ -20,6 +25,7 @@ type ExampleRow = {
 export type AdminExamplesPageData = {
   user?: LayoutUser | null;
   examples: ExampleRow[];
+  buildSettings: BuildSettings;
 };
 
 const getStatusClass = (status?: string) => {
@@ -64,6 +70,54 @@ const AdminExamplesPage = ({ data }: { data: AdminExamplesPageData }) => (
       Run build and deploy for local examples in one click. Open deployment details for logs, or
       visit preview when ready.
     </p>
+
+    <div className="box mb-4">
+      <h2 className="subtitle is-5 mb-3">Build Container</h2>
+      <p className="mb-3" style={{ color: "#888", fontSize: "0.9rem" }}>
+        Memory and CPU limits for Docker build containers (e.g. 1g, 512m, 0.5).
+      </p>
+      <form id="build-settings-form" className="field is-grouped" style={{ flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
+        <div className="field">
+          <label htmlFor="build-memory" className="label is-small">
+            Memory
+          </label>
+          <div className="control">
+            <input
+              id="build-memory"
+              type="text"
+              name="memory"
+              className="input"
+              defaultValue={data.buildSettings.memory}
+              placeholder="1g"
+              aria-label="Build container memory limit"
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="build-cpus" className="label is-small">
+            CPUs
+          </label>
+          <div className="control">
+            <input
+              id="build-cpus"
+              type="text"
+              name="cpus"
+              className="input"
+              defaultValue={data.buildSettings.cpus}
+              placeholder="0.5"
+              aria-label="Build container CPU limit"
+            />
+          </div>
+        </div>
+        <div className="field">
+          <div className="control">
+            <button type="submit" id="save-build-settings" className="button is-info">
+              Save
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
 
     <div className="box">
       <table className="table is-fullwidth">

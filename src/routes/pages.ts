@@ -13,6 +13,7 @@ import { renderNotFoundPage } from "../ui/NotFoundPage";
 import { renderDeploymentDetailPage, type DeploymentDetailData } from "../ui/DeploymentDetailPage";
 import { renderProjectDetailPage, type ProjectDetailData } from "../ui/ProjectDetailPage";
 import { renderProjectsPage, type ProjectsPageData } from "../ui/ProjectsPage";
+import { getBuildContainerConfig } from "../admin/buildSettings";
 import { buildExampleRowsForUser } from "../admin/exampleDeployments";
 import { getDeployment } from "./deployments";
 import { getProject } from "./projects";
@@ -347,7 +348,8 @@ export const adminExamplesPage = async (req: RequestWithParamsAndSession) => {
       email: req.session.user.email,
       image: req.session.user.image ?? null
     },
-    examples: await buildExampleRowsForUser(userId)
+    examples: await buildExampleRowsForUser(userId),
+    buildSettings: await getBuildContainerConfig()
   };
 
   const stream = await renderAdminExamplesPage(data);

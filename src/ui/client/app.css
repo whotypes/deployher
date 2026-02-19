@@ -332,3 +332,35 @@ hr {
 strong {
   color: #ededed;
 }
+
+.project-detail-tabs {
+  margin-bottom: 1.5rem !important;
+}
+
+.project-tab-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font: inherit;
+  margin: 0;
+  padding: 0.5rem 1rem;
+}
+
+.project-tab-btn:hover {
+  color: #ededed;
+}
+
+.project-tab-btn.is-active {
+  color: #ededed;
+}
+
+.env-editor-table th,
+.env-editor-table td {
+  vertical-align: middle;
+}
+
+.env-editor-table .input {
+  font-family: "Geist Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
