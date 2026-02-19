@@ -48,7 +48,8 @@ export const resolvePythonCommand = (runtime: BuildRuntime): string => {
   const python3 = runtime.which("python3");
   if (python3) return "python3";
 
-  throw new Error("Python executable not found in $PATH (tried: python, python3)");
+  // Containerized builds default to python3 even if host-side command probing is unavailable.
+  return "python3";
 };
 
 export const detectPythonPackageManager = async (

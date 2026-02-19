@@ -35,8 +35,8 @@ const NODE_PACKAGE_MANAGER_DETECTORS: NodePackageManagerDetector[] = [
     lockfiles: ["pnpm-lock.yaml"],
     buildSpec: () => ({
       name: "pnpm",
-      install: ["pnpm", "install", "--frozen-lockfile", "--prod=false"],
-      runBuild: ["pnpm", "run", "build"]
+      install: ["corepack", "pnpm", "install", "--frozen-lockfile", "--prod=false"],
+      runBuild: ["corepack", "pnpm", "run", "build"]
     })
   },
   {
@@ -44,8 +44,8 @@ const NODE_PACKAGE_MANAGER_DETECTORS: NodePackageManagerDetector[] = [
     lockfiles: ["yarn.lock"],
     buildSpec: () => ({
       name: "yarn",
-      install: ["yarn", "install", "--frozen-lockfile"],
-      runBuild: ["yarn", "build"]
+      install: ["corepack", "yarn", "install", "--frozen-lockfile"],
+      runBuild: ["corepack", "yarn", "build"]
     })
   },
   {
