@@ -1,7 +1,10 @@
 import "dotenv/config";
 import { defineConfig } from "drizzle-kit";
 
-if (!Bun.env.DATABASE_URL) {
+const bunEnv = typeof Bun !== "undefined" ? Bun.env : undefined;
+const databaseUrl = process.env.DATABASE_URL ?? bunEnv?.DATABASE_URL;
+
+if (!databaseUrl) {
   throw new Error("DATABASE_URL is not set");
 }
 
@@ -10,6 +13,6 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: Bun.env.DATABASE_URL,
+    url: databaseUrl,
   },
 });

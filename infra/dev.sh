@@ -273,6 +273,62 @@ setup_garage_s3() {
   inject_s3_env
 }
 
+wait_for_app() {
+  echo "Waiting for app container..."
+  for _ in {1..45}; do
+    if dc ps --status running --services 2>/dev/null | grep -qx "app"; then
+      echo "App container running."
+      return 0
+    fi
+    sleep 1
+  done
+  echo "App container failed to start in time."
+  dc logs --no-color --tail 200 app || true
+  exit 1
+}
+
+wait_for_build_worker() {
+  echo "Waiting for build-worker container..."
+  for _ in {1..45}; do
+    if dc ps --status running --services 2>/dev/null | grep -qx "build-worker"; then
+      echo "Build-worker container running."
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Build-worker container failed to start in time."
+  dc logs --no-color --tail 200 build-worker || true
+  exit 1
+}
+
+verify_build_worker_docker_access() {
+  echo "Verifying Docker access inside build-worker container..."
+
+  local which_output
+  if ! which_output="$(dc exec -T build-worker sh -lc 'which docker' 2>&1)"; then
+    echo "Docker CLI is not available in build-worker container."
+    echo "$which_output"
+    exit 1
+  fi
+
+  local docker_ps_output
+  if ! docker_ps_output="$(dc exec -T build-worker sh -lc 'docker ps >/dev/null' 2>&1)"; then
+    echo "Build-worker container cannot access Docker daemon via /var/run/docker.sock."
+    echo "$docker_ps_output"
+    exit 1
+  fi
+
+  echo "Docker access OK inside build-worker container."
+}
+
+ensure_app_stack() {
+  echo "Building and starting app services..."
+  dc up -d --build node-builder app build-worker
+  wait_for_app
+  wait_for_build_worker
+  verify_build_worker_docker_access
+}
+
 ensure_stack() {
   ensure_garage_env
   dc up -d garage postgres redis
@@ -286,7 +342,8 @@ cmd_start() {
   ensure_stack
   bun "$SCRIPT_DIR/../migrate.ts"
   bun "$SCRIPT_DIR/../seed.ts"
-  echo "Stack started, DB migrated, data seeded."
+  ensure_app_stack
+  echo "Stack started (infra + app + build-worker), DB migrated, data seeded."
 }
 
 cmd_stop() {
@@ -305,7 +362,8 @@ cmd_reset() {
   ensure_stack
   bun "$SCRIPT_DIR/../migrate.ts"
   bun "$SCRIPT_DIR/../seed.ts"
-  echo "Full reset complete (volumes recreated)."
+  ensure_app_stack
+  echo "Full reset complete (volumes recreated, app + build-worker rebuilt)."
 }
 
 cmd_migrate() {
@@ -329,9 +387,9 @@ cmd_help() {
   echo "Usage: $0 {start|stop|reset|migrate|seed|logs}"
   echo ""
   echo "Commands:"
-  echo "  start    start stack (postgres + redis + garage), migrate, seed"
+  echo "  start    start stack (postgres + redis + garage + app + build-worker), migrate, seed"
   echo "  stop     stop containers only"
-  echo "  reset    destroy volumes, recreate stack, migrate, seed"
+  echo "  reset    destroy volumes, recreate stack, migrate, seed, rebuild app + build-worker"
   echo "  migrate  ensure stack running then run migrations"
   echo "  seed     ensure stack running then seed db"
   echo "  logs     follow stack logs"

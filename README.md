@@ -17,18 +17,20 @@
 
 Pdploy is a self-hosted deployment platform for web applications. It uses [bun], [drizzle], [postgres], [redis], [garage] (S3-compatible storage), and [docker]. You connect GitHub repos, trigger builds, and serve previews via subdomain or path.
 
-## Build toolchains in Docker
+## Build worker service
 
-The app container includes the build tools required by the deployment worker:
+Deployments are processed by a dedicated build worker service (`build-worker`), not by the app process. The worker has Docker socket access and the full build toolchain, while the app container stays focused on API + web traffic.
+The worker talks to the host Docker daemon through `dockerode` over `/var/run/docker.sock`.
 
-- Bun
-- Node.js + npm + pnpm + yarn
-- Python 3 + pip
-- uv
-- Poetry
-- `unzip`, `curl`, and `git`
+The Compose stack includes:
 
-This lets Node and Python deployment strategies run directly inside the app container.
+- `app`: HTTP API/web server
+- `build-worker`: Redis consumer that runs builds via Docker
+- `pdploy-node-builder:latest`: Node build image with `pnpm` pre-activated via Corepack
+
+## OCI runtime artifacts
+
+Each deployment now also emits a standardized OCI runtime artifact (`runtime-image.oci.tar`) under the deployment artifact prefix in object storage. Static deployments continue to upload regular static files for existing preview behavior, so current support remains unchanged while OCI artifacts are produced under the hood for future server runtime orchestration.
 
 ## Quick start
 
@@ -53,7 +55,11 @@ docker compose up -d --build
 ```bash
 cp .env.example .env
 ./infra/dev.sh start
-bun run migrate && bun run seed && bun run dev
+docker compose stop app build-worker
+# terminal 1
+bun run dev
+# terminal 2
+bun run start:worker
 ```
 
 App: `http://localhost:3000`. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. See [docs/SETUP.md](docs/SETUP.md) for details.
@@ -90,18 +96,20 @@ See `examples/README.md` for usage.
 | `src/index.ts` | HTTP server entrypoint |
 | `src/router.ts` | Route table and request handling |
 | `src/routes/` | API and page handlers (projects, deployments, GitHub, account) |
-| `src/workers/buildWorker.ts` | Build job processor (clone, install, build, upload) |
+| `src/workers/buildWorker.ts` | Core build-job processor (clone, install, build, upload) |
+| `src/workers/runBuildWorker.ts` | Standalone build worker entrypoint |
 | `src/ui/` | React pages and client-side entrypoints |
 | `src/db/` | Drizzle schema and DB client |
 | `auth.ts` | Better Auth config |
 | `drizzle/` | Migrations |
 | `infra/dev.sh` | Dev infra script (start/stop/reset Postgres, Redis, Garage) |
-| `docker-compose.yml` | App, Postgres, Redis, Garage |
-| `Dockerfile` | Multi-stage build; release target runs app + build worker |
+| `docker-compose.yml` | App, build-worker, Postgres, Redis, Garage |
+| `Dockerfile` | Multi-stage build for the app image |
+| `docker/build-worker.Dockerfile` | Docker image for the standalone build worker |
 
 ## Build a single-file executable
 
-Bun can compile the server and build worker into one binary. Client assets must be built first and are embedded.
+Bun can compile the server into one binary. Client assets must be built first and are embedded.
 
 **Current platform:**
 
@@ -126,7 +134,7 @@ SKIP_CLIENT_BUILD=1 ./dist/pdploy
 ```
 
 > [!NOTE]
-> The executable embeds `src/index.ts`, `src/workers/buildWorker.ts`, and prebuilt client assets from `dist/client`, so `/assets/*` is served without extra files on disk.
+> Build workers run via `bun run start:worker` (or the `build-worker` Compose service). `src/workers/buildWorker.ts` contains the shared worker loop used by that entrypoint.
 
 ## Documentation
 

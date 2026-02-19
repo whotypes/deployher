@@ -22,7 +22,7 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 > You do not need Bun if you run the full stack in Docker. Use the [Full stack in Docker](#full-stack-in-docker) workflow.
 
 > [!NOTE]
-> The app Docker image includes Bun, Node.js, npm, pnpm, yarn, Python 3, pip, uv, Poetry, and `unzip` so deployment workers can build Node and Python repositories inside the container.
+> The app image is slim and does not run build jobs. Build toolchains (Docker CLI, Node/Python package managers, uv, Poetry, `unzip`) live in the dedicated `build-worker` image, which talks to the host Docker daemon through `/var/run/docker.sock`.
 
 > [!IMPORTANT]
 > 4 GB RAM is recommended for running the full stack.
@@ -37,13 +37,13 @@ From the repository root.
 cp .env.example .env
 ```
 
-2. Start infra and bootstrap [garage] (creates S3 bucket and key, writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
+2. Start the stack and bootstrap [garage] (creates S3 bucket and key, writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
 
 ```bash
 ./infra/dev.sh start
 ```
 
-This starts Postgres, Redis, and Garage only. It does not start the app container.
+This starts Postgres, Redis, Garage, app, and build-worker.
 
 > [!WARNING]
 > Do not commit `.env`. It will contain secrets after bootstrap and OAuth setup.
@@ -59,18 +59,20 @@ This starts Postgres, Redis, and Garage only. It does not start the app containe
 
 Good for: CI, testing the containerized path, or running without installing [bun].
 
-1. After [one-time bootstrap](#one-time-bootstrap), start the whole stack (infra + app):
+1. After [one-time bootstrap](#one-time-bootstrap), start or rebuild the whole stack:
 
 ```bash
 docker compose up -d --build
 ```
 
+This also builds a dedicated Node build image (`pdploy-node-builder:latest`) used by deployment workers for Node repos. It has `pnpm` activated via Corepack.
+
 2. App URL: `http://localhost:3000`
 
-3. Logs:
+3. Logs (app + worker):
 
 ```bash
-docker compose logs -f app
+docker compose logs -f app build-worker
 ```
 
 4. Stop everything:
@@ -79,59 +81,74 @@ docker compose logs -f app
 docker compose down
 ```
 
-5. Stop only the app (keep Postgres, Redis, Garage):
+5. Stop only app + build-worker (keep Postgres, Redis, Garage):
 
 ```bash
-docker compose stop app
+docker compose stop app build-worker
 ```
 
-6. Restart only the app:
+6. Restart app + build-worker:
 
 ```bash
-docker compose up -d --build app
+docker compose up -d --build node-builder app build-worker
 ```
 
 > [!NOTE]
-> Inside the app container, migrations run on startup (`RUN_MIGRATIONS=1`). Services use container hostnames: `postgres`, `redis`, `garage`.
+> Inside the app container, migrations run on startup (`RUN_MIGRATIONS=1`). The build-worker consumes Redis jobs and uses container hostnames: `postgres`, `redis`, `garage`.
 
-## Workflow B: Infra in Docker, app on host (hot reload)
+## Workflow B: Infra in Docker, app + worker on host
 
 Good for: daily development with fast feedback. Requires [bun] on the host.
 
-1. After [one-time bootstrap](#one-time-bootstrap), run migrations and seed (if not already done):
+1. After [one-time bootstrap](#one-time-bootstrap), stop Docker app services so host processes own app and queue consumption:
+
+```bash
+docker compose stop app build-worker
+```
+
+2. Run migrations and seed (if not already done):
 
 ```bash
 bun run migrate
 bun run seed
 ```
 
-2. Start the app with hot reload:
+3. Start the app with hot reload:
 
 ```bash
 bun run dev
 ```
 
-3. App URL: `http://localhost:3000`
+4. Start the worker in a second terminal:
 
-4. Stop the app: Ctrl+C. Infra (Postgres, Redis, Garage) keeps running.
+```bash
+bun run start:worker
+```
 
-5. Stop infra:
+5. App URL: `http://localhost:3000`
+
+6. Stop host app/worker with Ctrl+C. Infra (Postgres, Redis, Garage) keeps running.
+
+7. Stop infra:
 
 ```bash
 ./infra/dev.sh stop
 ```
 
-6. Full teardown (remove volumes, re-bootstrap infra):
+8. Full teardown (remove volumes, re-bootstrap infra):
 
 ```bash
 ./infra/dev.sh reset
 bun run migrate
 bun run seed
+# terminal 1
 bun run dev
+# terminal 2
+bun run start:worker
 ```
 
 > [!TIP]
-> For day-to-day dev, start infra once with `./infra/dev.sh start`, then run `bun run dev` whenever you work. Only run `reset` when you need a clean DB or Garage state.
+> For day-to-day dev, keep infra running and use either Docker (`app` + `build-worker`) or host processes (`bun run dev` + `bun run start:worker`) consistently for a session.
 
 ## Infra script reference
 
@@ -139,8 +156,8 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 
 | Command | Description |
 |---------|-------------|
-| `./infra/dev.sh start` | Start Postgres, Redis, Garage; wait for healthy; ensure Garage layout/bucket/key; inject S3 vars into `.env`. Does not start the app. |
-| `./infra/dev.sh stop` | Stop all compose services (garage, postgres, redis; and app if you started it with `docker compose up`). |
+| `./infra/dev.sh start` | Start Postgres, Redis, Garage, app, and build-worker; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; verify Docker access from build-worker. |
+| `./infra/dev.sh stop` | Stop all compose services (including app and build-worker). |
 | `./infra/dev.sh reset` | `docker compose down -v`, clear Garage data and secrets, then run `start` again. Run migrate/seed after. |
 | `./infra/dev.sh migrate` | Ensure stack is up, then run `bun migrate.ts`. |
 | `./infra/dev.sh seed` | Ensure stack is up, then run `bun seed.ts`. |
@@ -157,7 +174,7 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 | `HOSTNAME` | Yes | Bind address (e.g. `0.0.0.0`) |
 | `PORT` | No | Default `3000` |
 | `DATABASE_URL` | Yes | Postgres connection string. Use `localhost:5432` when app runs on host; use `postgres:5432` inside app container. |
-| `REDIS_URL` | Yes | Redis URL. Use `localhost:6379` on host; `redis:6379` in container. If unset or unreachable, build workers are disabled. |
+| `REDIS_URL` | Yes | Redis URL. Use `localhost:6379` on host; `redis:6379` in container. If unset or unreachable, build-worker cannot process deployments. |
 | `S3_ENDPOINT` | Yes | Garage/S3 endpoint. Use `http://127.0.0.1:3900` on host; `http://garage:3900` in container. |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes for storage | Injected by `./infra/dev.sh start` or set manually. Aliases: `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. |
 | `S3_REGION`, `AWS_REGION` | No | Default `garage`. |
@@ -165,7 +182,8 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 | `BETTER_AUTH_SECRET` | Recommended in prod | Secret for session/signing (e.g. `openssl rand -base64 32`). |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Yes for GitHub | OAuth app credentials; callback URL must match your app URL + `/api/auth/callback/github`. |
 | `DEV_DOMAIN`, `PROD_DOMAIN`, `DEV_PROTOCOL`, `PROD_PROTOCOL` | No | Used for auth callback URL and preview URLs. Defaults in `.env.example`. Subdomain previews match `Host` against `<id>.<DEV_DOMAIN>` or `<id>.<PROD_DOMAIN>`. |
-| `BUILD_WORKERS` | No | Number of concurrent build workers (default `2`). Set to `0` to disable. |
+| `BUILD_WORKERS` | No | Legacy in-process worker count for app-thread workers. Keep `0` when using the standalone `build-worker` service. |
+| `RUNTIME_STATIC_BASE_IMAGE` | No | Base image for standardized OCI runtime artifact generation from static build output. Default `nginx:alpine`. |
 | `SKIP_CLIENT_BUILD` | No | Set to `1` in Docker/prod so the app uses prebuilt client assets. |
 | `RUN_MIGRATIONS` | No | Set to `1` to run migrations on app startup (default in Docker). |
 
@@ -206,9 +224,11 @@ Use one of these as a starting point, push it to GitHub, then create a pdploy pr
 
 ## Build pipeline and workers
 
-Deployments are queued in Redis and processed by build workers (Bun `Worker` threads). Worker count is `BUILD_WORKERS` (default `2`). If `REDIS_URL` is not set or Redis is unreachable, workers do not start and deployments stay queued.
+Deployments are queued in Redis and processed by a standalone worker process (`src/workers/runBuildWorker.ts`), usually via the `build-worker` Compose service. The app process does not start Bun `Worker` threads in this architecture.
 
-Each worker: dequeues a job, clones the repo from GitHub (zipball), detects build strategy (Node or Python), installs dependencies via the relevant package manager, runs build, locates output artifacts, uploads them to S3 under the deployment's `artifactPrefix`, and updates deployment status and preview URL. Logs are streamed to Redis pub/sub and persisted to S3; the UI streams from the same channel.
+Each worker process: dequeues a job, clones the repo from GitHub (zipball), detects build strategy (Node or Python), installs dependencies via the relevant package manager, runs build, locates output artifacts, uploads them to S3 under the deployment's `artifactPrefix`, and updates deployment status and preview URL. Logs are streamed to Redis pub/sub and persisted to S3; the UI streams from the same channel.
+
+In addition to existing static artifact uploads, the worker now builds and uploads a standardized OCI runtime artifact (`runtime-image.oci.tar`) at `<artifactPrefix>/runtime-image.oci.tar`. This keeps current static preview behavior intact while standardizing deployment outputs for future long-running server workflows.
 
 ## Database and migrations
 
@@ -223,6 +243,7 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 |--------|-------------|
 | `bun run dev` | Start app with hot reload (`bun --hot src/index.ts`). |
 | `bun run start` | Start app without hot reload. |
+| `bun run start:worker` | Start the standalone build worker process. |
 | `bun run migrate` | Run `migrate.ts` (apply migrations). |
 | `bun run seed` | Run `seed.ts` (insert demo project/deployment). Optional; skip in production. |
 | `bun run build:client` | Build client assets into `dist/client`. |
@@ -234,7 +255,7 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 
 ## Production deployment
 
-- Use the same `Dockerfile` and `docker-compose.yml` (or equivalent). Set `APP_ENV=production` and provide production `.env` (or inject secrets another way).
+- Use the same `Dockerfile`, `docker/build-worker.Dockerfile`, and `docker-compose.yml` (or equivalent). Deploy both `app` and `build-worker` with production `.env` (or injected secrets).
 - The app listens on port 3000 inside the container. Expose it via a reverse proxy (e.g. Caddy, Nginx, Traefik) for TLS and single entrypoint.
 - Migrations run on startup when `RUN_MIGRATIONS=1`. For zero-downtime deploys, consider running migrations in a separate step before rolling new app containers.
 - Optional: build a single-file executable for non-Docker hosts; see [README](../README.md#build-a-single-file-executable).
