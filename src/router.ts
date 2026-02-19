@@ -127,11 +127,25 @@ const protectedRoutes: ProtectedRoute[] = [
       POST: deployments.createDeployment
     }
   },
+  {
+    pattern: "/api/projects/:id/env",
+    methods: {
+      GET: projects.listProjectEnvs,
+      POST: projects.upsertProjectEnv
+    }
+  },
+  {
+    pattern: "/api/projects/:id/env/:envId",
+    methods: {
+      DELETE: projects.deleteProjectEnv
+    }
+  },
   { pattern: "/api/admin/examples", methods: { GET: admin.listExamples } },
   {
     pattern: "/api/admin/examples/:name/deploy",
     methods: { POST: admin.createExampleDeployment }
   },
+  { pattern: "/api/admin/build-settings", methods: { GET: admin.getBuildSettings, PATCH: admin.updateBuildSettings } },
   { pattern: "/api/deployments/:id", methods: { GET: deployments.getDeployment } },
   {
     pattern: "/api/deployments/:id/log",

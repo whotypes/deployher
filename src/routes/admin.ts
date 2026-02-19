@@ -1,6 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { type RequestWithParamsAndSession } from "../auth/session";
 import { buildExampleRowsForUser } from "../admin/exampleDeployments";
+import {
+  getBuildContainerConfig,
+  updateBuildContainerConfig,
+  type BuildContainerConfig
+} from "../admin/buildSettings";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { resolveLocalExample, toExampleRepoUrl } from "../examples";
@@ -95,4 +100,47 @@ export const createExampleDeployment = async (req: RequestWithParamsAndSession) 
   }
 
   return json({ deployment }, { status: 201 });
+};
+
+export const getBuildSettings = async (_req: RequestWithParamsAndSession) => {
+  const config = await getBuildContainerConfig();
+  return json(config);
+};
+
+const MEMORY_REGEX = /^\d+(\.\d+)?[kmgKMG]?$/;
+const CPUS_REGEX = /^\d+(\.\d+)?$/;
+
+export const updateBuildSettings = async (req: RequestWithParamsAndSession) => {
+  let body: Partial<BuildContainerConfig>;
+  try {
+    body = (await req.json()) as Partial<BuildContainerConfig>;
+  } catch {
+    return json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const updates: Partial<BuildContainerConfig> = {};
+  if (body.memory !== undefined) {
+    const val = String(body.memory).trim();
+    if (!val || !MEMORY_REGEX.test(val)) {
+      return json(
+        { error: "Invalid memory value (e.g. 1g, 512m, 2.5g)" },
+        { status: 400 }
+      );
+    }
+    updates.memory = val;
+  }
+  if (body.cpus !== undefined) {
+    const val = String(body.cpus).trim();
+    if (!val || !CPUS_REGEX.test(val)) {
+      return json(
+        { error: "Invalid cpus value (e.g. 0.5, 1, 2)" },
+        { status: 400 }
+      );
+    }
+    updates.cpus = val;
+  }
+  if (Object.keys(updates).length === 0) {
+    return json({ error: "No valid fields to update" }, { status: 400 });
+  }
+  const config = await updateBuildContainerConfig(updates);
+  return json(config);
 };
