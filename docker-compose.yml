@@ -33,7 +33,6 @@ services:
     build:
       context: .
       dockerfile: docker/build-worker.Dockerfile
-    container_name: pdploy-build-worker
     user: "0:0"
     restart: unless-stopped
     depends_on:
@@ -54,7 +53,7 @@ services:
       DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
-      BUILD_NODE_IMAGE: pdploy-node-builder:latest
+      BUILD_NODE_IMAGE: ${NEXUS_REGISTRY:-localhost:8082}/pdploy-node-builder:latest
       BUILD_WORKDIR: /tmp/pdploy-builds
       DEV_DOMAIN: localhost
       DEV_PROTOCOL: http
@@ -66,6 +65,8 @@ services:
     build:
       context: .
       dockerfile: docker/node-builder.Dockerfile
+      args:
+        NEXUS_REGISTRY: ${NEXUS_REGISTRY:-localhost:8082}
     image: pdploy-node-builder:latest
     container_name: pdploy-node-builder
     command: ["sh", "-c", "echo node builder image ready"]

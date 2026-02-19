@@ -7,7 +7,6 @@ RUN apt-get update -qq \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    docker.io \
     git \
     unzip \
     nodejs \
@@ -15,13 +14,19 @@ RUN apt-get update -qq \
     python3 \
     python3-pip \
     python3-venv \
+  && install -m 0755 -d /etc/apt/keyrings \
+  && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+  && chmod a+r /etc/apt/keyrings/docker.asc \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+  && apt-get update -qq \
+  && apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin \
+  && rm -rf /var/lib/apt/lists/* \
   && ln -sf /usr/bin/python3 /usr/local/bin/python \
   && ln -sf /usr/bin/pip3 /usr/local/bin/pip \
   && npm install -g pnpm@10 yarn@1 \
   && curl -LsSf https://astral.sh/uv/install.sh | sh \
   && mv /root/.local/bin/uv /usr/local/bin/uv \
-  && python3 -m pip install --no-cache-dir --break-system-packages poetry==1.8.4 \
-  && rm -rf /var/lib/apt/lists/*
+  && python3 -m pip install --no-cache-dir --break-system-packages poetry==1.8.4
 
 FROM base AS deps
 COPY package.json bun.lock ./
