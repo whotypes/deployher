@@ -3,29 +3,6 @@
 FROM oven/bun:1.3.5 AS base
 WORKDIR /usr/src/app
 
-# Build worker toolchain:
-# - unzip: extract GitHub zipballs
-# - nodejs/npm/pnpm: Node ecosystem package managers
-# - python3/pip/venv + uv + poetry: Python ecosystem package managers
-RUN apt-get update -qq \
-  && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    git \
-    unzip \
-    nodejs \
-    npm \
-    python3 \
-    python3-pip \
-    python3-venv \
-  && ln -sf /usr/bin/python3 /usr/local/bin/python \
-  && ln -sf /usr/bin/pip3 /usr/local/bin/pip \
-  && npm install -g pnpm@10 yarn@1 \
-  && curl -LsSf https://astral.sh/uv/install.sh | sh \
-  && mv /root/.local/bin/uv /usr/local/bin/uv \
-  && python3 -m pip install --no-cache-dir --break-system-packages poetry==1.8.4 \
-  && rm -rf /var/lib/apt/lists/*
-
 FROM base AS deps-dev
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
@@ -60,9 +37,6 @@ COPY --from=builder /usr/src/app/package.json ./package.json
 COPY --from=builder /usr/src/app/tsconfig.json ./tsconfig.json
 COPY --from=builder /usr/src/app/docker/entrypoint.sh ./docker/entrypoint.sh
 
-RUN chmod +x ./docker/entrypoint.sh \
-  && chown -R bun:bun /usr/src/app
-
-USER bun
+RUN chmod +x ./docker/entrypoint.sh
 EXPOSE 3000/tcp
 ENTRYPOINT ["./docker/entrypoint.sh"]

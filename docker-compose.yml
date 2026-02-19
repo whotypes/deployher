@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       target: release
     container_name: pdploy-app
+    user: "0:0"
     restart: unless-stopped
     depends_on:
       postgres:
@@ -24,8 +25,51 @@ services:
       DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
+      BUILD_WORKERS: "0"
     ports:
       - "3000:3000"
+
+  build-worker:
+    build:
+      context: .
+      dockerfile: docker/build-worker.Dockerfile
+    container_name: pdploy-build-worker
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      node-builder:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://garage:3900
+      BUILD_NODE_IMAGE: pdploy-node-builder:latest
+      BUILD_WORKDIR: /tmp/pdploy-builds
+      DEV_DOMAIN: localhost
+      DEV_PROTOCOL: http
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/pdploy-builds:/tmp/pdploy-builds
+
+  node-builder:
+    build:
+      context: .
+      dockerfile: docker/node-builder.Dockerfile
+    image: pdploy-node-builder:latest
+    container_name: pdploy-node-builder
+    command: ["sh", "-c", "echo node builder image ready"]
+    restart: "no"
 
   garage:
     image: dxflrs/garage:v2.2.0
