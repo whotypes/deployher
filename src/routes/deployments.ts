@@ -97,7 +97,7 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
     .where(eq(schema.projects.id, project.id));
 
   try {
-    await enqueueDeployment(deployment.id, { envFile });
+    await enqueueDeployment(deployment.id, { envFile, userId });
   } catch (err) {
     console.error("Failed to enqueue deployment:", err);
     await db

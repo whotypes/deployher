@@ -56,7 +56,11 @@ export const config = {
   devProtocol: normalizeProtocol(rawEnv.DEV_PROTOCOL, "http"),
   prodProtocol: normalizeProtocol(rawEnv.PROD_PROTOCOL, "https"),
   build: {
-    workers: Math.max(0, parseInteger(rawEnv.BUILD_WORKERS, 2))
+    workers: Math.max(0, parseInteger(rawEnv.BUILD_WORKERS, 2)),
+    accountMaxConcurrent: Math.max(0, parseInteger(rawEnv.BUILD_ACCOUNT_MAX_CONCURRENT, 1)),
+    accountSlotTtlSeconds: Math.max(30, parseInteger(rawEnv.BUILD_ACCOUNT_SLOT_TTL_SECONDS, 21600)),
+    reclaimIdleMs: Math.max(1000, parseInteger(rawEnv.BUILD_RECLAIM_IDLE_MS, 900000)),
+    pendingHeartbeatMs: Math.max(1000, parseInteger(rawEnv.BUILD_PENDING_HEARTBEAT_MS, 30000))
   },
   redis: {
     url: normalizeUrl(rawEnv.REDIS_URL)

@@ -1,4 +1,4 @@
-import { recoverProcessingQueue } from "../queue";
+import { ensureDeploymentQueue } from "../queue";
 import { isRedisConfigured } from "../redis";
 import { runLoop } from "./buildWorker";
 
@@ -8,12 +8,9 @@ const startBuildWorker = async () => {
   }
 
   try {
-    const recovered = await recoverProcessingQueue();
-    if (recovered > 0) {
-      console.warn(`Recovered ${recovered} queued deployments from Redis.`);
-    }
+    await ensureDeploymentQueue();
   } catch (error) {
-    console.error("Failed to recover Redis queue:", error);
+    console.error("Failed to initialize Redis deployment stream:", error);
   }
 
   await runLoop();

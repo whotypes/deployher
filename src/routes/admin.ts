@@ -89,7 +89,7 @@ export const createExampleDeployment = async (req: RequestWithParamsAndSession) 
     .where(eq(schema.projects.id, project.id));
 
   try {
-    await enqueueDeployment(deployment.id);
+    await enqueueDeployment(deployment.id, { userId: req.session.user.id });
   } catch (err) {
     console.error("Failed to enqueue example deployment:", err);
     await db

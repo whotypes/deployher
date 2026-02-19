@@ -1,5 +1,5 @@
 import { config } from "../config";
-import { recoverProcessingQueue } from "../queue";
+import { ensureDeploymentQueue } from "../queue";
 import { isRedisConfigured } from "../redis";
 
 export const startBuildWorkers = async () => {
@@ -14,12 +14,9 @@ export const startBuildWorkers = async () => {
   }
 
   try {
-    const recovered = await recoverProcessingQueue();
-    if (recovered > 0) {
-      console.warn(`Recovered ${recovered} queued deployments from Redis.`);
-    }
+    await ensureDeploymentQueue();
   } catch (err) {
-    console.error("Failed to recover Redis queue:", err);
+    console.error("Failed to initialize Redis deployment stream:", err);
   }
 
   for (let i = 0; i < config.build.workers; i += 1) {

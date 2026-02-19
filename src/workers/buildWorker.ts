@@ -11,7 +11,16 @@ import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { parseExampleRepoUrl, resolveLocalExample } from "../examples";
 import { buildZipballUrl, parseGitHubRepoUrl } from "../github";
-import { ackDeployment, dequeueDeployment, type DeploymentJob } from "../queue";
+import {
+  ackDeployment,
+  acquireAccountSlot,
+  deferDeployment,
+  dequeueDeployment,
+  reclaimDeployment,
+  releaseAccountSlot,
+  touchPendingDeployment,
+  type DeploymentJob
+} from "../queue";
 import { getRedisClient } from "../redis";
 import { isStorageConfigured, upload } from "../storage";
 import { guessContentType } from "../utils/contentType";
@@ -35,6 +44,11 @@ const RUNTIME_STATIC_BASE_IMAGE = (process.env.RUNTIME_STATIC_BASE_IMAGE ?? "ngi
 const BUILD_WORKDIR_ROOT = (process.env.BUILD_WORKDIR ?? path.join(tmpdir(), "pdploy-builds")).trim();
 const DOCKER_SOCKET_PATH = (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock").trim() || "/var/run/docker.sock";
 const CONTAINER_REPO_DIR = "/workspace";
+const BUILD_ACCOUNT_MAX_CONCURRENT = config.build.accountMaxConcurrent;
+const BUILD_ACCOUNT_SLOT_TTL_MS = Math.max(1000, config.build.accountSlotTtlSeconds * 1000);
+const BUILD_RECLAIM_IDLE_MS = config.build.reclaimIdleMs;
+const BUILD_PENDING_HEARTBEAT_MS = config.build.pendingHeartbeatMs;
+const ACCOUNT_SLOT_RETRY_DELAY_MS = 250;
 
 type BuildContext = {
   repoDir: string;
@@ -47,6 +61,16 @@ type StrategyRuntimeId = Exclude<DeploymentBuildStrategy, "unknown">;
 type OciRuntimeArtifact = {
   ref: string;
   artifactKey: string;
+};
+
+const sleep = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+const buildConsumerName = (): string => {
+  const rawHost = Bun.env.HOSTNAME ?? process.env.HOSTNAME ?? "worker";
+  const host = rawHost.replace(/[^A-Za-z0-9_.-]/g, "_");
+  return `${host}:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
 };
 
 const publishDeploymentLog = (deploymentId: string, content: string): void => {
@@ -654,32 +678,44 @@ const createStaticRuntimeImageContext = async (outputDir: string, workDir: strin
   return contextDir;
 };
 
-const buildOciArchiveFromContext = async (
+const RUNTIME_IMAGE_TEMP_TAG = "pdploy-runtime-temp";
+
+const buildRuntimeImageArchive = async (
   contextDir: string,
   outputPath: string,
   ctx: BuildContext
 ): Promise<void> => {
-  const result = await runHostCommandWithDeploymentLogs(
+  const tag = `${RUNTIME_IMAGE_TEMP_TAG}:${ctx.deploymentId}`;
+
+  const buildResult = await runHostCommandWithDeploymentLogs(
     [
       "docker",
-      "buildx",
       "build",
-      "--progress",
-      "plain",
+      "--progress=plain",
       "--pull",
       "--label",
       DOCKER_RUNTIME_LABEL,
       "--label",
       `${DOCKER_DEPLOYMENT_LABEL_KEY}=${sanitizeDockerLabelValue(ctx.deploymentId)}`,
-      "--output",
-      `type=oci,dest=${outputPath}`,
-      contextDir
+      "-t",
+      tag,
+      ".",
     ],
     { cwd: contextDir, ctx }
   );
 
-  if (result.code !== 0) {
-    throw new Error(`OCI image build failed: ${result.stderr || result.stdout}`);
+  if (buildResult.code !== 0) {
+    throw new Error(`Runtime image build failed: ${buildResult.stderr || buildResult.stdout}`);
+  }
+
+  const saveResult = await runHostCommand(["docker", "save", "-o", outputPath, tag], {
+    cwd: contextDir
+  });
+
+  await runHostCommand(["docker", "rmi", tag], { cwd: contextDir }).catch(() => {});
+
+  if (saveResult.code !== 0) {
+    throw new Error(`Failed to export runtime image: ${saveResult.stderr || saveResult.stdout}`);
   }
 };
 
@@ -688,17 +724,17 @@ const buildAndUploadStaticRuntimeOciArtifact = async (
   outputDir: string,
   workDir: string
 ): Promise<OciRuntimeArtifact> => {
-  const ociArchivePath = path.join(workDir, "runtime-image.oci.tar");
+  const archivePath = path.join(workDir, "runtime-image.tar");
   const contextDir = await createStaticRuntimeImageContext(outputDir, workDir);
-  await buildOciArchiveFromContext(contextDir, ociArchivePath, ctx);
+  await buildRuntimeImageArchive(contextDir, archivePath, ctx);
 
-  const artifactKey = `${ctx.artifactPrefix}/runtime-image.oci.tar`;
-  await upload(artifactKey, Bun.file(ociArchivePath), {
-    contentType: "application/vnd.oci.image.layer.v1.tar"
+  const artifactKey = `${ctx.artifactPrefix}/runtime-image.tar`;
+  await upload(artifactKey, Bun.file(archivePath), {
+    contentType: "application/x-tar"
   });
 
   return {
-    ref: `oci://${artifactKey}`,
+    ref: `container://${artifactKey}`,
     artifactKey
   };
 };
@@ -710,20 +746,20 @@ const buildAndUploadServerRuntimeOciArtifact = async (
 ): Promise<OciRuntimeArtifact | null> => {
   const dockerfilePath = path.join(repoDir, "Dockerfile");
   if (!(await exists(dockerfilePath))) {
-    logLine(ctx, "No Dockerfile found for server runtime image export; skipping OCI runtime artifact");
+    logLine(ctx, "No Dockerfile found for server runtime image export; skipping runtime artifact");
     return null;
   }
 
-  const ociArchivePath = path.join(workDir, "runtime-image.oci.tar");
-  await buildOciArchiveFromContext(repoDir, ociArchivePath, ctx);
+  const archivePath = path.join(workDir, "runtime-image.tar");
+  await buildRuntimeImageArchive(repoDir, archivePath, ctx);
 
-  const artifactKey = `${ctx.artifactPrefix}/runtime-image.oci.tar`;
-  await upload(artifactKey, Bun.file(ociArchivePath), {
-    contentType: "application/vnd.oci.image.layer.v1.tar"
+  const artifactKey = `${ctx.artifactPrefix}/runtime-image.tar`;
+  await upload(artifactKey, Bun.file(archivePath), {
+    contentType: "application/x-tar"
   });
 
   return {
-    ref: `oci://${artifactKey}`,
+    ref: `container://${artifactKey}`,
     artifactKey
   };
 };
@@ -881,32 +917,32 @@ const buildProject = async (
       logLine(ctx, "Artifact upload complete");
 
       try {
-        logLine(ctx, "Building standardized OCI runtime artifact for static output");
+        logLine(ctx, "Building container image for static output");
         const runtimeArtifact = await buildAndUploadStaticRuntimeOciArtifact(ctx, result.outputDir, workDir);
         runtimeImageRef = runtimeArtifact.ref;
         runtimeImageArtifactKey = runtimeArtifact.artifactKey;
-        logLine(ctx, `OCI runtime artifact uploaded (${runtimeImageArtifactKey})`);
+        logLine(ctx, `Runtime image uploaded (${runtimeImageArtifactKey})`);
       } catch (error) {
         logLine(
           ctx,
-          `OCI runtime artifact generation skipped: ${error instanceof Error ? error.message : String(error)}`
+          `Runtime image generation skipped: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     } else {
       logLine(ctx, "Build completed with server serve strategy; skipping static artifact upload");
 
       try {
-        logLine(ctx, "Building standardized OCI runtime artifact for server output");
+        logLine(ctx, "Building container image for server output");
         const runtimeArtifact = await buildAndUploadServerRuntimeOciArtifact(ctx, extractedRoot, workDir);
         if (runtimeArtifact) {
           runtimeImageRef = runtimeArtifact.ref;
           runtimeImageArtifactKey = runtimeArtifact.artifactKey;
-          logLine(ctx, `OCI runtime artifact uploaded (${runtimeImageArtifactKey})`);
+          logLine(ctx, `Runtime image uploaded (${runtimeImageArtifactKey})`);
         }
       } catch (error) {
         logLine(
           ctx,
-          `OCI runtime artifact generation skipped: ${error instanceof Error ? error.message : String(error)}`
+          `Runtime image generation skipped: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }
@@ -1052,35 +1088,85 @@ export const runLoop = async () => {
     console.error("Failed to prune stale build containers at worker startup:", error);
   }
 
+  const consumerName = buildConsumerName();
+  console.log(`Build worker stream consumer: ${consumerName}`);
+
   while (true) {
-    const payload = await dequeueDeployment(5);
-    if (!payload) continue;
-
-    let job: DeploymentJob | null = null;
-    try {
-      job = JSON.parse(payload) as DeploymentJob;
-    } catch (err) {
-      console.error("Invalid deployment payload:", err);
-    }
-
-    if (!job || !job.deploymentId) {
+    let message = await dequeueDeployment(consumerName, 5000);
+    if (!message) {
       try {
-        await ackDeployment(payload);
+        message = await reclaimDeployment(consumerName, BUILD_RECLAIM_IDLE_MS);
+      } catch (error) {
+        console.error("Failed to reclaim stale deployment stream entry:", error);
+      }
+    }
+    if (!message) continue;
+
+    const job: DeploymentJob = message.job;
+    if (!job.deploymentId) {
+      try {
+        await ackDeployment(message.streamId);
       } catch (err) {
-        console.error("Failed to ack invalid deployment payload:", err);
+        console.error("Failed to ack invalid deployment message:", err);
       }
       continue;
     }
 
+    let shouldAckInFinally = true;
+    let accountSlotUserId: string | null = null;
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
     try {
+      const jobUserId = job.userId?.trim();
+      if (jobUserId && BUILD_ACCOUNT_MAX_CONCURRENT > 0) {
+        const acquired = await acquireAccountSlot(
+          jobUserId,
+          job.deploymentId,
+          BUILD_ACCOUNT_MAX_CONCURRENT,
+          BUILD_ACCOUNT_SLOT_TTL_MS
+        );
+
+        if (!acquired) {
+          const deferred = await deferDeployment(message.streamId, job);
+          shouldAckInFinally = false;
+          if (!deferred) {
+            console.warn(
+              `Failed to defer deployment ${job.deploymentId} for busy account ${jobUserId}; leaving pending for reclaim.`
+            );
+          }
+          await sleep(ACCOUNT_SLOT_RETRY_DELAY_MS);
+          continue;
+        }
+        accountSlotUserId = jobUserId;
+      }
+
+      heartbeatInterval = setInterval(() => {
+        touchPendingDeployment(message.streamId, consumerName).catch((error) => {
+          console.error(`Failed to heartbeat deployment stream entry ${message?.streamId}:`, error);
+        });
+      }, BUILD_PENDING_HEARTBEAT_MS);
+
       await processJob(job);
     } catch (error) {
       console.error("Build failed:", error);
     } finally {
-      try {
-        await ackDeployment(payload);
-      } catch (err) {
-        console.error("Failed to ack deployment:", err);
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+
+      if (accountSlotUserId) {
+        try {
+          await releaseAccountSlot(accountSlotUserId, job.deploymentId, BUILD_ACCOUNT_SLOT_TTL_MS);
+        } catch (error) {
+          console.error(`Failed to release account build slot for ${accountSlotUserId}:`, error);
+        }
+      }
+
+      if (shouldAckInFinally) {
+        try {
+          await ackDeployment(message.streamId);
+        } catch (err) {
+          console.error(`Failed to ack deployment stream entry ${message.streamId}:`, err);
+        }
       }
     }
   }
