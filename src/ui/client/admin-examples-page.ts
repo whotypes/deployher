@@ -1,3 +1,5 @@
+import { fetchWithCsrf } from "./fetchWithCsrf";
+
 type ExampleDeployment = {
   id: string;
   shortId: string;
@@ -105,7 +107,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (accountMaxConcurrent !== undefined && !isNaN(accountMaxConcurrent)) {
           payload.accountMaxConcurrent = Math.max(0, Math.min(100, accountMaxConcurrent));
         }
-        const response = await fetch("/api/admin/build-settings", {
+        const response = await fetchWithCsrf("/api/admin/build-settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -187,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
     button.classList.add("is-loading");
     button.disabled = true;
     try {
-      const response = await fetch(`/api/admin/examples/${encodeURIComponent(exampleName)}/deploy`, {
+      const response = await fetchWithCsrf(`/api/admin/examples/${encodeURIComponent(exampleName)}/deploy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}"
@@ -234,4 +236,3 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
-
