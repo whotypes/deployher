@@ -123,6 +123,20 @@ wait_for_garage() {
   exit 1
 }
 
+wait_for_nexus() {
+  echo "Waiting for Nexus..."
+  for _ in {1..180}; do
+    if curl -fsS "http://127.0.0.1:8081/service/rest/v1/status" >/dev/null 2>&1; then
+      echo "Nexus ready."
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Nexus failed to become healthy in time."
+  dc logs --no-color --tail 200 nexus || true
+  exit 1
+}
+
 GARAGE_BUCKET_NAME="${GARAGE_BUCKET_NAME:-placeholder-bucket}"
 GARAGE_KEY_NAME="${GARAGE_KEY_NAME:-devkey}"
 BACKEND_ENV_FILE="$SCRIPT_DIR/../.env"
@@ -288,37 +302,37 @@ wait_for_app() {
 }
 
 wait_for_build_worker() {
-  echo "Waiting for build-worker container..."
+  echo "Waiting for deployment-worker container..."
   for _ in {1..45}; do
-    if dc ps --status running --services 2>/dev/null | grep -qx "build-worker"; then
-      echo "Build-worker container running."
+    if dc ps --status running --services 2>/dev/null | grep -qx "deployment-worker"; then
+      echo "Deployment-worker container running."
       return 0
     fi
     sleep 1
   done
-  echo "Build-worker container failed to start in time."
-  dc logs --no-color --tail 200 build-worker || true
+  echo "Deployment-worker container failed to start in time."
+  dc logs --no-color --tail 200 deployment-worker || true
   exit 1
 }
 
 verify_build_worker_docker_access() {
-  echo "Verifying Docker access inside build-worker container..."
+  echo "Verifying Docker access inside deployment-worker container..."
 
   local which_output
-  if ! which_output="$(dc exec -T build-worker sh -lc 'which docker' 2>&1)"; then
-    echo "Docker CLI is not available in build-worker container."
+  if ! which_output="$(dc exec -T deployment-worker sh -lc 'which docker' 2>&1)"; then
+    echo "Docker CLI is not available in deployment-worker container."
     echo "$which_output"
     exit 1
   fi
 
   local docker_ps_output
-  if ! docker_ps_output="$(dc exec -T build-worker sh -lc 'docker ps >/dev/null' 2>&1)"; then
-    echo "Build-worker container cannot access Docker daemon via /var/run/docker.sock."
+  if ! docker_ps_output="$(dc exec -T deployment-worker sh -lc 'docker ps >/dev/null' 2>&1)"; then
+    echo "Deployment-worker container cannot access Docker daemon via /var/run/docker.sock."
     echo "$docker_ps_output"
     exit 1
   fi
 
-  echo "Docker access OK inside build-worker container."
+  echo "Docker access OK inside deployment-worker container."
 }
 
 read_nexus_env() {
@@ -331,16 +345,164 @@ read_nexus_env() {
   [[ -n "$NEXUS_REGISTRY" ]] && [[ -n "$NEXUS_USER" ]] && [[ -n "$NEXUS_PASSWORD" ]]
 }
 
+nexus_api() {
+  local method="$1"
+  local path="$2"
+  local user="$3"
+  local password="$4"
+  local body="${5:-}"
+  shift 5 || true
+
+  local -a args=(
+    -fsS
+    -u "$user:$password"
+    -X "$method"
+    "http://127.0.0.1:8081${path}"
+  )
+
+  if [[ -n "$body" ]]; then
+    args+=(-H "Content-Type: application/json" -d "$body")
+  fi
+
+  curl "${args[@]}"
+}
+
+ensure_nexus_admin_password() {
+  if ! read_nexus_env; then
+    return 0
+  fi
+
+  if [[ ${#NEXUS_PASSWORD} -lt 8 ]]; then
+    echo "NEXUS_PASSWORD must be at least 8 characters for Nexus bootstrap."
+    exit 1
+  fi
+
+  if nexus_api GET "/service/rest/v1/status" "$NEXUS_USER" "$NEXUS_PASSWORD" >/dev/null 2>&1; then
+    echo "Nexus admin credentials already valid."
+    return 0
+  fi
+
+  local initial_password=""
+  for _ in {1..30}; do
+    initial_password="$(docker exec nexus sh -lc 'cat /nexus-data/admin.password 2>/dev/null' | tr -d '\r' || true)"
+    if [[ -n "$initial_password" ]]; then
+      break
+    fi
+    sleep 2
+  done
+
+  if [[ -z "$initial_password" ]]; then
+    echo "Could not read Nexus initial admin password from /nexus-data/admin.password."
+    exit 1
+  fi
+
+  echo "Setting Nexus admin password from initial bootstrap password..."
+  if ! curl -fsS \
+    -u "admin:$initial_password" \
+    -X PUT \
+    "http://127.0.0.1:8081/service/rest/v1/security/users/admin/change-password" \
+    -H "Content-Type: text/plain" \
+    --data "$NEXUS_PASSWORD" >/dev/null; then
+    echo "Failed to set Nexus admin password."
+    exit 1
+  fi
+
+  echo "Nexus admin password configured."
+}
+
+ensure_nexus_eula() {
+  if ! read_nexus_env; then
+    return 0
+  fi
+
+  local eula
+  eula="$(nexus_api GET "/service/rest/v1/system/eula" "$NEXUS_USER" "$NEXUS_PASSWORD" "" || true)"
+  if grep -q '"accepted"[[:space:]]*:[[:space:]]*true' <<<"$eula"; then
+    echo "Nexus EULA already accepted."
+    return 0
+  fi
+
+  local disclaimer
+  disclaimer="$(printf '%s' "$eula" | bun -e 'const input = await new Response(Bun.stdin.stream()).text(); const parsed = JSON.parse(input); process.stdout.write(typeof parsed.disclaimer === "string" ? parsed.disclaimer : "");')"
+  if [[ -z "$disclaimer" ]]; then
+    echo "Failed to read Nexus EULA disclaimer."
+    exit 1
+  fi
+
+  echo "Accepting Nexus Community Edition EULA..."
+  local payload
+  payload="$(printf '%s' "$disclaimer" | bun -e 'const disclaimer = await new Response(Bun.stdin.stream()).text(); process.stdout.write(JSON.stringify({ accepted: true, disclaimer }));')"
+  nexus_api POST "/service/rest/v1/system/eula" "$NEXUS_USER" "$NEXUS_PASSWORD" "$payload" >/dev/null
+  echo "Nexus EULA accepted."
+}
+
+ensure_nexus_docker_realm() {
+  if ! read_nexus_env; then
+    return 0
+  fi
+
+  local active
+  active="$(nexus_api GET "/service/rest/v1/security/realms/active" "$NEXUS_USER" "$NEXUS_PASSWORD" "" || true)"
+  if grep -q '"DockerToken"' <<<"$active"; then
+    echo "Nexus Docker Bearer Token Realm already active."
+    return 0
+  fi
+
+  echo "Activating Nexus Docker Bearer Token Realm..."
+  nexus_api PUT \
+    "/service/rest/v1/security/realms/active" \
+    "$NEXUS_USER" \
+    "$NEXUS_PASSWORD" \
+    '["NexusAuthenticatingRealm","DockerToken"]' >/dev/null
+  echo "Nexus Docker Bearer Token Realm activated."
+}
+
+ensure_nexus_docker_repo() {
+  if ! read_nexus_env; then
+    return 0
+  fi
+
+  local repos
+  repos="$(nexus_api GET "/service/rest/v1/repositories" "$NEXUS_USER" "$NEXUS_PASSWORD" || true)"
+  if grep -Eq '"name"[[:space:]]*:[[:space:]]*"docker-hosted"' <<<"$repos"; then
+    echo "Nexus docker-hosted repository already exists."
+    return 0
+  fi
+
+  echo "Creating Nexus docker-hosted repository on port 8082..."
+  local payload='{"name":"docker-hosted","online":true,"storage":{"blobStoreName":"default","strictContentTypeValidation":true,"writePolicy":"ALLOW"},"docker":{"v1Enabled":false,"forceBasicAuth":true,"httpPort":8082}}'
+  if ! nexus_api POST "/service/rest/v1/repositories/docker/hosted" "$NEXUS_USER" "$NEXUS_PASSWORD" "$payload" >/dev/null; then
+    echo "Failed to create Nexus docker-hosted repository."
+    exit 1
+  fi
+
+  echo "Nexus docker-hosted repository created."
+}
+
+ensure_nexus_ready() {
+  if ! read_nexus_env; then
+    return 0
+  fi
+
+  wait_for_nexus
+  ensure_nexus_admin_password
+  ensure_nexus_eula
+  ensure_nexus_docker_realm
+  ensure_nexus_docker_repo
+}
+
 ensure_nexus_login() {
   if ! read_nexus_env; then
     return 0
   fi
 
+  ensure_nexus_ready
+
   echo "Logging in to Nexus registry $NEXUS_REGISTRY..."
   if echo "$NEXUS_PASSWORD" | docker login "$NEXUS_REGISTRY" -u "$NEXUS_USER" --password-stdin 2>/dev/null; then
     echo "Nexus login OK."
   else
-    echo "Nexus login failed. Build-worker may not be able to pull images from $NEXUS_REGISTRY."
+    echo "Nexus login failed. Deployment worker may not be able to pull images from $NEXUS_REGISTRY."
   fi
 }
 
@@ -365,15 +527,25 @@ ensure_nexus_images() {
     docker push "$NEXUS_REGISTRY/$img"
   done
 
-  echo "Building pdploy-node-builder..."
+  echo "Building pdploy-node-build-image..."
   docker build \
     -f "$SCRIPT_DIR/../docker/node-builder.Dockerfile" \
     --build-arg "NEXUS_REGISTRY=$NEXUS_REGISTRY" \
-    -t "$NEXUS_REGISTRY/pdploy-node-builder:latest" \
+    -t "$NEXUS_REGISTRY/pdploy-node-build-image:latest" \
     "$SCRIPT_DIR/.."
 
-  echo "Pushing pdploy-node-builder..."
-  docker push "$NEXUS_REGISTRY/pdploy-node-builder:latest"
+  echo "Pushing pdploy-node-build-image..."
+  docker push "$NEXUS_REGISTRY/pdploy-node-build-image:latest"
+
+  echo "Building pdploy-bun-build-image..."
+  docker build \
+    -f "$SCRIPT_DIR/../docker/bun-builder.Dockerfile" \
+    --build-arg "NEXUS_REGISTRY=$NEXUS_REGISTRY" \
+    -t "$NEXUS_REGISTRY/pdploy-bun-build-image:latest" \
+    "$SCRIPT_DIR/.."
+
+  echo "Pushing pdploy-bun-build-image..."
+  docker push "$NEXUS_REGISTRY/pdploy-bun-build-image:latest"
 
   echo "Nexus images synced."
 }
@@ -382,7 +554,7 @@ ensure_app_stack() {
   ensure_nexus_login
   ensure_nexus_images
   echo "Building and starting app services..."
-  dc up -d --build node-builder app build-worker
+  dc up -d --build node-build-image bun-build-image app deployment-worker
   wait_for_app
   wait_for_build_worker
   verify_build_worker_docker_access
@@ -390,10 +562,11 @@ ensure_app_stack() {
 
 ensure_stack() {
   ensure_garage_env
-  dc up -d garage postgres redis
+  dc up -d garage postgres redis nexus
   wait_for_postgres
   wait_for_redis
   wait_for_garage
+  ensure_nexus_ready
   setup_garage_s3
 }
 
@@ -402,7 +575,7 @@ cmd_start() {
   bun "$SCRIPT_DIR/../migrate.ts"
   bun "$SCRIPT_DIR/../seed.ts"
   ensure_app_stack
-  echo "Stack started (infra + app + build-worker), DB migrated, data seeded."
+  echo "Stack started (infra + app + deployment-worker), DB migrated, data seeded."
 }
 
 cmd_stop() {
@@ -422,7 +595,7 @@ cmd_reset() {
   bun "$SCRIPT_DIR/../migrate.ts"
   bun "$SCRIPT_DIR/../seed.ts"
   ensure_app_stack
-  echo "Full reset complete (volumes recreated, app + build-worker rebuilt)."
+  echo "Full reset complete (volumes recreated, app + deployment-worker rebuilt)."
 }
 
 cmd_migrate() {
@@ -446,9 +619,9 @@ cmd_help() {
   echo "Usage: $0 {start|stop|reset|migrate|seed|logs}"
   echo ""
   echo "Commands:"
-  echo "  start    start stack (postgres + redis + garage + app + build-worker), migrate, seed"
+  echo "  start    start stack (postgres + redis + garage + app + deployment-worker), migrate, seed"
   echo "  stop     stop containers only"
-  echo "  reset    destroy volumes, recreate stack, migrate, seed, rebuild app + build-worker"
+  echo "  reset    destroy volumes, recreate stack, migrate, seed, rebuild app + deployment-worker"
   echo "  migrate  ensure stack running then run migrations"
   echo "  seed     ensure stack running then seed db"
   echo "  logs     follow stack logs"

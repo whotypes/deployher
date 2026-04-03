@@ -36,14 +36,24 @@ for img in "${images[@]}"; do
   docker push "$NEXUS_REGISTRY/$img"
 done
 
-echo "Building pdploy-node-builder..."
+echo "Building pdploy-node-build-image..."
 docker build \
   -f "$SCRIPT_DIR/../docker/node-builder.Dockerfile" \
   --build-arg "NEXUS_REGISTRY=$NEXUS_REGISTRY" \
-  -t "$NEXUS_REGISTRY/pdploy-node-builder:latest" \
+  -t "$NEXUS_REGISTRY/pdploy-node-build-image:latest" \
   "$SCRIPT_DIR/.."
 
-echo "Pushing pdploy-node-builder..."
-docker push "$NEXUS_REGISTRY/pdploy-node-builder:latest"
+echo "Pushing pdploy-node-build-image..."
+docker push "$NEXUS_REGISTRY/pdploy-node-build-image:latest"
+
+echo "Building pdploy-bun-build-image..."
+docker build \
+  -f "$SCRIPT_DIR/../docker/bun-builder.Dockerfile" \
+  --build-arg "NEXUS_REGISTRY=$NEXUS_REGISTRY" \
+  -t "$NEXUS_REGISTRY/pdploy-bun-build-image:latest" \
+  "$SCRIPT_DIR/.."
+
+echo "Pushing pdploy-bun-build-image..."
+docker push "$NEXUS_REGISTRY/pdploy-bun-build-image:latest"
 
 echo "Done. All images repushed to $NEXUS_REGISTRY"
