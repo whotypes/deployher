@@ -26,10 +26,12 @@ services:
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
       BUILD_WORKERS: "0"
+      RUNNER_PREVIEW_ENABLED: ${RUNNER_PREVIEW_ENABLED:-0}
+      RUNNER_URL: ${RUNNER_URL:-}
     ports:
       - "3000:3000"
 
-  build-worker:
+  deployment-worker:
     build:
       context: .
       dockerfile: docker/build-worker.Dockerfile
@@ -38,7 +40,9 @@ services:
     deploy:
       replicas: ${BUILD_WORKERS:-4}
     depends_on:
-      node-builder:
+      node-build-image:
+        condition: service_completed_successfully
+      bun-build-image:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
@@ -55,25 +59,39 @@ services:
       DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
-      BUILD_NODE_IMAGE: ${BUILD_NODE_BUILDER_IMAGE:-pdploy-node-builder:latest}
-      BUILD_RECLAIM_IDLE_MS: ${BUILD_RECLAIM_IDLE_MS:-60000}
+      BUILD_NODE_IMAGE: ${BUILD_NODE_BUILDER_IMAGE:-pdploy-node-build-image:latest}
+      BUILD_BUN_IMAGE: ${BUILD_BUN_BUILDER_IMAGE:-pdploy-bun-build-image:latest}
+      BUILD_RECLAIM_IDLE_MS: ${BUILD_RECLAIM_IDLE_MS:-5000}
       BUILD_ACCOUNT_MAX_CONCURRENT: ${BUILD_ACCOUNT_MAX_CONCURRENT:-4}
       BUILD_WORKDIR: /tmp/pdploy-builds
       DEV_DOMAIN: localhost
       DEV_PROTOCOL: http
+      TRUSTED_LOCAL_DOCKER: ${TRUSTED_LOCAL_DOCKER:-1}
+      RUNNER_PREVIEW_ENABLED: ${RUNNER_PREVIEW_ENABLED:-0}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/pdploy-builds:/tmp/pdploy-builds
 
-  node-builder:
+  node-build-image:
     build:
       context: .
       dockerfile: docker/node-builder.Dockerfile
       args:
         NEXUS_REGISTRY: ${NEXUS_REGISTRY:-localhost:8082}
-    image: pdploy-node-builder:latest
-    container_name: pdploy-node-builder
+    image: pdploy-node-build-image:latest
+    container_name: pdploy-node-build-image
     command: ["sh", "-c", "echo node builder image ready"]
+    restart: "no"
+
+  bun-build-image:
+    build:
+      context: .
+      dockerfile: docker/bun-builder.Dockerfile
+      args:
+        NEXUS_REGISTRY: ${NEXUS_REGISTRY:-localhost:8082}
+    image: pdploy-bun-build-image:latest
+    container_name: pdploy-bun-build-image
+    command: ["sh", "-c", "echo bun builder image ready"]
     restart: "no"
 
   garage:
@@ -91,6 +109,16 @@ services:
       - ./infra/garage.dev.toml:/etc/garage.toml
       - ./infra/meta:/var/lib/garage/meta
       - ./infra/data:/var/lib/garage/data
+
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    volumes:
+      - nexus_data:/nexus-data
 
   postgres:
     image: postgres:18-alpine
@@ -124,3 +152,4 @@ services:
 
 volumes:
   postgres_data:
+  nexus_data:
