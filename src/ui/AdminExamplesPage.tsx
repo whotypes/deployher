@@ -1,6 +1,12 @@
 import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser } from "./Layout";
+import type { LayoutUser, SidebarProjectSummary } from "./Layout";
 import { Layout } from "./Layout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type BuildSettings = {
   memory: string;
@@ -24,190 +30,169 @@ type ExampleRow = {
 };
 
 export type AdminExamplesPageData = {
+  pathname: string;
   user?: LayoutUser | null;
   examples: ExampleRow[];
   buildSettings: BuildSettings;
+  csrfToken: string;
+  sidebarProjects: SidebarProjectSummary[];
 };
 
-const getStatusClass = (status?: string) => {
+const statusVariant = (status?: string): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
-    case "success":
-      return "is-success";
-    case "failed":
-      return "is-danger";
-    case "building":
-      return "is-warning";
-    case "queued":
-      return "is-info";
-    default:
-      return "is-light";
+    case "success": return "default";
+    case "failed": return "destructive";
+    case "building": return "outline";
+    case "queued": return "secondary";
+    default: return "secondary";
   }
 };
 
 const AdminExamplesPage = ({ data }: { data: AdminExamplesPageData }) => (
   <Layout
     title="Admin · Example Deployments"
-    currentPath="/admin"
+    pathname={data.pathname}
     scriptSrc="/assets/admin-examples-page.js"
     user={data.user ?? null}
+    breadcrumbs={[{ label: "Admin" }]}
+    csrfToken={data.csrfToken}
+    sidebarProjects={data.sidebarProjects}
   >
-    <div id="notification" className="notification is-toast" style={{ display: "none" }} />
+    <div
+      id="notification"
+      aria-live="polite"
+      className="hidden fixed top-17 right-4 z-50 rounded-md px-4 py-3 text-sm font-medium shadow-lg"
+    />
 
-    <div className="level">
-      <div className="level-left">
-        <div className="level-item">
-          <h1 className="title">Admin Test Workflow</h1>
-        </div>
-      </div>
-      <div className="level-right">
-        <div className="level-item">
-          <button type="button" id="refresh-admin-examples" className="button is-info">
-            Refresh
-          </button>
-        </div>
-      </div>
+    <div className="flex items-center justify-between mb-6">
+      <h1 className="text-2xl font-semibold">Admin Test Workflow</h1>
+      <Button type="button" id="refresh-admin-examples" variant="outline">Refresh</Button>
     </div>
-    <p className="mb-4" style={{ color: "#888" }}>
-      Run build and deploy for local examples in one click. Open deployment details for logs, or
-      visit preview when ready.
+
+    <p className="text-sm text-muted-foreground mb-6">
+      Run build and deploy for local examples in one click. Open deployment details for logs, or visit preview when ready.
     </p>
 
-    <div className="box mb-4">
-      <h2 className="subtitle is-5 mb-3">Build settings</h2>
-      <p className="mb-3" style={{ color: "#888", fontSize: "0.9rem" }}>
-        Container limits (memory, CPUs) and per-account concurrent build limit.
-      </p>
-      <form id="build-settings-form" className="field is-grouped" style={{ flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
-        <div className="field">
-          <label htmlFor="build-memory" className="label is-small">
-            Memory
-          </label>
-          <div className="control">
-            <input
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="text-base">Build settings</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground mb-4">
+          Container limits (memory, CPUs) and per-account concurrent build limit.
+        </p>
+        <form id="build-settings-form" className="flex flex-wrap gap-4 items-end">
+          <div className="space-y-1.5">
+            <Label htmlFor="build-memory" className="text-xs">Memory</Label>
+            <Input
               id="build-memory"
               type="text"
               name="memory"
-              className="input"
               defaultValue={data.buildSettings.memory}
               placeholder="1g"
               aria-label="Build container memory limit"
+              className="w-24"
             />
           </div>
-        </div>
-        <div className="field">
-          <label htmlFor="build-cpus" className="label is-small">
-            CPUs
-          </label>
-          <div className="control">
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="build-cpus" className="text-xs">CPUs</Label>
+            <Input
               id="build-cpus"
               type="text"
               name="cpus"
-              className="input"
               defaultValue={data.buildSettings.cpus}
               placeholder="0.5"
               aria-label="Build container CPU limit"
+              className="w-24"
             />
           </div>
-        </div>
-        <div className="field">
-          <label htmlFor="build-account-max-concurrent" className="label is-small">
-            Max concurrent builds per account
-          </label>
-          <div className="control">
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="build-account-max-concurrent" className="text-xs">Max concurrent builds per account</Label>
+            <Input
               id="build-account-max-concurrent"
               type="number"
               name="accountMaxConcurrent"
-              className="input"
               min={0}
               max={100}
               defaultValue={data.buildSettings.accountMaxConcurrent}
               placeholder="1"
               aria-label="Max concurrent builds per account"
+              className="w-24"
             />
           </div>
-        </div>
-        <div className="field">
-          <div className="control">
-            <button type="submit" id="save-build-settings" className="button is-info">
-              Save
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
+          <Button type="submit" id="save-build-settings" variant="outline">Save</Button>
+        </form>
+      </CardContent>
+    </Card>
 
-    <div className="box">
-      <table className="table is-fullwidth">
-        <thead>
-          <tr>
-            <th>Example</th>
-            <th>Latest Deploy</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="admin-examples-tbody">
+    <Card>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Example</TableHead>
+            <TableHead>Latest Deploy</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody id="admin-examples-tbody">
           {data.examples.map((example) => {
             const deployment = example.latestDeployment;
             return (
-              <tr key={example.name} data-example-name={example.name}>
-                <td>
-                  <code>{example.name}</code>
-                </td>
-                <td data-field="deployment">
+              <TableRow key={example.name} data-example-name={example.name}>
+                <TableCell>
+                  <code className="font-mono text-sm">{example.name}</code>
+                </TableCell>
+                <TableCell data-field="deployment">
                   {deployment ? (
-                    <a href={`/deployments/${deployment.id}`}>{deployment.shortId}</a>
+                    <a href={`/deployments/${deployment.id}`} className="font-mono text-sm no-underline hover:underline">
+                      {deployment.shortId}
+                    </a>
                   ) : (
-                    <span style={{ color: "#666" }}>No deployments</span>
+                    <span className="text-muted-foreground text-sm">No deployments</span>
                   )}
-                </td>
-                <td data-field="status">
-                  <span className={`tag ${getStatusClass(deployment?.status)}`}>
+                </TableCell>
+                <TableCell data-field="status">
+                  <Badge variant={statusVariant(deployment?.status)}>
                     {deployment?.status ?? "idle"}
-                  </span>
-                </td>
-                <td data-field="createdAt">
+                  </Badge>
+                </TableCell>
+                <TableCell data-field="createdAt" className="text-muted-foreground text-sm">
                   {deployment ? new Date(deployment.createdAt).toLocaleString() : "—"}
-                </td>
-                <td data-field="actions">
-                  <div className="buttons">
-                    <button
+                </TableCell>
+                <TableCell data-field="actions">
+                  <div className="flex items-center gap-2">
+                    <Button
                       type="button"
-                      className="button is-success is-small"
+                      size="sm"
                       data-action="deploy"
                       data-example-name={example.name}
                     >
                       Build & Deploy
-                    </button>
+                    </Button>
                     {deployment ? (
-                      <a className="button is-small" href={`/deployments/${deployment.id}`}>
-                        Logs
-                      </a>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={`/deployments/${deployment.id}`}>Logs</a>
+                      </Button>
                     ) : null}
                     {deployment?.status === "success" && deployment.previewUrl ? (
-                      <a
-                        className="button is-small is-link"
-                        href={deployment.previewUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Preview
-                      </a>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={deployment.previewUrl} target="_blank" rel="noopener noreferrer">
+                          Preview
+                        </a>
+                      </Button>
                     ) : null}
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </Card>
   </Layout>
 );
 
 export const renderAdminExamplesPage = (data: AdminExamplesPageData) =>
   renderToReadableStream(<AdminExamplesPage data={data} />);
-

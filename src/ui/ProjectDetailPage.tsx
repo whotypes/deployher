@@ -1,6 +1,12 @@
 import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser } from "./Layout";
+import type { LayoutUser, SidebarProjectSummary } from "./Layout";
 import { Layout } from "./Layout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Settings } from "lucide-react";
+import { pickFeaturedDeploymentFromSortedDesc } from "@/lib/sidebarFeaturedDeployment";
 
 type Deployment = {
   id: string;
@@ -8,6 +14,8 @@ type Deployment = {
   projectId: string;
   artifactPrefix: string;
   status: string;
+  serveStrategy: "static" | "server";
+  buildPreviewMode: "auto" | "static" | "server" | null;
   buildLogKey: string | null;
   previewUrl: string | null;
   createdAt: string;
@@ -19,326 +27,278 @@ type Project = {
   name: string;
   repoUrl: string;
   branch: string;
+  workspaceRootDir: string;
+  projectRootDir: string;
+  frameworkHint: "auto" | "nextjs" | "node" | "python" | "static";
+  previewMode: "auto" | "static" | "server";
+  serverPreviewTarget: "isolated-runner" | "trusted-local-docker";
+  runtimeImageMode: "auto" | "platform" | "dockerfile";
+  dockerfilePath: string | null;
+  dockerBuildTarget: string | null;
+  skipHostStrategyBuild: boolean;
+  runtimeContainerPort: number;
+  installCommand: string | null;
+  buildCommand: string | null;
   createdAt: string;
   updatedAt: string;
   currentDeploymentId: string | null;
 };
 
 export type ProjectDetailData = {
+  pathname: string;
   project: Project;
   deployments: Deployment[];
   currentPreviewUrl: string | null;
   user?: LayoutUser | null;
+  csrfToken: string;
+  sidebarProjects: SidebarProjectSummary[];
 };
 
-const getStatusClass = (status: string) => {
+const statusVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
-    case "success":
-      return "is-success";
-    case "failed":
-      return "is-danger";
-    case "building":
-      return "is-warning";
-    case "queued":
-      return "is-info";
-    default:
-      return "is-light";
+    case "success": return "default";
+    case "failed": return "destructive";
+    case "building": return "outline";
+    case "queued": return "secondary";
+    default: return "secondary";
   }
 };
 
+const deploymentPreviewLabel = (deployment: Deployment): string => {
+  if (deployment.buildPreviewMode === "server" || deployment.buildPreviewMode === "static") {
+    return deployment.buildPreviewMode;
+  }
+  return deployment.serveStrategy;
+};
+
 const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => (
-  <Layout title={`${data.project.name} · Placeholder`} currentPath="/projects" scriptSrc="/assets/project-detail-page.js" user={data.user ?? null}>
-    <div id="notification" className="notification is-toast" style={{ display: "none" }} />
+  <Layout
+    title={`${data.project.name} · pdploy`}
+    pathname={data.pathname}
+    scriptSrc="/assets/project-detail-page.js"
+    user={data.user ?? null}
+    sidebarProjects={data.sidebarProjects}
+    sidebarContext={{
+      project: {
+        id: data.project.id,
+        name: data.project.name
+      },
+      deployment: pickFeaturedDeploymentFromSortedDesc(
+        data.deployments.map((d) => ({
+          id: d.id,
+          shortId: d.shortId,
+          status: d.status
+        }))
+      )
+    }}
+    csrfToken={data.csrfToken}
+    breadcrumbs={[
+      { label: "Projects", href: "/projects" },
+      { label: data.project.name }
+    ]}
+  >
+    <div
+      id="notification"
+      aria-live="polite"
+      className="hidden fixed top-17 right-4 z-50 rounded-md px-4 py-3 text-sm font-medium shadow-lg"
+    />
     <input type="hidden" id="project-id" value={data.project.id} />
 
-    <nav className="breadcrumb" aria-label="breadcrumbs">
-      <ul>
-        <li>
-          <a href="/projects">Projects</a>
-        </li>
-        <li className="is-active">
-          <a href={`/projects/${data.project.id}`} aria-current="page">
-            {data.project.name}
+    <div className="flex items-center justify-between mb-6">
+      <h1 className="text-2xl font-semibold">{data.project.name}</h1>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <a href={`/projects/${data.project.id}/settings`} aria-label="Project settings">
+            <Settings className="size-4 mr-1.5" aria-hidden />
+            Settings
           </a>
-        </li>
-      </ul>
-    </nav>
-
-    <div className="level">
-      <div className="level-left">
-        <div className="level-item">
-          <h1 className="title">{data.project.name}</h1>
-        </div>
-      </div>
-      <div className="level-right">
-        <div className="level-item">
-          {data.currentPreviewUrl ? (
-            <a
-              href={data.currentPreviewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="button is-link mr-2"
-            >
+        </Button>
+        {data.currentPreviewUrl ? (
+          <Button variant="outline" asChild>
+            <a href={data.currentPreviewUrl} target="_blank" rel="noopener noreferrer">
               Visit
             </a>
-          ) : null}
-          <button id="deploy-btn" type="button" className="button is-success">
-            Deploy
-          </button>
-        </div>
+          </Button>
+        ) : null}
+        <Button id="deploy-btn" type="button">Deploy</Button>
       </div>
     </div>
 
-    <div className="tabs is-boxed project-detail-tabs" role="tablist" aria-label="Project detail sections">
-      <ul>
-        <li className="is-active">
-          <button id="project-tab-btn-overview" type="button" className="project-tab-btn is-active" role="tab" aria-selected="true">
-            Overview
-          </button>
-        </li>
-        <li>
-          <button id="project-tab-btn-env" type="button" className="project-tab-btn" role="tab" aria-selected="false">
-            Environment Variables
-          </button>
-        </li>
-      </ul>
-    </div>
-
-    <section id="project-tab-overview" role="tabpanel" aria-labelledby="project-tab-btn-overview">
-      <div className="columns">
-        <div className="column is-8">
-          <div className="box">
-            <h3 className="subtitle is-5">Project Info</h3>
-            <table className="table is-fullwidth">
-              <tbody>
-                <tr>
-                  <th style={{ width: "150px" }}>Repository</th>
-                  <td>
-                    <a href={data.project.repoUrl} target="_blank" rel="noopener noreferrer">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Project Info</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="w-36 text-muted-foreground font-medium">Repository</TableCell>
+                  <TableCell>
+                    <a href={data.project.repoUrl} target="_blank" rel="noopener noreferrer" className="no-underline hover:underline">
                       {data.project.repoUrl.replace("https://github.com/", "")}
                     </a>
-                  </td>
-                </tr>
-                <tr>
-                  <th>Branch</th>
-                  <td>{data.project.branch}</td>
-                </tr>
-                <tr>
-                  <th>Created</th>
-                  <td>{new Date(data.project.createdAt).toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <th>Updated</th>
-                  <td>{new Date(data.project.updatedAt).toLocaleString()}</td>
-                </tr>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Branch</TableCell>
+                  <TableCell>{data.project.branch}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Workspace Root</TableCell>
+                  <TableCell><code>{data.project.workspaceRootDir}</code></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Project Root</TableCell>
+                  <TableCell><code>{data.project.projectRootDir}</code></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Framework</TableCell>
+                  <TableCell>{data.project.frameworkHint === "auto" ? "Auto-detect" : data.project.frameworkHint}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Preview Type</TableCell>
+                  <TableCell className="capitalize">{data.project.previewMode === "auto" ? "Auto-detect" : data.project.previewMode}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Server Target</TableCell>
+                  <TableCell>{data.project.serverPreviewTarget === "isolated-runner" ? "Isolated runner" : "Trusted local Docker"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Runtime Image</TableCell>
+                  <TableCell className="capitalize">{data.project.runtimeImageMode}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Dockerfile</TableCell>
+                  <TableCell><code>{data.project.dockerfilePath ?? "Dockerfile"}</code></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Docker Target</TableCell>
+                  <TableCell>{data.project.dockerBuildTarget ?? "—"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Host Build</TableCell>
+                  <TableCell>{data.project.skipHostStrategyBuild ? "Skipped (Dockerfile-only)" : "Run strategy build"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Preview Port</TableCell>
+                  <TableCell>{data.project.runtimeContainerPort}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Created</TableCell>
+                  <TableCell>{new Date(data.project.createdAt).toLocaleString()}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground font-medium">Updated</TableCell>
+                  <TableCell>{new Date(data.project.updatedAt).toLocaleString()}</TableCell>
+                </TableRow>
                 {data.currentPreviewUrl ? (
-                  <tr>
-                    <th>Preview URL</th>
-                    <td>
-                      <a href={data.currentPreviewUrl} target="_blank" rel="noopener noreferrer">
+                  <TableRow>
+                    <TableCell className="text-muted-foreground font-medium">Preview URL</TableCell>
+                    <TableCell>
+                      <a href={data.currentPreviewUrl} target="_blank" rel="noopener noreferrer" className="no-underline hover:underline">
                         {data.currentPreviewUrl}
                       </a>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : null}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-          <div className="box">
-            <h3 className="subtitle is-5">Deployments</h3>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Deployments</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
             {data.deployments.length === 0 ? (
-              <p style={{ color: "#666" }}>No deployments yet. Click "Deploy" to create one.</p>
+              <p className="text-muted-foreground text-sm px-6 pb-4">No deployments yet. Click "Deploy" to create one.</p>
             ) : (
-              <table className="table is-fullwidth is-hoverable">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Preview</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Preview</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {data.deployments.map((deployment) => (
-                    <tr key={deployment.id}>
-                      <td>
-                        <a href={`/deployments/${deployment.id}`}>{deployment.shortId}</a>
+                    <TableRow key={deployment.id}>
+                      <TableCell>
+                        <a href={`/deployments/${deployment.id}`} className="font-mono text-sm no-underline hover:underline">
+                          {deployment.shortId}
+                        </a>
                         {deployment.id === data.project.currentDeploymentId ? (
-                          <span className="tag is-info ml-2" style={{ fontSize: "0.625rem" }}>
-                            current
-                          </span>
+                          <Badge variant="secondary" className="ml-2 text-[0.625rem]">current</Badge>
                         ) : null}
-                      </td>
-                      <td>
-                        <span className={`tag ${getStatusClass(deployment.status)}`}>
-                          {deployment.status}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariant(deployment.status)}>{deployment.status}</Badge>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {deploymentPreviewLabel(deployment)}
                         </span>
-                      </td>
-                      <td>{new Date(deployment.createdAt).toLocaleString()}</td>
-                      <td>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(deployment.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
                         {deployment.status === "success" && deployment.previewUrl ? (
-                          <a
-                            href={deployment.previewUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="button is-small is-link"
-                          >
-                            Visit
-                          </a>
+                          <Button variant="outline" size="sm" asChild>
+                            <a href={deployment.previewUrl} target="_blank" rel="noopener noreferrer">
+                              Visit
+                            </a>
+                          </Button>
                         ) : (
-                          <span style={{ color: "#444" }}>—</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+      </div>
 
-        <div className="column is-4">
-          <div className="box">
-            <h3 className="subtitle is-5">Settings</h3>
-            <div className="field">
-              <label className="label" htmlFor="deploy-env-file">
-                Deployment .env (optional)
-              </label>
-              <div className="control">
-                <textarea
-                  id="deploy-env-file"
-                  className="textarea"
-                  rows={7}
-                  placeholder={"API_URL=https://example.com\nPUBLIC_KEY=abc123"}
-                  aria-label="Deployment .env content"
-                />
-              </div>
-              <p className="help">
-                Used on next deploy only. Max 64 KB.
-              </p>
-              <div className="control mt-2">
-                <input
-                  id="deploy-env-upload"
-                  className="input"
-                  type="file"
-                  accept=".env,text/plain"
-                  aria-label="Upload env file"
-                />
-              </div>
-            </div>
-
-            <form id="edit-project-form">
-              <div className="field">
-                <label className="label" htmlFor="edit-name">
-                  Name
-                </label>
-                <div className="control">
-                  <input
-                    id="edit-name"
-                    className="input"
-                    type="text"
-                    placeholder={data.project.name}
-                    aria-label="Project name"
-                  />
-                </div>
-              </div>
-
-              <div className="field">
-                <label className="label" htmlFor="edit-repo-url">
-                  Repository URL
-                </label>
-                <div className="control">
-                  <input
-                    id="edit-repo-url"
-                    className="input"
-                    type="url"
-                    placeholder={data.project.repoUrl}
-                    aria-label="GitHub repository URL"
-                  />
-                </div>
-              </div>
-
-              <div className="field">
-                <label className="label" htmlFor="edit-branch">
-                  Branch
-                </label>
-                <div className="control">
-                  <input
-                    id="edit-branch"
-                    className="input"
-                    type="text"
-                    placeholder={data.project.branch}
-                    aria-label="Branch to deploy"
-                  />
-                </div>
-              </div>
-
-              <div className="field">
-                <div className="control">
-                  <button type="submit" className="button is-info is-fullwidth">
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-
-          <div className="box">
-            <h3 className="subtitle is-5" style={{ color: "#f00" }}>
-              Danger Zone
-            </h3>
-            <p className="mb-3" style={{ color: "#888" }}>
-              Deleting a project will also delete all its deployments.
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Quick Deploy</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Uses environment variables from project settings (Postgres). Edit them under Environment Variables before
+              deploying if you need to change keys or values.
             </p>
-            <button id="delete-btn" type="button" className="button is-danger is-fullwidth">
-              Delete Project
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
+            <Button id="deploy-btn-sidebar" type="button" className="w-full">Deploy Now</Button>
+          </CardContent>
+        </Card>
 
-    <section
-      id="project-tab-env"
-      role="tabpanel"
-      aria-labelledby="project-tab-btn-env"
-      style={{ display: "none" }}
-    >
-      <div className="box">
-        <h3 className="subtitle is-5">Environment Variables</h3>
-        <p className="help mb-3">
-          Public variables are injected during build. Private variables are stored for future runtime use.
-        </p>
-        <div className="table-container">
-          <table className="table is-fullwidth env-editor-table">
-            <thead>
-              <tr>
-                <th style={{ width: "24%" }}>Key</th>
-                <th>Value</th>
-                <th style={{ width: "20%" }}>Scope</th>
-                <th style={{ width: "120px" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="project-env-rows">
-              <tr id="project-env-empty">
-                <td colSpan={4} style={{ color: "#666" }}>
-                  No environment variables yet.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div className="buttons mt-4">
-          <button id="project-env-add" type="button" className="button is-info">
-            Add Row
-          </button>
-          <button id="project-env-save" type="button" className="button is-success">
-            Save Variables
-          </button>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Project Settings</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Button variant="outline" className="w-full justify-start gap-2" asChild>
+              <a href={`/projects/${data.project.id}/settings`}>
+                <Settings className="size-4" aria-hidden />
+                General &amp; Build Config
+              </a>
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2" asChild>
+              <a href={`/projects/${data.project.id}/settings/env`}>
+                Environment Variables
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
-    </section>
+    </div>
   </Layout>
 );
 
