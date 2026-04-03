@@ -1,12 +1,26 @@
 import { and, desc, eq } from "drizzle-orm";
+import Docker from "dockerode";
 import { type RequestWithParamsAndSession } from "../auth/session";
 import { db } from "../db/db";
+import {
+  deploymentEventChannel,
+  loadDeploymentEventHistory,
+  publishDeploymentEvent,
+  type DeploymentStreamEvent
+} from "../deploymentEvents";
 import * as schema from "../db/schema";
 import { badRequest, json, notFound, parseJson } from "../http/helpers";
+import { getGitHubAccessToken } from "../lib/githubAccess";
 import { enqueueDeployment } from "../queue";
 import { getRedisSubscriber, isRedisConfigured } from "../redis";
-import { getText, getTextFromOffset, isStorageConfigured, presign } from "../storage";
+import { storeRepoCredential } from "../repoCredentials";
+import { getText, getTextFromOffset, isStorageConfigured } from "../storage";
 import { generateShortId } from "../utils/shortId";
+
+const DOCKER_SOCKET_PATH =
+  (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock").trim() || "/var/run/docker.sock";
+const dockerClient = new Docker({ socketPath: DOCKER_SOCKET_PATH });
+const DOCKER_DEPLOYMENT_LABEL_KEY = "io.pdploy.deployment";
 
 const getProjectForUser = async (projectId: string, userId: string) => {
   const [project] = await db
@@ -18,6 +32,8 @@ const getProjectForUser = async (projectId: string, userId: string) => {
 };
 
 const MAX_DEPLOYMENT_ENV_FILE_BYTES = 64 * 1024;
+
+const sanitizeDockerLabelValue = (value: string): string => value.replace(/[^A-Za-z0-9_.-]/g, "_");
 
 export const listDeployments = async (req: RequestWithParamsAndSession) => {
   const projectId = req.params["id"];
@@ -83,7 +99,9 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
       projectId: project.id,
       shortId,
       artifactPrefix,
-      status: "queued"
+      status: "queued",
+      buildPreviewMode: project.previewMode,
+      buildServerPreviewTarget: project.serverPreviewTarget
     })
     .returning();
 
@@ -97,7 +115,25 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
     .where(eq(schema.projects.id, project.id));
 
   try {
-    await enqueueDeployment(deployment.id, { envFile, userId });
+    let repoCredentialId: string | undefined;
+    if (project.repoUrl.includes("github.com/")) {
+      const githubAuth = await getGitHubAccessToken(req);
+      if (githubAuth.requiresReauth) {
+        await db
+          .update(schema.deployments)
+          .set({ status: "failed", finishedAt: new Date() })
+          .where(eq(schema.deployments.id, deployment.id));
+        return json(
+          { error: "GitHub authentication expired. Please re-link GitHub before deploying." },
+          { status: 401 }
+        );
+      }
+      if (githubAuth.accessToken) {
+        repoCredentialId = await storeRepoCredential(deployment.id, githubAuth.accessToken);
+      }
+    }
+
+    await enqueueDeployment(deployment.id, { envFile, userId, repoCredentialId });
   } catch (err) {
     console.error("Failed to enqueue deployment:", err);
     await db
@@ -134,6 +170,71 @@ export const getDeployment = async (req: RequestWithParamsAndSession) => {
   return json(deployment);
 };
 
+export const cancelDeployment = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Deployment not found");
+  }
+  const userId = req.session.user.id;
+  const [deployment] = await db
+    .select()
+    .from(schema.deployments)
+    .where(eq(schema.deployments.id, id))
+    .limit(1);
+
+  if (!deployment) {
+    return notFound("Deployment not found");
+  }
+
+  const project = await getProjectForUser(deployment.projectId, userId);
+  if (!project) {
+    return notFound("Deployment not found");
+  }
+
+  if (deployment.status !== "queued" && deployment.status !== "building") {
+    return badRequest("Only queued or building deployments can be cancelled");
+  }
+
+  const now = new Date();
+  await db
+    .update(schema.deployments)
+    .set({
+      status: "failed",
+      finishedAt: now
+    })
+    .where(eq(schema.deployments.id, deployment.id));
+
+  await publishDeploymentEvent(deployment.id, {
+    type: "log",
+    content: `[${now.toISOString()}] Build cancelled by user.\n`
+  });
+  await publishDeploymentEvent(deployment.id, { type: "status", status: "failed" });
+  await publishDeploymentEvent(deployment.id, { type: "done", status: "failed" });
+
+  try {
+    const containers = await dockerClient.listContainers({
+      all: true,
+      filters: {
+        label: [`${DOCKER_DEPLOYMENT_LABEL_KEY}=${sanitizeDockerLabelValue(deployment.id)}`]
+      }
+    });
+    await Promise.all(
+      containers.map(async (containerInfo) => {
+        if (!containerInfo.Id) return;
+        try {
+          await dockerClient.getContainer(containerInfo.Id).remove({ force: true });
+        } catch (error) {
+          console.error("Failed to remove build container during cancellation:", error);
+        }
+      })
+    );
+  } catch (error) {
+    console.error("Failed to list build containers during cancellation:", error);
+  }
+
+  return json({ ok: true, status: "failed", cancelled: true });
+};
+
 export const getDeploymentLog = async (req: RequestWithParamsAndSession) => {
   if (!isStorageConfigured()) {
     return json({ error: "S3 storage is not configured" }, { status: 503 });
@@ -163,12 +264,69 @@ export const getDeploymentLog = async (req: RequestWithParamsAndSession) => {
     return notFound("Build log not available");
   }
 
-  const logUrl = presign(deployment.buildLogKey, { method: "GET", expiresIn: 300 });
-  return json({ logUrl });
+  try {
+    const logText = await getText(deployment.buildLogKey);
+    return new Response(logText, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store"
+      }
+    });
+  } catch (error) {
+    console.error("Failed to load deployment log from storage:", error);
+    return notFound("Build log not available");
+  }
 };
 
-const deploymentLogChannel = (deploymentId: string): string =>
-  `deployment:${deploymentId}:logs`;
+const isTerminalDeploymentStatus = (status: string): status is "success" | "failed" =>
+  status === "success" || status === "failed";
+
+const utf8ByteLength = (text: string): number => Buffer.byteLength(text, "utf8");
+
+const bootstrapDeploymentLogReplay = async (opts: {
+  deploymentId: string;
+  buildLogKey: string | null;
+  requestedOffset: number;
+  sendLog: (content: string) => void;
+}): Promise<void> => {
+  const { deploymentId, buildLogKey, requestedOffset, sendLog } = opts;
+
+  if (requestedOffset > 0) {
+    if (!buildLogKey || !isStorageConfigured()) return;
+    try {
+      const persistedLog = (await getTextFromOffset(buildLogKey, requestedOffset)).text;
+      if (persistedLog) sendLog(persistedLog);
+    } catch {
+      /* object may not exist yet */
+    }
+    return;
+  }
+
+  const history = await loadDeploymentEventHistory(deploymentId);
+  let dbLogText = "";
+  for (const historicalEvent of history) {
+    if (historicalEvent.type !== "log") continue;
+    dbLogText += historicalEvent.content;
+  }
+  if (dbLogText) {
+    sendLog(dbLogText);
+  }
+
+  const dbBytes = dbLogText ? utf8ByteLength(dbLogText) : 0;
+  if (!buildLogKey || !isStorageConfigured()) return;
+
+  try {
+    const fullS3 = await getText(buildLogKey);
+    if (!fullS3) return;
+    const fullBuf = Buffer.from(fullS3, "utf8");
+    if (fullBuf.length <= dbBytes) return;
+    if (dbBytes > 0 && !fullS3.startsWith(dbLogText)) return;
+    const tail = fullBuf.subarray(dbBytes).toString("utf8");
+    if (tail) sendLog(tail);
+  } catch {
+    /* object may not exist yet */
+  }
+};
 
 export const streamDeploymentLog = async (req: RequestWithParamsAndSession) => {
   const id = req.params["id"];
@@ -193,26 +351,31 @@ export const streamDeploymentLog = async (req: RequestWithParamsAndSession) => {
 
   const encoder = new TextEncoder();
 
-  const sendEvent = (data: {
-    type: string;
-    content?: string;
-    status?: string;
-    fullLog?: string;
-  }) => {
-    return encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
-  };
+  const sendEvent = (data: DeploymentStreamEvent) =>
+    encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+  const sendKeepalive = () => encoder.encode(`: keepalive\n\n`);
+  const requestedOffset = (() => {
+    const raw = new URL(req.url).searchParams.get("offset");
+    if (!raw) return 0;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  })();
 
-  let intervalId: ReturnType<typeof setInterval> | null = null;
+  let reconciliationInterval: ReturnType<typeof setInterval> | null = null;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   let subscriber: Awaited<ReturnType<typeof getRedisSubscriber>> = null;
 
   const stream = new ReadableStream({
     async start(controller) {
-      const statusPollInterval = 1500;
-      let lastByteOffset = 0;
-      let isFinished = false;
       let streamClosed = false;
 
-      const checkStatusAndMaybeStream = async (): Promise<boolean> => {
+      const closeStream = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        controller.close();
+      };
+
+      const sendStatusSnapshot = async (): Promise<boolean> => {
         try {
           const [currentDeployment] = await db
             .select()
@@ -221,69 +384,35 @@ export const streamDeploymentLog = async (req: RequestWithParamsAndSession) => {
             .limit(1);
 
           if (!currentDeployment) {
-            streamClosed = true;
             controller.enqueue(sendEvent({ type: "error", content: "Deployment not found" }));
-            controller.close();
+            closeStream();
             return true;
           }
 
           controller.enqueue(sendEvent({ type: "status", status: currentDeployment.status }));
-
-          if (!subscriber && currentDeployment.buildLogKey && isStorageConfigured()) {
-            try {
-              const { text: newContent, bytesRead } = await getTextFromOffset(
-                currentDeployment.buildLogKey,
-                lastByteOffset
-              );
-              if (bytesRead > 0) {
-                lastByteOffset += bytesRead;
-                if (newContent) {
-                  controller.enqueue(sendEvent({ type: "log", content: newContent }));
-                }
-              }
-            } catch {
-              // log file may not exist yet
-            }
-          }
-
-          if (currentDeployment.status === "success" || currentDeployment.status === "failed") {
-            streamClosed = true;
-            let fullLog: string | undefined;
-            if (
-              currentDeployment.buildLogKey &&
-              isStorageConfigured()
-            ) {
-              try {
-                fullLog = await getText(currentDeployment.buildLogKey);
-              } catch {
-                // log file may be unavailable
-              }
-            }
-            controller.enqueue(
-              sendEvent({
-                type: "done",
-                status: currentDeployment.status,
-                ...(fullLog !== undefined && fullLog !== "" ? { fullLog } : {})
-              })
-            );
-            controller.close();
+          if (isTerminalDeploymentStatus(currentDeployment.status)) {
+            controller.enqueue(sendEvent({ type: "done", status: currentDeployment.status }));
+            closeStream();
             return true;
           }
 
           return false;
         } catch (err) {
           console.error("SSE stream error:", err);
-          streamClosed = true;
           controller.enqueue(sendEvent({ type: "error", content: "Stream error" }));
-          controller.close();
+          closeStream();
           return true;
         }
       };
 
       const cleanup = () => {
-        if (intervalId !== null) {
-          clearInterval(intervalId);
-          intervalId = null;
+        if (reconciliationInterval !== null) {
+          clearInterval(reconciliationInterval);
+          reconciliationInterval = null;
+        }
+        if (heartbeatInterval !== null) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
         }
         if (subscriber !== null) {
           subscriber.unsubscribe().catch(() => {});
@@ -292,7 +421,26 @@ export const streamDeploymentLog = async (req: RequestWithParamsAndSession) => {
         }
       };
 
-      isFinished = await checkStatusAndMaybeStream();
+      await bootstrapDeploymentLogReplay({
+        deploymentId: deployment.id,
+        buildLogKey: deployment.buildLogKey,
+        requestedOffset,
+        sendLog: (content) => {
+          controller.enqueue(sendEvent({ type: "log", content }));
+        }
+      });
+
+      heartbeatInterval = setInterval(() => {
+        if (streamClosed) return;
+        try {
+          controller.enqueue(sendKeepalive());
+        } catch {
+          cleanup();
+          closeStream();
+        }
+      }, 10000);
+
+      const isFinished = await sendStatusSnapshot();
       if (isFinished) {
         cleanup();
         return;
@@ -301,25 +449,37 @@ export const streamDeploymentLog = async (req: RequestWithParamsAndSession) => {
       const redisSub = await getRedisSubscriber();
       if (redisSub) {
         subscriber = redisSub;
-        const channel = deploymentLogChannel(deployment.id);
+        const channel = deploymentEventChannel(deployment.id);
         await subscriber.subscribe(channel, (message: string) => {
-          if (!streamClosed && message) {
+          if (streamClosed || !message) return;
+          try {
+            const event = JSON.parse(message) as DeploymentStreamEvent;
+            controller.enqueue(sendEvent(event));
+            if (event.type === "done") {
+              cleanup();
+              closeStream();
+            }
+          } catch {
             controller.enqueue(sendEvent({ type: "log", content: message }));
           }
         });
+      } else {
+        reconciliationInterval = setInterval(async () => {
+          const done = await sendStatusSnapshot();
+          if (done) {
+            cleanup();
+          }
+        }, 5000);
       }
-
-      intervalId = setInterval(async () => {
-        const done = await checkStatusAndMaybeStream();
-        if (done) {
-          cleanup();
-        }
-      }, statusPollInterval);
     },
     cancel() {
-      if (intervalId !== null) {
-        clearInterval(intervalId);
-        intervalId = null;
+      if (reconciliationInterval !== null) {
+        clearInterval(reconciliationInterval);
+        reconciliationInterval = null;
+      }
+      if (heartbeatInterval !== null) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
       }
       if (subscriber !== null) {
         subscriber.unsubscribe().catch(() => {});

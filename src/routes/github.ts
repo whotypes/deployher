@@ -1,9 +1,9 @@
 import { and, eq } from "drizzle-orm";
-import { auth } from "../../auth";
 import { type RequestWithParamsAndSession } from "../auth/session";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { json } from "../http/helpers";
+import { getGitHubAccessToken, hasRepoScope } from "../lib/githubAccess";
 
 type GitHubRepo = {
   id: number;
@@ -13,15 +13,6 @@ type GitHubRepo = {
   private: boolean;
   description: string | null;
   updatedAt: string | null;
-};
-
-const hasRepoScope = (scope: string | null | undefined): boolean => {
-  if (!scope) return false;
-  const scopes = scope
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return scopes.includes("repo") || scopes.includes("public_repo");
 };
 
 export const listRepos = async (req: RequestWithParamsAndSession) => {
@@ -49,24 +40,8 @@ export const listRepos = async (req: RequestWithParamsAndSession) => {
     );
   }
 
-  let accessToken: string | undefined;
-  try {
-    const tokenResponse = await auth.api.getAccessToken({
-      headers: req.headers,
-      body: {
-        providerId: "github",
-        accountId: account.id
-      }
-    });
-    accessToken = tokenResponse.accessToken;
-  } catch (error) {
-    return json(
-      { error: "GitHub authentication failed. Please re-link GitHub.", requiresReauth: true },
-      { status: 401 }
-    );
-  }
-
-  if (!accessToken) {
+  const tokenResult = await getGitHubAccessToken(req);
+  if (tokenResult.requiresReauth || !tokenResult.accessToken) {
     return json(
       { error: "GitHub access token not available", requiresReauth: true },
       { status: 401 }
@@ -77,7 +52,7 @@ export const listRepos = async (req: RequestWithParamsAndSession) => {
     "https://api.github.com/user/repos?per_page=100&sort=updated&direction=desc&visibility=all",
     {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${tokenResult.accessToken}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "deployher"
@@ -128,28 +103,6 @@ export const listRepos = async (req: RequestWithParamsAndSession) => {
   return json({ repos });
 };
 
-const getAccessTokenForGithub = async (
-  req: RequestWithParamsAndSession
-): Promise<{ accessToken: string; accountId: string } | null> => {
-  const userId = req.session.user.id;
-  const [account] = await db
-    .select({ id: schema.accounts.id, scope: schema.accounts.scope })
-    .from(schema.accounts)
-    .where(and(eq(schema.accounts.userId, userId), eq(schema.accounts.providerId, "github")))
-    .limit(1);
-  if (!account || !hasRepoScope(account.scope)) return null;
-  try {
-    const tokenResponse = await auth.api.getAccessToken({
-      headers: req.headers,
-      body: { providerId: "github", accountId: account.id }
-    });
-    const accessToken = tokenResponse.accessToken;
-    return accessToken ? { accessToken, accountId: account.id } : null;
-  } catch {
-    return null;
-  }
-};
-
 export const listBranches = async (req: RequestWithParamsAndSession) => {
   const url = new URL(req.url);
   const ownerDecoded = url.searchParams.get("owner")?.trim();
@@ -157,8 +110,8 @@ export const listBranches = async (req: RequestWithParamsAndSession) => {
   if (!ownerDecoded || !repoDecoded) {
     return json({ error: "owner and repo query parameters are required" }, { status: 400 });
   }
-  const tokenResult = await getAccessTokenForGithub(req);
-  if (!tokenResult) {
+  const tokenResult = await getGitHubAccessToken(req);
+  if (!tokenResult.accessToken) {
     return json(
       { error: "GitHub account not linked or repo access not granted", requiresLink: true },
       { status: 401 }

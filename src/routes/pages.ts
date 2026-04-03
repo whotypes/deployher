@@ -1,7 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getSession, type RequestWithParamsAndSession } from "../auth/session";
 import { getStartedAt, getServer } from "../appContext";
-import { config } from "../config";
+import { buildDevSubdomainUrl, config, getDevProjectUrlPattern, getProdProjectUrlPattern } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { renderHealthPage, type HealthData } from "../health/HealthPage";
@@ -12,11 +12,24 @@ import { renderLandingPage } from "../ui/LandingPage";
 import { renderNotFoundPage } from "../ui/NotFoundPage";
 import { renderDeploymentDetailPage, type DeploymentDetailData } from "../ui/DeploymentDetailPage";
 import { renderProjectDetailPage, type ProjectDetailData } from "../ui/ProjectDetailPage";
+import { renderProjectSettingsPage, type ProjectSettingsData } from "../ui/ProjectSettingsPage";
 import { renderProjectsPage, type ProjectsPageData } from "../ui/ProjectsPage";
 import { getBuildContainerConfig } from "../admin/buildSettings";
 import { buildExampleRowsForUser } from "../admin/exampleDeployments";
 import { getDeployment } from "./deployments";
-import { getProject } from "./projects";
+import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
+import {
+  getProject,
+  getSidebarFeaturedDeploymentForProject,
+  listSidebarProjectSummariesForUser
+} from "./projects";
+
+const toLayoutUser = (user: RequestWithParamsAndSession["session"]["user"]) => ({
+  name: user.name ?? null,
+  email: user.email,
+  image: user.image ?? null,
+  role: user.role
+});
 
 export const wantsHtml = (req: Request) => {
   const accept = req.headers.get("accept") ?? "";
@@ -136,16 +149,17 @@ const buildHealthData = (): HealthData => {
       system: cpu.system
     },
     domains: {
-      dev: `${config.devProtocol}://{project}.${config.devDomain}`,
-      prod: `${config.prodProtocol}://{project}.${config.prodDomain}`
+      dev: getDevProjectUrlPattern(),
+      prod: getProdProjectUrlPattern()
     }
   };
 };
 
 const buildPreviewUrl = (shortId: string) =>
-  `${config.devProtocol}://${shortId}.${config.devDomain}:${config.port}`;
+  buildDevSubdomainUrl(shortId);
 
 export const dashboardPage = async (req: RequestWithParamsAndSession) => {
+  const pathname = new URL(req.url).pathname;
   const userId = req.session.user.id;
   const healthData = buildHealthData();
   const projects = await db
@@ -162,11 +176,31 @@ export const dashboardPage = async (req: RequestWithParamsAndSession) => {
     .leftJoin(schema.projects, eq(schema.deployments.projectId, schema.projects.id))
     .where(eq(schema.projects.userId, userId))
     .orderBy(desc(schema.deployments.createdAt))
-    .limit(10);
+    .limit(15);
+
+  const deploymentStatsRows = await db
+    .select({
+      status: schema.deployments.status,
+      n: count()
+    })
+    .from(schema.deployments)
+    .innerJoin(schema.projects, eq(schema.deployments.projectId, schema.projects.id))
+    .where(eq(schema.projects.userId, userId))
+    .groupBy(schema.deployments.status);
+
+  const deploymentsByStatus: Record<string, number> = {};
+  for (const row of deploymentStatsRows) {
+    deploymentsByStatus[row.status] = Number(row.n);
+  }
+  const deploymentTotal = Object.values(deploymentsByStatus).reduce((a, b) => a + b, 0);
+
+  const sidebarProjects = await listSidebarProjectSummariesForUser(userId);
 
   const data: DashboardData = {
+    pathname,
     health: healthData,
-    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
+    user: toLayoutUser(req.session.user),
+    sidebarProjects,
     projects: projects.map((p) => ({
       id: p.id,
       name: p.name,
@@ -176,11 +210,17 @@ export const dashboardPage = async (req: RequestWithParamsAndSession) => {
     recentDeployments: deploymentsWithProjects.map((d) => ({
       id: d.deployment.id,
       projectId: d.deployment.projectId,
+      shortId: d.deployment.shortId,
       projectName: d.projectName ?? "Unknown",
       status: d.deployment.status,
       createdAt: d.deployment.createdAt.toISOString(),
       previewUrl: d.deployment.previewUrl
-    }))
+    })),
+    stats: {
+      projectCount: projects.length,
+      deploymentTotal,
+      deploymentsByStatus
+    }
   };
 
   const stream = await renderDashboardPage(data);
@@ -208,38 +248,70 @@ export const projectsPage = async (req: RequestWithParamsAndSession) => {
     .from(schema.projects)
     .where(eq(schema.projects.userId, userId))
     .orderBy(desc(schema.projects.createdAt));
-  const projectIds = projects.map((p) => p.id);
+  const deploymentIds = projects
+    .map((p) => p.currentDeploymentId)
+    .filter((id): id is NonNullable<typeof id> => id != null);
   const currentDeployments =
-    projectIds.length > 0
-      ? await db
-          .select()
-          .from(schema.deployments)
-          .where(
-            eq(
-              schema.deployments.id,
-              db
-                .select({ id: schema.projects.currentDeploymentId })
-                .from(schema.projects)
-                .where(eq(schema.projects.id, schema.deployments.projectId))
-            )
-          )
+    deploymentIds.length > 0
+      ? await db.select().from(schema.deployments).where(inArray(schema.deployments.id, deploymentIds))
       : [];
+  const deploymentById = new Map(currentDeployments.map((d) => [d.id, d]));
 
-  const deploymentStatusMap = new Map(currentDeployments.map((d) => [d.id, d.status]));
+  const sidebarProjects = projects.map((p) => {
+    const dep = p.currentDeploymentId ? deploymentById.get(p.currentDeploymentId) : undefined;
+    return {
+      id: p.id,
+      name: p.name,
+      deploymentStatus: parseSidebarProjectDeploymentStatus(dep?.status)
+    };
+  });
+
   const data: ProjectsPageData = {
-    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
+    pathname: new URL(req.url).pathname,
+    user: toLayoutUser(req.session.user),
+    csrfToken: req.csrfToken ?? "",
+    sidebarProjects,
     github: {
       linked: Boolean(githubAccount),
       hasRepoAccess
     },
-    projects: projects.map((p) => ({
-      ...p,
-      createdAt: p.createdAt.toISOString(),
-      updatedAt: p.updatedAt.toISOString(),
-      currentDeploymentStatus: p.currentDeploymentId
-        ? deploymentStatusMap.get(p.currentDeploymentId)
-        : undefined
-    }))
+    projects: projects.map((p) => {
+      const dep = p.currentDeploymentId ? deploymentById.get(p.currentDeploymentId) : undefined;
+      return {
+        id: p.id,
+        name: p.name,
+        repoUrl: p.repoUrl,
+        branch: p.branch,
+        workspaceRootDir: p.workspaceRootDir,
+        projectRootDir: p.projectRootDir,
+        frameworkHint: p.frameworkHint,
+        previewMode: p.previewMode,
+        serverPreviewTarget: p.serverPreviewTarget,
+        runtimeImageMode: p.runtimeImageMode,
+        dockerfilePath: p.dockerfilePath,
+        dockerBuildTarget: p.dockerBuildTarget,
+        skipHostStrategyBuild: p.skipHostStrategyBuild,
+        runtimeContainerPort: p.runtimeContainerPort,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
+        currentDeploymentId: p.currentDeploymentId,
+        currentDeployment: dep
+          ? {
+              id: dep.id,
+              shortId: dep.shortId,
+              status: dep.status,
+              previewUrl: dep.previewUrl,
+              buildStrategy: dep.buildStrategy,
+              serveStrategy: dep.serveStrategy,
+              previewResolution: dep.previewResolution,
+              buildPreviewMode: dep.buildPreviewMode,
+              buildServerPreviewTarget: dep.buildServerPreviewTarget,
+              createdAt: dep.createdAt.toISOString(),
+              finishedAt: dep.finishedAt?.toISOString() ?? null
+            }
+          : null
+      };
+    })
   };
 
   const stream = await renderProjectsPage(data);
@@ -271,8 +343,13 @@ export const projectDetailPage = async (req: RequestWithParamsAndSession) => {
     .orderBy(desc(schema.deployments.createdAt));
   const currentDeployment = deployments.find((d) => d.id === project.currentDeploymentId);
 
+  const sidebarProjects = await listSidebarProjectSummariesForUser(userId);
+
   const data: ProjectDetailData = {
-    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
+    pathname: new URL(req.url).pathname,
+    user: toLayoutUser(req.session.user),
+    csrfToken: req.csrfToken ?? "",
+    sidebarProjects,
     project: {
       ...project,
       createdAt: project.createdAt.toISOString(),
@@ -323,8 +400,14 @@ export const deploymentDetailPage = async (req: RequestWithParamsAndSession) => 
   }
 
   const previewUrl = buildPreviewUrl(deployment.shortId);
+  const sidebarProjects = await listSidebarProjectSummariesForUser(userId);
+  const sidebarFeaturedDeployment = await getSidebarFeaturedDeploymentForProject(project.id);
   const data: DeploymentDetailData = {
-    user: { name: req.session.user.name ?? null, email: req.session.user.email, image: req.session.user.image ?? null },
+    pathname: new URL(req.url).pathname,
+    user: toLayoutUser(req.session.user),
+    csrfToken: req.csrfToken ?? "",
+    sidebarProjects,
+    sidebarFeaturedDeployment,
     deployment: {
       ...deployment,
       createdAt: deployment.createdAt.toISOString(),
@@ -342,12 +425,12 @@ export const deploymentDetailPage = async (req: RequestWithParamsAndSession) => 
 
 export const adminExamplesPage = async (req: RequestWithParamsAndSession) => {
   const userId = req.session.user.id;
+  const sidebarProjects = await listSidebarProjectSummariesForUser(userId);
   const data: AdminExamplesPageData = {
-    user: {
-      name: req.session.user.name ?? null,
-      email: req.session.user.email,
-      image: req.session.user.image ?? null
-    },
+    pathname: new URL(req.url).pathname,
+    user: toLayoutUser(req.session.user),
+    csrfToken: req.csrfToken ?? "",
+    sidebarProjects,
     examples: await buildExampleRowsForUser(userId),
     buildSettings: await getBuildContainerConfig()
   };
@@ -357,6 +440,52 @@ export const adminExamplesPage = async (req: RequestWithParamsAndSession) => {
     headers: { "Content-Type": "text/html; charset=utf-8" }
   });
 };
+
+const buildProjectSettingsData = async (
+  req: RequestWithParamsAndSession,
+  activeSection: ProjectSettingsData["activeSection"]
+): Promise<Response> => {
+  const id = req.params["id"];
+  if (!id) return wantsHtml(req) ? notFoundPage() : notFound("Project not found");
+
+  const userId = req.session.user.id;
+  const [project] = await db
+    .select()
+    .from(schema.projects)
+    .where(and(eq(schema.projects.id, id), eq(schema.projects.userId, userId)))
+    .limit(1);
+
+  if (!project) return wantsHtml(req) ? notFoundPage() : notFound("Project not found");
+
+  const sidebarProjects = await listSidebarProjectSummariesForUser(userId);
+  const sidebarFeaturedDeployment = await getSidebarFeaturedDeploymentForProject(project.id);
+
+  const data: ProjectSettingsData = {
+    pathname: new URL(req.url).pathname,
+    user: toLayoutUser(req.session.user),
+    csrfToken: req.csrfToken ?? "",
+    sidebarProjects,
+    sidebarFeaturedDeployment,
+    project: {
+      ...project,
+      createdAt: project.createdAt.toISOString(),
+      updatedAt: project.updatedAt.toISOString()
+    },
+    activeSection
+  };
+
+  const stream = await renderProjectSettingsPage(data);
+  return new Response(stream, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+};
+
+export const projectSettingsPage = (req: RequestWithParamsAndSession) =>
+  buildProjectSettingsData(req, "general");
+
+export const projectSettingsEnvPage = (req: RequestWithParamsAndSession) =>
+  buildProjectSettingsData(req, "env");
+
+export const projectSettingsDangerPage = (req: RequestWithParamsAndSession) =>
+  buildProjectSettingsData(req, "danger");
 
 export const handleProjectRoute = async (req: RequestWithParamsAndSession) => {
   if (wantsHtml(req)) {
@@ -377,9 +506,12 @@ export const health = async (req: RequestWithParams) => {
   const accept = req.headers.get("accept") ?? "";
   if (accept.includes("text/html")) {
     const session = await getSession(req);
+    const sidebarProjects = session ? await listSidebarProjectSummariesForUser(session.user.id) : [];
     const data: HealthData = {
+      pathname: new URL(req.url).pathname,
       ...healthData,
-      user: session ? { name: session.user.name ?? null, email: session.user.email, image: session.user.image ?? null } : null
+      user: session ? toLayoutUser(session.user) : null,
+      sidebarProjects
     };
     const stream = await renderHealthPage(data);
     return new Response(stream, {
