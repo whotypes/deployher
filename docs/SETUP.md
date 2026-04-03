@@ -22,7 +22,7 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 > You do not need Bun if you run the full stack in Docker. Use the [Full stack in Docker](#full-stack-in-docker) workflow.
 
 > [!NOTE]
-> The app image is slim and does not run build jobs. Build toolchains (Docker CLI, Node/Python package managers, uv, Poetry, `unzip`) live in the dedicated `build-worker` image, which talks to the host Docker daemon through `/var/run/docker.sock`.
+> The app image is slim and does not run build jobs. Build toolchains (Docker CLI, Node/Python package managers, uv, Poetry, `unzip`) live in the dedicated `deployment-worker` image, which talks to the host Docker daemon through `/var/run/docker.sock`.
 
 > [!IMPORTANT]
 > 4 GB RAM is recommended for running the full stack.
@@ -43,17 +43,17 @@ cp .env.example .env
 ./infra/dev.sh start
 ```
 
-This starts Postgres, Redis, Garage, app, and build-worker.
+This starts Postgres, Redis, Garage, app, and deployment-worker.
 
 > [!WARNING]
 > Do not commit `.env`. It will contain secrets after bootstrap and OAuth setup.
 
 3. Set auth and GitHub OAuth in `.env` (required for login and repo linking):
 
-- `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`: from [GitHub OAuth Apps][github-oauth]. Create an OAuth App; set Authorization callback URL to `http://localhost:3000/api/auth/callback/github` for dev (or your app URL + `/api/auth/callback/github`).
+- `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`: from [GitHub OAuth Apps][github-oauth]. Create an OAuth App; set Authorization callback URL to `http://localhost:3001/api/auth/callback/github` for host dev (or your app URL + `/api/auth/callback/github`). If you run the app container instead of Bun on the host, use `http://localhost:3000/api/auth/callback/github`.
 - The app derives the auth base URL from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT` in development (and `PROD_*` in production). Ensure these match how you reach the app so callbacks work.
 - `BETTER_AUTH_SECRET`: set for production (e.g. `openssl rand -base64 32`). Used by Better Auth for session signing. Optional in dev.
-- `BETTER_AUTH_URL`: if your Better Auth setup expects it, set to your app URL (e.g. `http://localhost:3000`). The codebase builds the client URL from `DEV_*`/`PROD_*` and `PORT`.
+- `BETTER_AUTH_URL`: if your Better Auth setup expects it, set to your app URL. For host Bun dev, use `http://localhost:3001`. For the Docker app, use `http://localhost:3000`. The codebase builds the client URL from `DEV_*`/`PROD_*` and `PORT`.
 
 ## Workflow A: Full stack in Docker (no Bun)
 
@@ -65,14 +65,14 @@ Good for: CI, testing the containerized path, or running without installing [bun
 docker compose up -d --build
 ```
 
-This also builds a dedicated Node build image (`pdploy-node-builder:latest`) used by deployment workers for Node repos. It has `pnpm` activated via Corepack.
+This also builds dedicated Node and Bun build images (`pdploy-node-build-image:latest` and `pdploy-bun-build-image:latest`) used by deployment workers for Node repos. The Bun image includes Python and common native build dependencies so packages like `canvas` can compile reliably.
 
 2. App URL: `http://localhost:3000`
 
 3. Logs (app + worker):
 
 ```bash
-docker compose logs -f app build-worker
+docker compose logs -f app deployment-worker
 ```
 
 4. Stop everything:
@@ -81,20 +81,20 @@ docker compose logs -f app build-worker
 docker compose down
 ```
 
-5. Stop only app + build-worker (keep Postgres, Redis, Garage):
+5. Stop only app + deployment-worker (keep Postgres, Redis, Garage):
 
 ```bash
-docker compose stop app build-worker
+docker compose stop app deployment-worker
 ```
 
-6. Restart app + build-worker:
+6. Restart app + deployment-worker:
 
 ```bash
-docker compose up -d --build node-builder app build-worker
+docker compose up -d --build node-build-image bun-build-image app deployment-worker
 ```
 
 > [!NOTE]
-> Inside the app container, migrations run on startup (`RUN_MIGRATIONS=1`). The build-worker consumes Redis jobs and uses container hostnames: `postgres`, `redis`, `garage`.
+> Inside the app container, migrations run on startup (`RUN_MIGRATIONS=1`). The deployment-worker consumes Redis jobs and uses container hostnames: `postgres`, `redis`, `garage`.
 
 ## Workflow B: Infra in Docker, app + worker on host
 
@@ -103,8 +103,10 @@ Good for: daily development with fast feedback. Requires [bun] on the host.
 1. After [one-time bootstrap](#one-time-bootstrap), stop Docker app services so host processes own app and queue consumption:
 
 ```bash
-docker compose stop app build-worker
+docker compose stop app deployment-worker
 ```
+
+If OrbStack or another non-Compose service is already listening on the app port, that command is still required but not sufficient. Host Bun dev should use `PORT=3001` so it does not compete with the existing listener.
 
 2. Run migrations and seed (if not already done):
 
@@ -125,7 +127,7 @@ bun run dev
 bun run start:worker
 ```
 
-5. App URL: `http://localhost:3000`
+5. App URL: `http://localhost:3001`
 
 6. Stop host app/worker with Ctrl+C. Infra (Postgres, Redis, Garage) keeps running.
 
@@ -148,7 +150,7 @@ bun run start:worker
 ```
 
 > [!TIP]
-> For day-to-day dev, keep infra running and use either Docker (`app` + `build-worker`) or host processes (`bun run dev` + `bun run start:worker`) consistently for a session.
+> For day-to-day dev, keep infra running and use either Docker (`app` + `deployment-worker`) or host processes (`bun run dev` + `bun run start:worker`) consistently for a session.
 
 ## Infra script reference
 
@@ -156,8 +158,8 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 
 | Command | Description |
 |---------|-------------|
-| `./infra/dev.sh start` | Start Postgres, Redis, Garage, app, and build-worker; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; verify Docker access from build-worker. |
-| `./infra/dev.sh stop` | Stop all compose services (including app and build-worker). |
+| `./infra/dev.sh start` | Start Postgres, Redis, Garage, app, and deployment-worker; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; verify Docker access from deployment-worker. |
+| `./infra/dev.sh stop` | Stop all compose services (including app and deployment-worker). |
 | `./infra/dev.sh reset` | `docker compose down -v`, clear Garage data and secrets, then run `start` again. Run migrate/seed after. |
 | `./infra/dev.sh migrate` | Ensure stack is up, then run `bun migrate.ts`. |
 | `./infra/dev.sh seed` | Ensure stack is up, then run `bun seed.ts`. |
@@ -172,17 +174,18 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 |----------|----------|-------------|
 | `APP_ENV` | Yes | `development` or `production` |
 | `HOSTNAME` | Yes | Bind address (e.g. `0.0.0.0`) |
-| `PORT` | No | Default `3000` |
+| `PORT` | No | Code default `3000`. For host Bun dev, `.env.example` sets `3001`; Docker/container examples keep `3000`. |
 | `DATABASE_URL` | Yes | Postgres connection string. Use `localhost:5432` when app runs on host; use `postgres:5432` inside app container. |
-| `REDIS_URL` | Yes | Redis URL. Use `localhost:6379` on host; `redis:6379` in container. If unset or unreachable, build-worker cannot process deployments. |
+| `REDIS_URL` | Yes | Redis URL. Use `localhost:6379` on host; `redis:6379` in container. If unset or unreachable, deployment-worker cannot process deployments. |
 | `S3_ENDPOINT` | Yes | Garage/S3 endpoint. Use `http://127.0.0.1:3900` on host; `http://garage:3900` in container. |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes for storage | Injected by `./infra/dev.sh start` or set manually. Aliases: `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. |
 | `S3_REGION`, `AWS_REGION` | No | Default `garage`. |
-| `BETTER_AUTH_URL` | Optional | App base URL if your Better Auth config expects it. Auth client URL is derived from `DEV_*`/`PROD_*` and `PORT`. |
+| `BETTER_AUTH_URL` | Optional | App base URL if your Better Auth config expects it. Auth client URL is derived from `DEV_*`/`PROD_*` and `PORT` in development (and `PROD_*` in production). |
 | `BETTER_AUTH_SECRET` | Recommended in prod | Secret for session/signing (e.g. `openssl rand -base64 32`). |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Yes for GitHub | OAuth app credentials; callback URL must match your app URL + `/api/auth/callback/github`. |
 | `DEV_DOMAIN`, `PROD_DOMAIN`, `DEV_PROTOCOL`, `PROD_PROTOCOL` | No | Used for auth callback URL and preview URLs. Defaults in `.env.example`. Subdomain previews match `Host` against `<id>.<DEV_DOMAIN>` or `<id>.<PROD_DOMAIN>`. |
-| `BUILD_WORKERS` | No | Legacy in-process worker count for app-thread workers. Keep `0` when using the standalone `build-worker` service. |
+| `BUILD_WORKERS` | No | Legacy in-process worker count for app-thread workers. Keep `0` when using the standalone `deployment-worker` service. |
+| `NEXUS_REGISTRY` | No | Forwarded to runtime `docker build` as a build arg for private registry or Nexus-backed base images. |
 | `RUNTIME_STATIC_BASE_IMAGE` | No | Base image for standardized OCI runtime artifact generation from static build output. Default `nginx:alpine`. |
 | `SKIP_CLIENT_BUILD` | No | Set to `1` in Docker/prod so the app uses prebuilt client assets. |
 | `RUN_MIGRATIONS` | No | Set to `1` to run migrations on app startup (default in Docker). |
@@ -191,7 +194,8 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| App | 3000 | HTTP |
+| App (Docker) | 3000 | HTTP |
+| App (host Bun dev) | 3001 | HTTP |
 | Postgres | 5432 | Database |
 | Redis | 6379 | Queue/cache |
 | Garage | 3900 (S3 API), 3901 (RPC), 3902 (Web UI), 3903 (Admin) | Object storage |
@@ -224,7 +228,7 @@ Use one of these as a starting point, push it to GitHub, then create a pdploy pr
 
 ## Build pipeline and workers
 
-Deployments are queued in Redis and processed by a standalone worker process (`src/workers/runBuildWorker.ts`), usually via the `build-worker` Compose service. The app process does not start Bun `Worker` threads in this architecture.
+Deployments are queued in Redis and processed by a standalone worker process (`src/workers/runBuildWorker.ts`), usually via the `deployment-worker` Compose service. The app process does not start Bun `Worker` threads in this architecture.
 
 Each worker process: dequeues a job, clones the repo from GitHub (zipball), detects build strategy (Node or Python), installs dependencies via the relevant package manager, runs build, locates output artifacts, uploads them to S3 under the deployment's `artifactPrefix`, and updates deployment status and preview URL. Logs are streamed to Redis pub/sub and persisted to S3; the UI streams from the same channel.
 
@@ -255,7 +259,7 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 
 ## Production deployment
 
-- Use the same `Dockerfile`, `docker/build-worker.Dockerfile`, and `docker-compose.yml` (or equivalent). Deploy both `app` and `build-worker` with production `.env` (or injected secrets).
+- Use the same `Dockerfile`, `docker/build-worker.Dockerfile`, and `docker-compose.yml` (or equivalent). Deploy both `app` and `deployment-worker` with production `.env` (or injected secrets).
 - The app listens on port 3000 inside the container. Expose it via a reverse proxy (e.g. Caddy, Nginx, Traefik) for TLS and single entrypoint.
 - Migrations run on startup when `RUN_MIGRATIONS=1`. For zero-downtime deploys, consider running migrations in a separate step before rolling new app containers.
 - Optional: build a single-file executable for non-Docker hosts; see [README](../README.md#build-a-single-file-executable).

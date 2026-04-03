@@ -1,0 +1,1124 @@
+---
+title: "Turns out, PaaS isn't so ass"
+publishedAt: "2026-02-05"
+summary: "I built a self-hosted deployment platform from scratch—a mini Vercel/Netlify that runs on a single Hetzner VPS. Here's every technical decision, mistake, and rabbit hole."
+tag: "tech"
+featured: true
+---
+
+There's this scene in every programmer's life where you wake up one day, look at your `$50/mo` Vercel bill for a hobby project, and think—hold on. What am I even paying for? A CDN? A build queue? An S3 bucket with a nice UI?
+
+That's where Pdploy started. Not from some grand vision of disrupting the PaaS industry. Just from a Sunday morning brain worm that wouldn't go away.
+
+## The enshittification of everything
+
+Let me set the stage.
+
+In August 2022, Heroku killed the free tier. Overnight. After a decade of being the "just `git push` and it works" platform, Salesforce announced they were "sunsetting free product plans" starting November 28th. Dynos start at $7/month. Postgres at $9. The thing that taught an entire generation of developers how to deploy—gone.
+
+<LinkPreview url="https://www.heroku.com/blog/next-chapter" />
+
+A year later, Replit followed suit. Their August 2023 post explained that "more powerful infrastructure" and "crypto mining abuse" and individual users consuming "thousands of dollars of bandwidth" forced their hand. The free plan survived, but barely—Always On and Boost got axed.
+
+<LinkPreview url="https://blog.replit.com/new-limits-and-plans" />
+
+Cory Doctorow has a word for this pattern: enshittification. Platforms start amazing for users. Then they extract value from users to attract business customers. Then they extract value from *everyone* to maximize profit. Amazon's "flywheel" of marketplace degradation—45% seller fees, $31B in "advertising" revenue that's really payola—it's the same story, different domain.
+
+<LinkPreview url="https://pluralistic.net/2023/01/21/potemkin-ai/#hey-look-over-there" />
+
+Vercel and Netlify haven't gone full Heroku yet. But the writing's on the wall. Vercel's pricing is opaque at best, predatory at worst. The serverless tax adds up. Every "edge function" invocation, every ISR revalidation, every bandwidth spike on launch day—it's all metered. You're renting compute at a 10x markup and calling it "developer experience."
+
+I don't want to be dramatic about it. These are businesses. They need to make money. But there's a fundamental tension between "we make deploying easy" and "we charge you per request," and that tension only resolves one way over time.
+
+So I thought: what if I just... built the thing? How hard could a deployment platform actually be?
+
+<Callout type="info">
+Spoiler: harder than I expected. But not as hard as you'd think.
+</Callout>
+
+## What even is a deployment platform?
+
+Strip away the marketing and a PaaS like Vercel or Netlify is really just a handful of pieces:
+
+1. **A web server** that accepts "deploy this repo" requests
+2. **A build queue** that processes those requests one at a time
+3. **A build worker** that clones your repo, runs `npm install && npm run build`, and collects the output
+4. **Object storage** for the built artifacts (HTML, CSS, JS, images)
+5. **A preview server** that serves those artifacts on unique URLs
+6. **Authentication** so not just anyone can deploy
+7. **A database** to track projects, deployments, users
+
+That's it. That's the whole product. Everything else—the dashboard, the GitHub integration, the environment variables, the log viewer—is just UI sugar on top of these core primitives.
+
+Pdploy implements all seven. On a single VPS. With a single runtime. In about 4,000 lines of TypeScript.
+
+## The stack: choosing violence (Bun)
+
+I went all-in on Bun. Not Bun as "a faster npm install." Bun as the *entire runtime*. Server, build system, worker processes, package manager, test runner—everything.
+
+<LinkPreview url="https://bun.sh/blog/bun-v1.3" />
+
+Bun 1.3 was the tipping point. Before that release, using Bun for anything serious felt like a bet. After it? The feature set was genuinely compelling:
+
+- **`Bun.serve()`** with built-in routing and streaming responses
+- **Native S3 client** (`S3Client` from `"bun"`)—no AWS SDK needed
+- **Built-in Redis client** that benchmarks significantly faster than ioredis
+- **`Bun.build()`** for client-side asset bundling at startup
+- **`Bun.TOML.parse()`** for reading TOML files (used for pyproject.toml detection)
+- **`Bun.file()`** for zero-copy file I/O
+- **`Bun.spawn()`** for subprocess management
+- **`Bun.which()`** for finding executables on PATH
+
+The thing that really sold me was the S3 client. Pdploy stores every build artifact in S3-compatible storage. In a Node.js world, that means installing `@aws-sdk/client-s3`, wrestling with the 47 packages it drags in, and dealing with the SDK's baroque API. In Bun:
+
+```typescript
+import { S3Client } from "bun";
+
+const client = new S3Client({
+  endpoint: config.s3.endpoint,
+  region: config.s3.region,
+  bucket: config.s3.bucket,
+  accessKeyId: config.s3.accessKeyId,
+  secretAccessKey: config.s3.secretAccessKey,
+  virtualHostedStyle: false
+});
+
+// Upload
+const file = client.file("artifacts/my-project/1234/index.html");
+await file.write(data, { type: "text/html" });
+
+// Download as stream
+const stream = client.file(key).stream();
+
+// List objects
+const result = await client.list({ prefix: "artifacts/", maxKeys: 1000 });
+```
+
+That's it. No `new GetObjectCommand()`. No `await client.send()`. No importing from 6 different subpackages. Just... files.
+
+The built-in Redis situation is similar. Bun's Redis client is a first-class citizen:
+
+```typescript
+const client = new Bun.RedisClient(config.redis.url);
+await client.send("XADD", [streamKey, "*", "deploymentId", id]);
+```
+
+No `ioredis`. No `redis` package. No connection pooling library. Just raw Redis commands over a fast connection. And critically for Pdploy, it supports `EVAL` for Lua scripts, which powers the entire concurrency control system (more on that later).
+
+<Rabbit>
+I actually benchmarked Bun's Redis client against ioredis early on. For the `XADD`/`XREADGROUP` workload Pdploy uses, Bun was roughly 2-3x faster in throughput. Not that it matters at Pdploy's scale—but it's nice to know you're not leaving performance on the table.
+</Rabbit>
+
+The `package.json` is refreshingly clean. The total dependency list:
+
+```json
+{
+  "dependencies": {
+    "better-auth": "^1.2.8",
+    "dockerode": "^4.0.7",
+    "dotenv": "^16.5.0",
+    "drizzle-orm": "^0.44.2",
+    "postgres": "^3.4.5",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
+```
+
+Seven dependencies. For a full deployment platform with auth, database, container orchestration, and SSR. Compare that to a typical Next.js `node_modules` and weep.
+
+## The entrypoint: 40 lines to a server
+
+The entire application boots from `src/index.ts`:
+
+```typescript
+import { config } from "./config";
+import { setServer, setStartedAt } from "./appContext";
+import { buildClient } from "./client/build";
+import { json } from "./http/helpers";
+import { router } from "./router";
+import { checkStorageConnectivity, isStorageConfigured } from "./storage";
+
+setStartedAt(Date.now());
+
+const start = async () => {
+  const buildResult = await buildClient();
+  if (buildResult.skipped) {
+    console.log("Skipping client asset build (SKIP_CLIENT_BUILD enabled).");
+  } else if (!buildResult.success) {
+    console.warn("Client assets may be missing; /assets/* will 404.");
+  }
+
+  const server = Bun.serve({
+    port: config.port,
+    hostname: config.hostname,
+    development: config.env !== "production",
+    fetch: router,
+    error(error) {
+      console.error(error);
+      return json({ error: "Internal Server Error" }, { status: 500 });
+    }
+  });
+
+  setServer(server);
+  console.log(`API server at http://${server.hostname}:${server.port}`);
+
+  if (isStorageConfigured()) {
+    checkStorageConnectivity().then(({ ok, message }) => {
+      if (!ok && message) console.error(message);
+    });
+  }
+};
+
+start().catch((error) => {
+  console.error("Server failed to start:", error);
+  process.exit(1);
+});
+```
+
+On boot, Pdploy runs `Bun.build()` to bundle the client-side React assets (CSS, JS) into `/dist/client`. Then it starts the HTTP server. Then it background-checks S3 connectivity. That's the whole lifecycle.
+
+The `appContext.ts` module holds global singletons—the `Bun.Server` reference and the boot timestamp—so other parts of the codebase (like the health endpoint) can read server state without circular imports.
+
+## The config layer
+
+Every environment variable gets parsed and normalized in `src/config.ts`. It's one of those modules that looks boring but saves hours of debugging:
+
+```typescript
+export const config = {
+  env,
+  hostname,
+  port: parsePort(rawEnv.PORT, 3000),
+  devDomain: normalizeDomain(rawEnv.DEV_DOMAIN, "localhost"),
+  prodDomain: normalizeDomain(rawEnv.PROD_DOMAIN, "localhost"),
+  devProtocol: normalizeProtocol(rawEnv.DEV_PROTOCOL, "http"),
+  prodProtocol: normalizeProtocol(rawEnv.PROD_PROTOCOL, "https"),
+  build: {
+    workers: Math.max(0, parseInteger(rawEnv.BUILD_WORKERS, 2)),
+    accountMaxConcurrent: Math.max(0, parseInteger(rawEnv.BUILD_ACCOUNT_MAX_CONCURRENT, 1)),
+    accountSlotTtlSeconds: Math.max(30, parseInteger(rawEnv.BUILD_ACCOUNT_SLOT_TTL_SECONDS, 21600)),
+    reclaimIdleMs: Math.max(1000, parseInteger(rawEnv.BUILD_RECLAIM_IDLE_MS, 5000)),
+    pendingHeartbeatMs: Math.max(1000, parseInteger(rawEnv.BUILD_PENDING_HEARTBEAT_MS, 30000))
+  },
+  redis: { url: normalizeUrl(rawEnv.REDIS_URL) },
+  s3: {
+    endpoint: normalizeS3Endpoint(rawEnv.S3_ENDPOINT),
+    region: (rawEnv.S3_REGION ?? rawEnv.AWS_REGION ?? "garage").trim() || "garage",
+    bucket: (rawEnv.S3_BUCKET ?? "").trim() || undefined,
+    accessKeyId: (rawEnv.S3_ACCESS_KEY_ID ?? rawEnv.AWS_ACCESS_KEY_ID ?? "").trim() || undefined,
+    secretAccessKey: (rawEnv.S3_SECRET_ACCESS_KEY ?? "").trim() || undefined
+  }
+};
+```
+
+Every value has a normalizer. Domains get protocol prefixes stripped and trailing slashes removed. Ports get parsed to integers with fallbacks. S3 endpoints get cleaned up. There's a `requireEnv()` function that throws on boot if critical vars are missing—`APP_ENV` and `HOSTNAME` are non-negotiable.
+
+There's also `resolveProjectDomains()` which takes a project and generates its preview URL by slugifying the name:
+
+```typescript
+export const resolveProjectDomains = (project: { id: string; name: string }) => {
+  const slug = project.name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/g, "")
+    .replace(/-+$/g, "");
+
+  const label = slug || project.id;
+
+  return {
+    dev: `${config.devProtocol}://${label}.${config.devDomain}`,
+    prod: `${config.prodProtocol}://${label}.${config.prodDomain}`
+  };
+};
+```
+
+So a project named "My Cool App" gets `my-cool-app.localhost:3000` in dev and `my-cool-app.yourdomain.com` in production. Simple wildcard DNS.
+
+## The router: hand-rolled chaos
+
+No Express. No Hono. No Elysia. Just a 238-line hand-rolled router in `src/router.ts`.
+
+I know what you're thinking. Why? Aren't there like 47 perfectly good routing libraries for Bun? Yes. But here's the thing—Pdploy's routing has a requirement that most libraries handle poorly: **subdomain extraction**. Every deployment gets a unique subdomain (`abc123def4.localhost:3000`), and the router needs to detect whether an incoming request is hitting the main app or a deployment preview *before* doing any path matching.
+
+```typescript
+export const router = async (req: Request): Promise<Response> => {
+  const url = new URL(req.url);
+  const method = req.method;
+  const pathname = url.pathname;
+
+  // Subdomain detection comes FIRST
+  const host = req.headers.get("host") ?? "";
+  const deploymentIdInfo = extractDeploymentIdFromHost(host);
+  if (deploymentIdInfo) {
+    return serveSubdomainPreview(req, deploymentIdInfo);
+  }
+
+  // Static assets
+  if (pathname.startsWith("/assets/") && method === "GET") {
+    // ...serve from dist/client or embedded assets
+  }
+
+  // Better Auth passthrough
+  if (pathname.startsWith("/api/auth")) {
+    return auth.handler(req);
+  }
+
+  // Path-based preview fallback (/d/:id/*)
+  if (pathname.startsWith("/d/")) {
+    // ...
+  }
+
+  // Public routes (no auth required)
+  for (const route of publicRoutes) {
+    const { match, params } = matchRoute(route.pattern, pathname);
+    if (match) {
+      const handler = route.methods[method];
+      if (handler) return handler(Object.assign(req, { params }));
+    }
+  }
+
+  // Protected routes (auth required)
+  for (const route of protectedRoutes) {
+    const { match, params } = matchRoute(route.pattern, pathname);
+    if (match) {
+      const handler = route.methods[method];
+      if (handler) {
+        const result = await requireSession(req, pathname);
+        if ("response" in result) return result.response;
+        return handler(Object.assign(req, { params, session: result.session }));
+      }
+    }
+  }
+
+  return json({ error: "Not Found" }, { status: 404 });
+};
+```
+
+The `matchRoute` function is a simple pattern matcher that handles `:param` segments and `/*` wildcards:
+
+```typescript
+const matchRoute = (
+  pattern: string,
+  pathname: string
+): { match: boolean; params: Record<string, string> } => {
+  const patternParts = pattern.split("/");
+  const pathParts = pathname.split("/");
+
+  if (pattern.endsWith("/*")) {
+    const basePattern = pattern.slice(0, -2);
+    if (pathname.startsWith(basePattern)) {
+      return { match: true, params: {} };
+    }
+    return { match: false, params: {} };
+  }
+
+  if (patternParts.length !== pathParts.length) {
+    return { match: false, params: {} };
+  }
+
+  const params: Record<string, string> = {};
+  for (let i = 0; i < patternParts.length; i++) {
+    const patternPart = patternParts[i] ?? "";
+    const pathPart = pathParts[i] ?? "";
+    if (patternPart.startsWith(":")) {
+      params[patternPart.slice(1)] = pathPart;
+    } else if (patternPart !== pathPart) {
+      return { match: false, params: {} };
+    }
+  }
+  return { match: true, params };
+};
+```
+
+No regex compilation. No trie structures. Just string splitting and linear scanning. It handles maybe 20 routes total—the overhead of a "proper" router would be pure ceremony.
+
+The route table is split into two arrays:
+
+**Public routes** (no session required):
+- `/` — landing page
+- `/login` — login page
+- `/health` — health check (GET + POST)
+- `/preview/*` — redirect to subdomain preview
+
+**Protected routes** (session required via `requireSession`):
+- `/home`, `/dashboard` — dashboard
+- `/projects` — list/create projects
+- `/projects/:id` — view/update/delete project
+- `/projects/:id/deployments` — list/create deployments
+- `/deployments/:id` — deployment detail page
+- `/deployments/:id/log` — build log
+- `/deployments/:id/log/stream` — SSE log stream
+- `/account` — account management
+- `/api/github/repos` — list user's GitHub repos
+- `/api/github/branches` — list branches for a repo
+- `/api/projects/:id/env` — manage environment variables
+- `/api/admin/examples` — example project management
+- `/api/admin/build-settings` — build container configuration
+
+There's also a dual API pattern—most resources are available both as HTML pages (for the SSR UI) and as JSON endpoints under `/api/`. The router checks the request's `Accept` header via `wantsHtml()` to decide whether to return a rendered page or a 404 JSON response.
+
+## The database: Drizzle + Postgres 18
+
+<LinkPreview url="https://orm.drizzle.team/" />
+
+Drizzle ORM was an easy pick. It's the only TypeScript ORM that doesn't feel like it's fighting you. The schema is defined in `src/db/schema.ts` as plain TypeScript—no decorators, no magic strings, no separate schema files.
+
+The data model has 7 tables:
+
+```typescript
+// Better Auth core (4 tables)
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
+  name: text("name"),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
+  image: text("image"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const sessions = pgTable("sessions", { /* ... */ });
+export const accounts = pgTable("accounts", { /* ... */ });
+export const verification = pgTable("verification", { /* ... */ });
+
+// Application tables
+export const projects = pgTable("projects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  repoUrl: text("repo_url").notNull(),
+  branch: text("branch").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  currentDeploymentId: uuid("current_deployment_id")
+});
+
+export const projectEnvs = pgTable("project_envs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),
+  value: text("value").notNull(),
+  isPublic: boolean("is_public").notNull().default(false),
+  // ...
+}, (table) => [
+  index("project_envs_project_id_idx").on(table.projectId),
+  uniqueIndex("project_envs_project_id_key_idx").on(table.projectId, table.key)
+]);
+
+export const deployments = pgTable("deployments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  shortId: text("short_id").notNull().unique(),
+  projectId: uuid("project_id").notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  artifactPrefix: text("artifact_prefix").notNull(),
+  buildStrategy: text("build_strategy").notNull().default("unknown")
+    .$type<"node" | "python" | "unknown">(),
+  serveStrategy: text("serve_strategy").notNull().default("static")
+    .$type<"static" | "server">(),
+  status: text("status").notNull().default("queued")
+    .$type<"queued" | "building" | "success" | "failed">(),
+  buildLogKey: text("build_log_key"),
+  runtimeImageRef: text("runtime_image_ref"),
+  runtimeImageArtifactKey: text("runtime_image_artifact_key"),
+  previewUrl: text("preview_url"),
+  workerId: text("worker_id"),
+  lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+  runAttempt: integer("run_attempt").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true })
+});
+
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+```
+
+A few things worth noting:
+
+**The `deployments` table is dense.** It tracks everything about a build: the strategy used (node/python), the serve strategy (static/server), the S3 artifact prefix, the build log location, the runtime container image reference, which worker processed it, the heartbeat for liveness detection, the run attempt count for retries, and both the full UUID and a human-friendly `shortId` for preview URLs.
+
+**The `shortId` is a 9-10 character base-36 string**, generated by `generateShortId()`. It's what makes `abc123def.localhost:3000` work instead of `550e8400-e29b-41d4-a716-446655440000.localhost:3000`. Subdomains have character limits, and UUIDs are ugly.
+
+**The `project_envs` table** stores per-project environment variables with an `isPublic` flag. During builds, only public env vars get injected into the build container. This is the mechanism for `NEXT_PUBLIC_*` style variables that need to be baked into the frontend at build time.
+
+**Migrations are managed by Drizzle Kit.** There are 12 migration files in `/drizzle/`, each generated by `drizzle-kit generate` and applied by a `migrate.ts` script that runs on boot (when `RUN_MIGRATIONS=1`). The migration naming convention is delightful—Drizzle auto-generates names like `0000_unique_gargoyle.sql`, `0003_youthful_speedball.sql`, `0006_purple_omega_red.sql`. Marvel characters and adjectives. I love it.
+
+## The build queue: Redis Streams
+
+This is where it gets interesting. The deployment queue isn't a simple job queue—it's a Redis Streams consumer group with Lua-scripted concurrency control.
+
+Why Redis Streams instead of, say, BullMQ? Because BullMQ is 15,000 lines of code built on Redis, and I only need about 300 lines of the semantics it provides. Redis Streams gives me:
+
+- **XADD**: Append a deployment job to the stream
+- **XREADGROUP**: Block-wait for the next available job in a consumer group
+- **XAUTOCLAIM**: Steal jobs from dead consumers (crash recovery)
+- **XACK**: Mark a job as successfully processed
+- **XCLAIM**: Heartbeat—refresh ownership of an in-progress job
+
+The entire queue implementation lives in `src/queue.ts` (327 lines). Here's the core:
+
+```typescript
+export const DEPLOY_STREAM_KEY = "deployments:stream";
+export const DEPLOY_CONSUMER_GROUP = "deployments:workers";
+
+// Enqueue a deployment
+export async function enqueueDeployment(
+  deploymentId: string,
+  options: { userId?: string; envFile?: string } = {}
+): Promise<void> {
+  const client = await getRedisClient();
+  await ensureDeploymentQueue();
+
+  const fields = ["deploymentId", deploymentId, "enqueuedAt", new Date().toISOString()];
+  if (options.userId) fields.push("userId", options.userId);
+  if (options.envFile) fields.push("envFile", options.envFile);
+
+  await client.send("XADD", [DEPLOY_STREAM_KEY, "*", ...fields]);
+}
+
+// Dequeue (blocking)
+export async function dequeueDeployment(
+  consumerName: string,
+  blockMs = 0
+): Promise<DeploymentStreamMessage | null> {
+  const client = await getRedisClient();
+  await ensureDeploymentQueue();
+
+  const response = await client.send("XREADGROUP", [
+    "GROUP", DEPLOY_CONSUMER_GROUP, consumerName,
+    "COUNT", "1",
+    "BLOCK", String(Math.max(0, blockMs)),
+    "STREAMS", DEPLOY_STREAM_KEY, ">"
+  ]);
+
+  return getFirstStreamMessage(response);
+}
+
+// Crash recovery: steal idle jobs from dead consumers
+export async function reclaimDeployment(
+  consumerName: string,
+  minIdleMs: number
+): Promise<DeploymentStreamMessage | null> {
+  const client = await getRedisClient();
+  await ensureDeploymentQueue();
+
+  const response = await client.send("XAUTOCLAIM", [
+    DEPLOY_STREAM_KEY, DEPLOY_CONSUMER_GROUP, consumerName,
+    String(Math.max(0, minIdleMs)),
+    "0-0", "COUNT", "1"
+  ]);
+
+  return getFirstAutoClaimedMessage(response);
+}
+```
+
+But the really clever part is the **account-level concurrency control**. Without it, one user could flood the queue with 50 deployments and starve everyone else. Pdploy uses a pair of Lua scripts to atomically manage per-account build slots:
+
+```lua
+-- ACQUIRE_ACCOUNT_SLOT_LUA
+local key = KEYS[1]
+local member = ARGV[1]
+local limit = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+
+-- Already have a slot? Just refresh TTL
+if redis.call("SISMEMBER", key, member) == 1 then
+  if ttl > 0 then redis.call("PEXPIRE", key, ttl) end
+  return 1
+end
+
+-- At capacity? Reject
+local current = redis.call("SCARD", key)
+if current >= limit then return 0 end
+
+-- Grant slot
+redis.call("SADD", key, member)
+if ttl > 0 then redis.call("PEXPIRE", key, ttl) end
+return 1
+```
+
+Each user gets a Redis set keyed by `deployments:account:{userId}`. The set members are deployment IDs. The `SCARD` check enforces the `BUILD_ACCOUNT_MAX_CONCURRENT` limit (default: 1). The TTL auto-expires slots if a worker crashes without releasing them.
+
+When a worker picks up a job and the account slot is full, the job gets **deferred**—re-added to the stream with a fresh timestamp and the original message ACK'd. It'll get picked up again later when a slot opens.
+
+```typescript
+export async function deferDeployment(
+  streamId: string,
+  job: DeploymentJob
+): Promise<boolean> {
+  const client = await getRedisClient();
+  // Re-enqueue with fresh ID
+  await client.send("XADD", [DEPLOY_STREAM_KEY, "*", ...fields]);
+  // ACK the original
+  await client.send("XACK", [DEPLOY_STREAM_KEY, DEPLOY_CONSUMER_GROUP, streamId]);
+  return true;
+}
+```
+
+<Callout type="info">
+The deferral pattern is important. If you just `NACK` a message in a stream, it stays in the consumer's pending list and can cause infinite retry loops. By explicitly re-adding it as a new message and ACK-ing the old one, you get clean retry semantics with no state leakage.
+</Callout>
+
+## The build worker: 1,211 lines of controlled chaos
+
+`src/workers/buildWorker.ts` is the largest file in the codebase and the heart of the entire system. It's the thing that turns "user clicked Deploy" into "your site is live at abc123.localhost."
+
+The worker runs as a separate process (or as Bun worker threads when `BUILD_WORKERS > 0` in the main process config). In production, it's a separate Docker container—scaled to 4 replicas by default via `docker-compose.yml`:
+
+```yaml
+deployment-worker:
+  build:
+    context: .
+    dockerfile: docker/build-worker.Dockerfile
+  deploy:
+    replicas: ${BUILD_WORKERS:-4}
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /tmp/pdploy-builds:/tmp/pdploy-builds
+```
+
+That Docker socket mount is the key architectural decision. Build workers don't execute `npm install` on the host. They create **ephemeral Docker containers** for every build command via the `dockerode` library. This gives you:
+
+1. **Isolation**: A malicious `postinstall` script can't touch the host filesystem
+2. **Reproducibility**: Every build starts from a known base image
+3. **Resource limits**: CPU and memory caps per container
+4. **Clean teardown**: Just `docker rm -f` the container when done
+
+### The build lifecycle
+
+Here's what happens when you click "Deploy":
+
+**1. Job dequeue.** The worker's `runLoop()` calls `dequeueDeployment()` with a 2-second block timeout. If nothing's available, it tries `reclaimDeployment()` to steal jobs from dead consumers.
+
+**2. Status update.** The deployment row gets set to `status: "building"`, with the worker's consumer name and a heartbeat timestamp. A `setInterval` keeps refreshing both the Redis stream claim and the database heartbeat every 30 seconds.
+
+```typescript
+heartbeatInterval = setInterval(() => {
+  touchPendingDeployment(message.streamId, consumerName).catch(console.error);
+  db.update(schema.deployments)
+    .set({ lastHeartbeatAt: new Date() })
+    .where(eq(schema.deployments.id, job.deploymentId))
+    .catch(console.error);
+}, BUILD_PENDING_HEARTBEAT_MS);
+```
+
+**3. Container cleanup.** Before starting, the worker prunes any stale build containers from previous runs. Every container Pdploy creates gets labeled with `io.pdploy.build=true` and `io.pdploy.deployment={id}`, so cleanup is a simple Docker API filter:
+
+```typescript
+const pruneBuildContainers = async (options = {}) => {
+  const containers = await dockerClient.listContainers({
+    all: true,
+    filters: {
+      label: ["io.pdploy.build=true"],
+      status: ["exited", "dead"]
+    }
+  });
+  for (const c of containers) {
+    await dockerClient.getContainer(c.Id).remove({ force: true });
+  }
+};
+```
+
+**4. Repo download.** For GitHub repos, it fetches the zipball via the GitHub API:
+
+```typescript
+const zipUrl = buildZipballUrl(spec, ref);
+const response = await fetch(zipUrl, {
+  headers: {
+    "User-Agent": "vercel-clone-build",
+    "Authorization": `Bearer ${githubToken}`,
+    "Accept": "application/vnd.github+json"
+  }
+});
+```
+
+The GitHub token comes from the user's OAuth account record. For example repos (built-in templates), it copies from the local `examples/` directory instead.
+
+**5. Environment preparation.** Project-level env vars from the `project_envs` table get merged with any deployment-specific `.env` file content. The merged result gets written as a `.env` file in the repo root:
+
+```typescript
+const prepareBuildEnv = async (repoDir, projectBuildEnv, envFile, ctx) => {
+  const mergedEnv = { ...projectBuildEnv };
+  if (envFile) {
+    const parsed = parseDeploymentEnvFile(normalized);
+    Object.assign(mergedEnv, parsed);
+  }
+  await writeProjectDotEnv(repoDir, mergedEnv);
+  return mergedEnv;
+};
+```
+
+The env file parser handles `export` prefixes, single/double quotes, and escape sequences. There's a 64KB size limit on env files because at some point you're doing something wrong.
+
+**6. Strategy detection.** The build system uses a registry of strategies. Currently two: Node and Python. Detection is dead simple:
+
+- Got a `package.json`? → Node strategy
+- Got a `pyproject.toml` or `requirements.txt`? → Python strategy
+- Got nothing? → Error
+
+**7. Docker container execution.** This is where the magic happens. Every `npm install`, `npm run build`, `pip install`, etc. runs inside a Docker container:
+
+```typescript
+const runDockerCommand = async (cmd, options) => {
+  const image = resolveDockerImageForCommand(options.strategyId, cmd);
+
+  await ensureDockerImage(image, { deploymentId: options.deploymentId });
+
+  const container = await dockerClient.createContainer({
+    Image: image,
+    Cmd: cmd,
+    WorkingDir: "/workspace",
+    Env: toDockerEnv(options.env),
+    Labels: {
+      "io.pdploy.build": "true",
+      "io.pdploy.deployment": options.deploymentId
+    },
+    HostConfig: {
+      Binds: [`${options.cwd}:/workspace`],
+      Memory: memoryBytes,
+      NanoCpus: nanoCpus
+    }
+  });
+
+  const stream = await container.attach({ stream: true, stdout: true, stderr: true });
+  dockerClient.modem.demuxStream(stream, stdoutCollector, stderrCollector);
+
+  await container.start();
+  const waitResult = await container.wait();
+
+  // Always clean up
+  await dockerClient.getContainer(container.id).remove({ force: true });
+
+  return { code: waitResult.StatusCode, stdout, stderr };
+};
+```
+
+The image selection is automatic: `bun` commands get `pdploy-bun-build-image:latest`, Python commands get `python:3.12-bookworm`, everything else gets `node:22-bookworm` or `pdploy-node-build-image:latest` when configured. The Bun builder image layers Python and common native build libraries on top of Bun so packages like `canvas` can compile during `bun install`. Images are pulled on demand and cached in a `Map` so the same image isn't pulled twice across concurrent builds.
+
+The bind mount (`options.cwd:/workspace`) is why the worker and the Docker daemon need to share a filesystem path. In Docker Compose, both `/tmp/pdploy-builds` on the host and inside the worker container point to the same physical directory.
+
+**8. Artifact collection.** After the build succeeds, the worker walks the output directory and uploads every file to S3:
+
+```typescript
+const uploadArtifacts = async (ctx, outputDir) => {
+  const files = await collectFiles(outputDir);
+  for (const filePath of files) {
+    const relative = path.relative(outputDir, filePath);
+    const key = `${ctx.artifactPrefix}/${relative}`;
+    const contentType = guessContentType(filePath);
+    await upload(key, Bun.file(filePath), { contentType });
+  }
+};
+```
+
+The `guessContentType` function is a hand-rolled MIME table—no `mime-types` package dependency for 30 lines of extension-to-MIME mapping.
+
+**9. Runtime image generation.** After uploading artifacts, the worker optionally builds a Docker image for the deployment. For static sites, it generates a tiny Dockerfile:
+
+```dockerfile
+FROM nginx:alpine
+WORKDIR /usr/share/nginx/html
+RUN rm -rf /usr/share/nginx/html/*
+COPY public/ /usr/share/nginx/html/
+```
+
+Builds it, `docker save`s to a tarball, uploads to S3. This means every deployment has a portable container image you could `docker load` and run anywhere.
+
+**10. Log upload + status update.** All build logs (timestamped, streamed in real-time via Redis Pub/Sub) get concatenated and uploaded to S3 as `{artifactPrefix}/build.log`. The deployment row gets updated with `status: "success"` or `status: "failed"`, the preview URL, and all the metadata.
+
+### Real-time log streaming
+
+While a build is running, logs stream to the browser in real-time via Server-Sent Events (SSE). The build worker publishes every log line to a Redis Pub/Sub channel:
+
+```typescript
+const publishDeploymentLog = (deploymentId: string, content: string) => {
+  getRedisClient().then((client) => {
+    const channel = `deployment:${deploymentId}:logs`;
+    client.publish(channel, content);
+  });
+};
+```
+
+The `/deployments/:id/log/stream` endpoint subscribes to that channel and pipes it to the client as SSE events. When the build finishes, the full log is uploaded to S3 and the `/deployments/:id/log` endpoint serves it from there.
+
+### The Node build strategy
+
+The Node strategy in `src/workers/build/strategies/node.ts` handles the full spectrum of JavaScript package managers:
+
+```typescript
+const manager = await detectNodePackageManager(repoDir, runtime);
+```
+
+Package manager detection follows a waterfall:
+1. **bun.lock** present → use `bun install` / `bun run build`
+2. **pnpm-lock.yaml** present → use `pnpm install` / `pnpm run build`
+3. **yarn.lock** present → enable corepack, use `yarn install` / `yarn run build`
+4. **package-lock.json** or default → use `npm ci` / `npm run build`
+
+Output directory detection checks `dist`, `build`, `out`, `.next`, and `public` in that order.
+
+The install step runs with `NODE_ENV` explicitly deleted from the environment (so devDependencies get installed), while the build step runs with `NODE_ENV=production`. This matches the behavior of every major PaaS.
+
+### The Python build strategy
+
+Python support covers three patterns:
+- **requirements.txt** → `pip install -r requirements.txt`
+- **pyproject.toml** → `pip install .` or `uv pip install .`
+- **mkdocs** → detects `mkdocs.yml` and runs `mkdocs build`
+
+The Python strategy gets a minimum 2GB memory allocation regardless of build container settings, because pip has a habit of eating RAM during wheel compilation.
+
+## Storage: Garage (the S3 you own)
+
+<LinkPreview url="https://garagehq.deuxfleurs.fr/" />
+
+I didn't want to use AWS S3. The whole point of this project is self-hosting. But I needed something S3-compatible because Bun's `S3Client` speaks the S3 protocol.
+
+Enter Garage. It's a Rust-based, self-hostable, S3-compatible object store built by the Deuxfleurs collective. Single binary. 1GB RAM minimum. Uses SQLite for metadata and flat files for data. It's basically what you'd build if you wanted "S3 but on a single server."
+
+In Pdploy's `docker-compose.yml`, Garage runs as a single container:
+
+```yaml
+garage:
+  image: dxflrs/garage:v2.2.0
+  ports:
+    - "3900:3900"  # S3 API
+    - "3901:3901"  # RPC
+    - "3902:3902"  # Web UI
+    - "3903:3903"  # Admin
+  volumes:
+    - ./infra/garage.dev.toml:/etc/garage.toml
+    - ./infra/meta:/var/lib/garage/meta
+    - ./infra/data:/var/lib/garage/data
+```
+
+The storage layer in `src/storage/index.ts` is a thin wrapper around Bun's `S3Client`. The upload path handles `ReadableStream`, `Request`, `Response`, `Buffer`, `Blob`, `ArrayBuffer`, and plain strings. For streams (which is how large build artifacts flow), it uses Bun's multipart upload writer:
+
+```typescript
+const writer = file.writer({
+  type: contentType,
+  partSize: 5 * 1024 * 1024,  // 5MB parts
+  queueSize: 5,
+  retry: 3
+});
+
+const reader = stream.getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  if (value) writer.write(value);
+}
+await writer.end();
+```
+
+There's also `getTextFromOffset()` for incremental log reading—the log viewer can fetch just the new bytes since the last poll, not the entire log every time:
+
+```typescript
+export async function getTextFromOffset(
+  key: string,
+  byteOffset: number
+): Promise<{ text: string; bytesRead: number }> {
+  const file = client.file(key).slice(byteOffset);
+  const bytes = await file.bytes();
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  return { text, bytesRead: bytes.length };
+}
+```
+
+Presigned URLs are supported too, for cases where you want to give a client direct S3 access without proxying through the app server.
+
+### Garage bootstrap: the infra script
+
+The `infra/dev.sh` script (468 lines of bash) is a full orchestrator for bootstrapping the storage layer. Running `./infra/dev.sh start` will:
+
+1. **Generate Garage secrets** — RPC secret (64-hex), admin token, metrics token → writes `.garage.env`
+2. **Start infrastructure** — `docker compose up -d garage postgres redis`
+3. **Wait for health** — polls container logs for specific readiness messages
+4. **Configure Garage layout** — finds the node ID, assigns 1GB capacity, applies the layout
+5. **Create S3 bucket** — `garage bucket create placeholder-bucket`
+6. **Create access key** — `garage key create devkey`, parses the key ID and secret
+7. **Grant permissions** — `garage bucket allow --read --write placeholder-bucket --key devkey`
+8. **Inject credentials** — writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`
+9. **Run migrations** — `bun migrate.ts`
+10. **Seed database** — `bun seed.ts`
+11. **Start app services** — builds and starts `app`, `deployment-worker`, `node-build-image`, `bun-build-image`
+12. **Verify Docker access** — confirms the deployment-worker can talk to the Docker daemon
+
+The script also supports a Nexus container registry for environments where you want to cache Docker images locally:
+
+```bash
+ensure_nexus_images() {
+  local -a images=(
+    "node:22-bookworm"
+    "oven/bun:1"
+    "python:3.12-bookworm"
+    "nginx:alpine"
+  )
+  for img in "${images[@]}"; do
+    docker pull "$img"
+    docker tag "$img" "$NEXUS_REGISTRY/$img"
+    docker push "$NEXUS_REGISTRY/$img"
+  done
+}
+```
+
+This is mainly useful on Hetzner where bandwidth is cheap but image pull latency adds up when you're running multiple builds.
+
+After mirroring the upstream bases, the script also builds and pushes `pdploy-node-build-image:latest` and `pdploy-bun-build-image:latest` so workers can use the same preconfigured build images in local and remote environments.
+
+## The preview system: subdomains and paths
+
+Every successful deployment gets two types of preview URL:
+
+1. **Subdomain-based**: `{shortId}.localhost:3000` (or `{shortId}.yourdomain.com` in production)
+2. **Path-based**: `/d/{shortId}/index.html`
+
+Subdomain routing is the primary mechanism. The router checks the `Host` header first:
+
+```typescript
+export const extractDeploymentIdFromHost = (host: string) => {
+  const hostWithoutPort = host.split(":")[0] ?? "";
+  for (const domain of [config.devDomain, config.prodDomain]) {
+    if (hostWithoutPort.endsWith(`.${domain}`)) {
+      const subdomain = hostWithoutPort.slice(0, -(domain.length + 1));
+      if (SHORT_ID_REGEX.test(subdomain)) {
+        return { id: subdomain, isShortId: true };
+      }
+      if (UUID_REGEX.test(subdomain)) {
+        return { id: subdomain, isShortId: false };
+      }
+    }
+  }
+  return null;
+};
+```
+
+Both short IDs (9-10 char base36) and full UUIDs work as subdomains. When serving assets, there's a full SPA fallback chain:
+
+1. Try the exact path (`artifacts/{prefix}/about.html`)
+2. If no extension, try `{path}/index.html` (directory index)
+3. Fall back to `index.html` at root (SPA routing)
+
+Cache control is content-aware: hashed assets (like `app.a1b2c3d4.js`) get `max-age=31536000, immutable`. HTML gets `no-cache`. Everything else gets `max-age=3600`.
+
+```typescript
+const isHashedAsset = /\.[a-f0-9]{8,}\.(js|css|woff2?|ttf|eot)$/i.test(filePath);
+const cacheControl = contentType.includes("text/html")
+  ? "no-cache"
+  : isHashedAsset
+    ? "public, max-age=31536000, immutable"
+    : "public, max-age=3600";
+```
+
+The `/preview/*` route is a redirect shim—it takes the deployment ID from the path and redirects to the subdomain URL. This is useful for the dashboard UI where you can link to a preview without knowing the domain configuration.
+
+## The UI: React 19 SSR, no hydration
+
+The dashboard is server-rendered React 19. No Next.js. No Remix. No client-side hydration at all.
+
+Every page is a function that takes props and returns a `Response`:
+
+```typescript
+export const dashboardPage = async (req: RequestWithParamsAndSession) => {
+  const projects = await db.select().from(schema.projects)
+    .where(eq(schema.projects.userId, req.session.user.id));
+
+  const stream = await renderToReadableStream(
+    <DashboardPage projects={projects} user={req.session.user} />
+  );
+  return new Response(stream, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
+};
+```
+
+`renderToReadableStream` is React 19's streaming SSR API. It returns a `ReadableStream<Uint8Array>` that Bun can directly pipe to the HTTP response. No buffering the full HTML in memory. No `renderToString()`.
+
+Client-side interactivity is minimal—mostly vanilla JS inlined in `<script>` tags for things like form submissions and the log viewer's SSE connection. The CSS is bundled by `Bun.build()` at startup and served from `/assets/`.
+
+This is a deliberate architectural choice. A deployment dashboard doesn't need React's reactivity model on the client. You look at a list of projects, click "Deploy," and read logs. Server rendering gives you instant page loads, zero JS bundle for most pages, and dramatically simpler code.
+
+<Rabbit>
+The "no hydration" approach means the React component tree only exists on the server. There's no `hydrateRoot()` call, no client-side component tree, no useEffect, no useState. If I need interactivity, it's `<script>document.getElementById("deploy-btn").addEventListener("click", ...)</script>`. Old school? Yes. Does it work perfectly for a deployment dashboard? Also yes.
+</Rabbit>
+
+## Authentication: Better Auth + GitHub OAuth
+
+<LinkPreview url="https://www.better-auth.com/" />
+
+Better Auth is a framework-agnostic TypeScript auth library that handles the OAuth dance, session management, and user storage. The entire auth config is 40 lines:
+
+```typescript
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+
+export const auth = betterAuth({
+  socialProviders: {
+    github: {
+      clientId: githubClientId,
+      clientSecret: githubClientSecret,
+      scope: ["user:email"]
+    }
+  },
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema: { users, sessions, accounts, verifications: verification },
+    usePlural: true,
+    camelCase: true
+  })
+});
+```
+
+That's it. Better Auth handles:
+- GitHub OAuth redirect flow
+- Session token generation and validation
+- User creation on first login
+- Storing the GitHub access token (used later for private repo access)
+
+The router delegates all `/api/auth/*` requests to `auth.handler(req)`. Session validation for protected routes uses `requireSession()`, which returns either a session object or a redirect response.
+
+The Drizzle adapter means Better Auth reads/writes directly to the same Postgres database as the rest of the app. No separate auth database, no external service, no Auth0 bill.
+
+<Callout type="info">
+Better Auth's `scope: ["user:email"]` also gives us the GitHub OAuth token, which we store in the `accounts` table. When a user triggers a deployment, the build worker uses that token to download private repos via the GitHub API. No separate "connect your GitHub" flow needed—if you logged in with GitHub, we already have repo access.
+</Callout>
+
+## Deployment: Docker Compose on Hetzner
+
+The production architecture is 6 Docker Compose services on a single VPS:
+
+```yaml
+services:
+  app:            # Bun server (web UI + API)
+  deployment-worker:   # Bun workers (x4 replicas, Docker socket mounted)
+  node-build-image:   # Init container (builds the node build image, then exits)
+  garage:         # S3-compatible object storage
+  postgres:       # PostgreSQL 18
+  redis:          # Redis 7.2
+```
+
+The `app` container is a multi-stage Dockerfile:
+
+```dockerfile
+FROM oven/bun:1.3.5 AS base
+FROM base AS deps-dev    # install all dependencies
+FROM base AS deps-prod   # install production dependencies only
+FROM base AS builder     # copy source + devDeps, build client assets
+FROM base AS release     # copy prod deps + built assets + source
+```
+
+Four stages, one final image. The release stage copies only what's needed: production `node_modules`, compiled client assets, source code, migration files, and the entrypoint script. No TypeScript compiler in production. No devDependencies. No test files.
+
+The `deployment-worker` container is heavier. Its Dockerfile (`docker/build-worker.Dockerfile`) installs the full toolchain:
+- Docker CLI (for container management via the mounted socket)
+- Node.js 22 (for npm/npx commands)
+- Python 3.12 + pip + uv + poetry
+- pnpm, yarn, bun (package managers)
+
+It needs all of this because it shells out to these tools both directly and inside containers. The worker itself runs Bun, but it orchestrates builds across multiple runtimes.
+
+The `node-build-image` service is an init container—it builds a pre-configured Node.js image with common tools installed, tags it as `pdploy-node-build-image:latest`, prints "node builder image ready," and exits. The deployment workers reference this image for Node.js builds instead of pulling `node:22-bookworm` fresh every time.
+
+The `bun-build-image` service does the same for Bun-based projects. It produces `pdploy-bun-build-image:latest`, which includes Python plus the Cairo and Pango development libraries commonly needed by native Bun dependencies such as `canvas`.
+
+### Health checks and dependencies
+
+The Compose file uses health checks to ensure correct startup ordering:
+
+```yaml
+postgres:
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U app -d placeholder"]
+    interval: 2s
+    timeout: 5s
+    retries: 5
+
+redis:
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+```
+
+The `app` service depends on Postgres (healthy), Redis (healthy), and Garage (started). The `deployment-worker` depends on all of those plus the `node-build-image` and `bun-build-image` services (completed successfully). This ensures the database is ready before the app runs migrations, Redis is ready before the queue starts, and the build images exist before workers try to use them.
+
+### The entrypoint script
+
+The `docker/entrypoint.sh` script handles startup sequencing:
+
+```bash
+#!/usr/bin/env bash
+if [[ "${RUN_MIGRATIONS}" == "1" ]]; then
+  bun migrate.ts
+fi
+exec bun src/index.ts
+```
+
+Migrations run conditionally—only the `app` container sets `RUN_MIGRATIONS=1`. The build workers skip it.
+
+### Hetzner specifics
+
+Hetzner is the deployment target because it's cheap (€4.51/mo for a CX22 with 2 vCPU, 4GB RAM, 40GB disk), the network is fast (20TB traffic included), and they don't charge for bandwidth overages on the lower tiers.
+
+For a single-server deployment, the setup is:
+1. Provision a Hetzner VPS with Docker pre-installed
+2. Clone the repo
+3. Configure `.env` with your domain, GitHub OAuth credentials, and any custom settings
+4. Run `./infra/dev.sh start`
+5. Point your wildcard DNS (`*.yourdomain.com`) to the VPS IP
+6. Put a reverse proxy (Caddy/nginx) in front for TLS termination
+
+The wildcard DNS is the only infrastructure requirement beyond the VPS itself. Every deployment preview lives on a subdomain, so `*.yourdomain.com` needs to resolve to your server. Caddy handles this beautifully with its automatic HTTPS and wildcard certificate support.
+
+## Things I learned
+
+### Docker-in-Docker is simpler than you think
+
+The whole "build user code in isolated containers" thing sounds scary. In practice, it's just:
+1. Mount the Docker socket into the worker container
+2. Use the `dockerode` npm package to talk to the Docker API
+3. Bind-mount the build directory into each ephemeral container
+4. Clean up containers after they exit
+
+The only gotcha is the shared filesystem. When the worker creates a temp directory at `/tmp/pdploy-builds/build-abc123`, the Docker daemon needs to see that same path. In Compose, you just volume-mount `/tmp/pdploy-builds` into both the worker and the host.
+
+### Redis Streams > BullMQ for simple queues
+
+If your queue semantics are "FIFO with consumer groups and crash recovery," Redis Streams is all you need. The consumer group model gives you at-most-once delivery (with manual ACK), dead consumer detection (via XAUTOCLAIM), and zero dependencies beyond Redis itself. BullMQ is great, but it's a framework-sized dependency for what amounts to 6 Redis commands.
+
+### Bun's S3 client is genuinely good
+
+No 47-package AWS SDK. No credential provider chain complexity. No `@smithy/middleware-retry` transitive dependency. Just `import { S3Client } from "bun"` and go. The multipart upload writer API is particularly nice for streaming large files.
+
+### React SSR without hydration is underrated
+
+Not everything needs to be a SPA. A deployment dashboard is fundamentally a list of things with a detail view. Server render the HTML, sprinkle in some `<script>` tags for the interactive bits (log streaming, deploy buttons), and you're done. Zero JS bundle on most pages. Instant navigation. No hydration mismatch bugs.
+
+### Hand-rolling a router is fine, actually
+
+If you have fewer than 50 routes and one non-standard requirement (like subdomain extraction), writing your own router is faster than learning a framework's middleware chain. The entire router is 238 lines, including the route table. I can read every line and know exactly what it does. No middleware ordering bugs. No "which plugin handles CORS?" questions.
+
+## What's next
+
+Pdploy is functional but not finished. The roadmap includes:
+
+- **Server-side deployments**: Right now only static sites get full preview serving. The `serveStrategy: "server"` path exists in the schema but returns a 501. The runtime image generation already works—it's just the "run the container and proxy to it" part that's missing.
+- **Automatic HTTPS**: Caddy integration for automatic TLS on preview URLs.
+- **Build caching**: Docker layer caching and `node_modules` volume caching between builds.
+- **Rollbacks**: The `currentDeploymentId` column on projects is already there. Just need a "rollback to deployment X" button.
+- **Webhooks**: Auto-deploy on push to main. The GitHub token is already stored.
+- **Multi-node Garage**: Garage supports multi-node replication out of the box. For now it's single-node, but scaling to 3 nodes for redundancy is a config change.
+
+## The punchline
+
+Here's what a deployment platform actually is: a build queue, an S3 bucket, and a reverse proxy. Everything else is polish.
+
+Vercel wraps that in a beautiful UI, a global CDN, and edge functions. Netlify wraps it in a different beautiful UI, identity management, and forms. They're good products. But the core? The thing you're paying $20/month for? It's maybe 4,000 lines of TypeScript and a Docker Compose file.
+
+Pdploy runs on a $5 VPS. It handles Node and Python projects. It has GitHub OAuth, per-project env vars, real-time build logs, subdomain-based previews, and container-isolated builds. It's not Vercel. It's not trying to be. It's the deployment platform you build when you realize that "just upload my static files somewhere" shouldn't cost $50/month.
+
+And honestly? Building it taught me more about how the web works than years of *using* platforms ever did. When you have to implement the zipball download, the build container, the artifact upload, the preview serving, and the subdomain routing yourself—you start to understand why PaaS exists, and also why it doesn't have to cost what it costs.
+
+PaaS isn't so ass after all. You just have to be the one building it.
