@@ -8,7 +8,25 @@
 
 # Setup and development
 
-Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) runs in Docker. The app can run either **fully in Docker** (no Bun on host) or **on the host with hot reload** (Bun required). This doc covers both.
+Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) runs in Docker. The app can run either **fully in Docker** (no Bun on host *after* bootstrap) or **on the host with hot reload** (Bun required). This doc covers both.
+
+## Table of contents
+
+- [Prerequisites](#prerequisites)
+- [One-time bootstrap](#one-time-bootstrap)
+- [Workflow A: Full stack in Docker (no Bun)](#workflow-a-full-stack-in-docker-no-bun)
+- [Workflow B: Infra in Docker, app and worker on host](#workflow-b-infra-in-docker-app-and-worker-on-host)
+- [Infra script reference](#infra-script-reference)
+- [Environment variables](#environment-variables)
+- [Ports](#ports)
+- [Health endpoint](#health-endpoint)
+- [Preview URLs](#preview-urls)
+- [Example deployment repos](#example-deployment-repos)
+- [Build pipeline and workers](#build-pipeline-and-workers)
+- [Database and migrations](#database-and-migrations)
+- [npm scripts](#npm-scripts)
+- [Troubleshooting](#troubleshooting)
+- [Production deployment](#production-deployment)
 
 ## Prerequisites
 
@@ -16,16 +34,17 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 |-------------|-------------|---------|
 | Docker | Always (infra and optionally app) | [Install Docker][docker-get] ([Docker Desktop][docker-desktop] includes Compose) |
 | Docker Compose | Always | Bundled with Docker Desktop; on Linux see [Install Compose][compose-install] |
-| Bun 1.3+ | Only for "app on host" workflow (hot reload) | [Bun installation][bun-install] |
+| Bun 1.3+ | **`./infra/dev.sh start`** (migrate, seed, Garage/Nexus bootstrap), **and** [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) (host app/worker) | [Bun installation][bun-install] (use the official installer; avoid `npm i -g bun` without fixing global npm permissions) |
+| Disk | Full stack + Nexus + image builds | Leave plenty of free space on the Docker data disk (rough guide: **≥30–40 GB** for a comfortable dev VM). |
 
 > [!NOTE]
-> You do not need Bun if you run the full stack in Docker. Use the [Full stack in Docker](#full-stack-in-docker) workflow.
+> **`./infra/dev.sh start` requires Bun on the machine where you run it.** After a successful bootstrap, you can run **`docker compose up -d --build`** without Bun on the host for day-to-day full-stack-in-Docker use ([Workflow A](#workflow-a-full-stack-in-docker-no-bun)).
 
 > [!NOTE]
 > The app image is slim and does not run build jobs. Build toolchains (Docker CLI, Node/Python package managers, uv, Poetry, `unzip`) live in the dedicated `deployment-worker` image, which talks to the host Docker daemon through `/var/run/docker.sock`.
 
 > [!IMPORTANT]
-> 4 GB RAM is recommended for running the full stack.
+> **~4 GB RAM** is recommended for the full stack. **~30–40 GB+** free disk on the Docker volume avoids build failures when Nexus and worker images pull and build.
 
 ## One-time bootstrap
 
@@ -37,29 +56,40 @@ From the repository root.
 cp .env.example .env
 ```
 
-2. Start the stack and bootstrap [garage] (creates S3 bucket and key, writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
+2. Fill **required** values in `.env` before the app can start:
+
+- **`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`**: from [GitHub OAuth Apps][github-oauth]. **Required** — the app throws on startup if they are missing.
+- **`BETTER_AUTH_SECRET`**: e.g. `openssl rand -base64 32`. Strongly recommended in dev and required in production. Changing it invalidates existing sessions.
+- **`NEXUS_REGISTRY`**, **`NEXUS_USER`**, **`NEXUS_PASSWORD`**: all three must be set (non-empty) for the dev script to sync base images into the local Nexus registry used by `docker build`. If any are empty, image sync is skipped but builds may still target `localhost:8082` and fail. Use a password **at least 8 characters** for Nexus bootstrap.
+
+3. Start the stack and bootstrap [garage] (creates S3 bucket and key, writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
 
 ```bash
 ./infra/dev.sh start
 ```
 
-This starts Postgres, Redis, Garage, app, and deployment-worker.
+This requires **Bun** on the host. It starts Postgres, Redis, Garage, Nexus, runs migrations and seed, syncs build images to Nexus when configured, then builds and starts the app and deployment-worker.
 
 > [!WARNING]
 > Do not commit `.env`. It will contain secrets after bootstrap and OAuth setup.
 
-3. Set auth and GitHub OAuth in `.env` (required for login and repo linking):
+4. OAuth callback URL must match how you open the app:
 
-- `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`: from [GitHub OAuth Apps][github-oauth]. Create an OAuth App; set Authorization callback URL to `http://localhost:3001/api/auth/callback/github` for host dev (or your app URL + `/api/auth/callback/github`). If you run the app container instead of Bun on the host, use `http://localhost:3000/api/auth/callback/github`.
-- The app derives the auth base URL from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT` in development (and `PROD_*` in production). Ensure these match how you reach the app so callbacks work.
-- `BETTER_AUTH_SECRET`: set for production (e.g. `openssl rand -base64 32`). Used by Better Auth for session signing. Optional in dev.
-- `BETTER_AUTH_URL`: if your Better Auth setup expects it, set to your app URL. For host Bun dev, use `http://localhost:3001`. For the Docker app, use `http://localhost:3000`. The codebase builds the client URL from `DEV_*`/`PROD_*` and `PORT`.
+- Host Bun dev: `http://localhost:3001/api/auth/callback/github` (or your chosen port).
+- App in Docker: `http://localhost:3000/api/auth/callback/github`.
+- **VM / remote IP:** `http://<host-or-vm-ip>:3000/api/auth/callback/github` (see [Troubleshooting](#troubleshooting)).
+
+The app derives the auth base URL from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT` in development (and `PROD_*` in production). Ensure these match how you reach the app.
+
+- `BETTER_AUTH_URL`: if your Better Auth config expects it, set to your app URL. For host Bun dev, use `http://localhost:3001`. For the Docker app, use `http://localhost:3000` (or your VM/public URL).
 
 ## Workflow A: Full stack in Docker (no Bun)
 
-Good for: CI, testing the containerized path, or running without installing [bun].
+Good for: CI, testing the containerized path, or **running Compose without Bun on the host** after the repo is already bootstrapped.
 
-1. After [one-time bootstrap](#one-time-bootstrap), start or rebuild the whole stack:
+**First-time setup:** run [One-time bootstrap](#one-time-bootstrap) (`./infra/dev.sh start` with Bun). That provisions Garage S3 keys in `.env`, Nexus, migrations, and seed. **Seed** (`seed.ts`) runs via that script, not automatically on every `docker compose up`.
+
+**After bootstrap**, you can bring the stack up with Compose alone:
 
 ```bash
 docker compose up -d --build
@@ -67,7 +97,9 @@ docker compose up -d --build
 
 This also builds dedicated Node and Bun build images (`pdploy-node-build-image:latest` and `pdploy-bun-build-image:latest`) used by deployment workers for Node repos. The Bun image includes Python and common native build dependencies so packages like `canvas` can compile reliably.
 
-2. App URL: `http://localhost:3000`
+**Migrations:** the app container runs `migrate.ts` on startup when `RUN_MIGRATIONS=1`. **Seeding** is not re-run by Compose; use `./infra/dev.sh seed` or `bun run seed` with a working `.env` if you need demo data again.
+
+2. App URL: `http://localhost:3000` (or `http://<vm-ip>:3000` from another machine; see [Troubleshooting](#troubleshooting))
 
 3. Logs (app + worker):
 
@@ -96,7 +128,7 @@ docker compose up -d --build node-build-image bun-build-image app deployment-wor
 > [!NOTE]
 > Inside the app container, migrations run on startup (`RUN_MIGRATIONS=1`). The deployment-worker consumes Redis jobs and uses container hostnames: `postgres`, `redis`, `garage`.
 
-## Workflow B: Infra in Docker, app + worker on host
+## Workflow B: Infra in Docker, app and worker on host
 
 Good for: daily development with fast feedback. Requires [bun] on the host.
 
@@ -158,7 +190,7 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 
 | Command | Description |
 |---------|-------------|
-| `./infra/dev.sh start` | Start Postgres, Redis, Garage, app, and deployment-worker; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; verify Docker access from deployment-worker. |
+| `./infra/dev.sh start` | Start Postgres, Redis, Garage, Nexus; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; run **`bun migrate.ts`** and **`bun seed.ts`** on the host; sync Nexus images when `NEXUS_*` are set; build and start app and deployment-worker; verify Docker access from deployment-worker. **Requires Bun on the host.** |
 | `./infra/dev.sh stop` | Stop all compose services (including app and deployment-worker). |
 | `./infra/dev.sh reset` | `docker compose down -v`, clear Garage data and secrets, then run `start` again. Run migrate/seed after. |
 | `./infra/dev.sh migrate` | Ensure stack is up, then run `bun migrate.ts`. |
@@ -181,11 +213,11 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes for storage | Injected by `./infra/dev.sh start` or set manually. Aliases: `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. |
 | `S3_REGION`, `AWS_REGION` | No | Default `garage`. |
 | `BETTER_AUTH_URL` | Optional | App base URL if your Better Auth config expects it. Auth client URL is derived from `DEV_*`/`PROD_*` and `PORT` in development (and `PROD_*` in production). |
-| `BETTER_AUTH_SECRET` | Recommended in prod | Secret for session/signing (e.g. `openssl rand -base64 32`). |
-| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Yes for GitHub | OAuth app credentials; callback URL must match your app URL + `/api/auth/callback/github`. |
+| `BETTER_AUTH_SECRET` | **Strongly recommended** (required in prod) | Secret for session/signing (e.g. `openssl rand -base64 32`). Set in dev to avoid flaky auth; changing it signs everyone out. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | **Yes (app startup)** | OAuth app credentials; **required** or the app exits on boot. Callback URL must match your app URL + `/api/auth/callback/github`. |
 | `DEV_DOMAIN`, `PROD_DOMAIN`, `DEV_PROTOCOL`, `PROD_PROTOCOL` | No | Used for auth callback URL and preview URLs. Defaults in `.env.example`. Subdomain previews match `Host` against `<id>.<DEV_DOMAIN>` or `<id>.<PROD_DOMAIN>`. |
 | `BUILD_WORKERS` | No | Legacy in-process worker count for app-thread workers. Keep `0` when using the standalone `deployment-worker` service. |
-| `NEXUS_REGISTRY` | No | Forwarded to runtime `docker build` as a build arg for private registry or Nexus-backed base images. |
+| `NEXUS_REGISTRY`, `NEXUS_USER`, `NEXUS_PASSWORD` | **All three required** for Nexus image sync | If any is empty, `./infra/dev.sh` skips pushing base images to the local registry, but Dockerfiles may still default to `localhost:8082`, causing confusing build failures. Set `NEXUS_PASSWORD` to **≥8 characters** for Nexus admin bootstrap. On Linux you may need Docker [`insecure-registries`](https://docs.docker.com/engine/daemon/insecure-registries/) for `localhost:8082` if pulls use HTTP. |
 | `RUNTIME_STATIC_BASE_IMAGE` | No | Base image for standardized OCI runtime artifact generation from static build output. Default `nginx:alpine`. |
 | `SKIP_CLIENT_BUILD` | No | Set to `1` in Docker/prod so the app uses prebuilt client assets. |
 | `RUN_MIGRATIONS` | No | Set to `1` to run migrations on app startup (default in Docker). |
@@ -256,6 +288,40 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 | `bun run db:generate` | Generate Drizzle migration (requires `DATABASE_URL`). |
 | `bun run db:studio` | Open Drizzle Studio. |
 | `bun run garage` | Run `docker exec -ti garage /garage` to use the Garage CLI inside the container. |
+
+## Troubleshooting
+
+### Postgres: “failed to start in time”
+
+On a slow disk or first-time DB init, Postgres can take longer than the wait loop in `infra/dev.sh`. Check `docker logs postgres`. Wait until you see the database ready, then run `./infra/dev.sh start` again or `./infra/dev.sh migrate` once the DB is up.
+
+### `bun: not found` when running `./infra/dev.sh`
+
+Install [Bun][bun-install] on the host (official `curl` installer installs to your home directory). Avoid `npm i -g bun` without fixing global npm permissions (`EACCES`). Alternatively, after infra exists, use [Workflow A](#workflow-a-full-stack-in-docker-no-bun) with `docker compose` only — you still need seed/migrate parity documented there.
+
+### Missing `.env`
+
+Copy **`cp .env.example .env`** before bootstrap. A missing or empty `.env` causes confusing failures (including Postgres wait issues).
+
+### Nexus / `localhost:8082` build errors
+
+Set **`NEXUS_REGISTRY`**, **`NEXUS_USER`**, and **`NEXUS_PASSWORD`** in `.env`. If any is empty, the script skips syncing images to Nexus while builds still reference `localhost:8082`. On Linux, if Docker tries **HTTPS** against an **HTTP** registry, add `"insecure-registries": ["localhost:8082"]` to `/etc/docker/daemon.json` and restart Docker.
+
+### No space left on device (during `docker build`)
+
+Free space with `docker builder prune -af` and `docker system prune -af` (destructive to unused images/volumes). Enlarge the VM or Docker disk if usage stays high. The Bun builder image installs many `-dev` packages; full stack + Nexus needs a **generous** disk allocation.
+
+### App container `Restarting` — `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
+
+The app throws on load if GitHub OAuth vars are missing. Set both in `.env` and ensure **`DEV_*` / `PORT`** produce a valid client URL. Restart: `docker compose up -d app` or `docker compose restart app`.
+
+### Better Auth secret
+
+Set **`BETTER_AUTH_SECRET`** (e.g. `openssl rand -base64 32`). Omitting or rotating it affects sessions and login behavior.
+
+### Browser: VM / Multipass / remote host
+
+From your **PC**, open **`http://<vm-ip>:3000`**, not `http://localhost:3000` (that points at the machine running the browser). Find the IP with `multipass list` or your cloud panel. Register the **same origin** in the GitHub OAuth app callback (e.g. `http://192.168.x.x:3000/api/auth/callback/github`). Optional: SSH port-forward `3000` to use `localhost` in the browser.
 
 ## Production deployment
 

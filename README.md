@@ -46,26 +46,21 @@ Each deployment emits a container image tarball (`runtime-image.tar`, Docker sav
 ## Quick start
 
 1. Install [Docker][docker-get] (and [Docker Compose][compose-install] if not bundled).
-2. Clone, copy env, bootstrap infra, then either run the app in Docker or on the host with Bun.
+2. Clone, **`cp .env.example .env`**, and fill **GitHub OAuth**, **`BETTER_AUTH_SECRET`**, and **Nexus** (`NEXUS_*`) — see **[docs/SETUP.md](docs/SETUP.md)**.
+3. Install [Bun][bun-install] and run **`./infra/dev.sh start`** once (bootstrap: infra, migrations, seed, app + workers). **This step requires Bun on the host.**
+4. After that, choose how you run day-to-day:
 
-Full steps, env vars, and two workflows (with and without Bun) are in **[docs/SETUP.md](docs/SETUP.md)**.
-
-> [!TIP]
-> You do not need Bun if you run the full stack in Docker. Use the "Full stack in Docker" workflow in the setup doc.
-
-**Without Bun (full stack in Docker):**
+**Full stack in Docker only (no Bun on the host for day-to-day):**
 
 ```bash
-cp .env.example .env
-./infra/dev.sh start
 docker compose up -d --build
 ```
 
-**With Bun (infra in Docker, app on host with hot reload):**
+App: `http://localhost:3000`. Migrations run in the app container; **seed** is not re-run by Compose — use `./infra/dev.sh seed` or `bun run seed` when you need demo data again.
+
+**Infra in Docker, app + worker on the host (hot reload, requires Bun):**
 
 ```bash
-cp .env.example .env
-./infra/dev.sh start
 docker compose stop app deployment-worker
 # terminal 1
 bun run dev
@@ -73,7 +68,7 @@ bun run dev
 bun run start:worker
 ```
 
-Docker app: `http://localhost:3000`. Host Bun dev: `http://localhost:3001`. If OrbStack or another service already owns `3000`, `docker compose stop app deployment-worker` only frees the Compose app ports; it does not stop unrelated listeners already bound on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. See [docs/SETUP.md](docs/SETUP.md) for details.
+Docker app: `http://localhost:3000`. Host Bun dev: `http://localhost:3001`. If OrbStack or another service already owns `3000`, `docker compose stop app deployment-worker` only frees the Compose app ports; it does not stop unrelated listeners already bound on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows, env reference, and troubleshooting: **[docs/SETUP.md](docs/SETUP.md)**.
 
 Static preview assets are redirected to object storage or a configured CDN base URL when possible. Server previews remain feature-gated behind `RUNNER_PREVIEW_ENABLED=1` plus a configured `RUNNER_URL`.
 
@@ -151,5 +146,5 @@ SKIP_CLIENT_BUILD=1 ./dist/pdploy
 
 ## Documentation
 
-- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, both dev workflows (Docker-only and Bun on host), env vars, ports, infra script reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment.
+- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, both dev workflows (Docker-only and Bun on host), env vars, ports, infra script reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **troubleshooting**.
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Monorepo workspace/app roots, runtime image modes, Dockerfile-first server deploys, Nexus-aware Docker build args, and security notes.
