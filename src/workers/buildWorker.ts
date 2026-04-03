@@ -1,59 +1,99 @@
-import { and, eq } from "drizzle-orm";
-import { getBuildContainerConfig, type BuildContainerConfig } from "../admin/buildSettings";
-import { cp, mkdir, mkdtemp, readdir, rm, stat } from "fs/promises";
 import Docker from "dockerode";
-import { finished } from "node:stream/promises";
+import { and, eq, sql } from "drizzle-orm";
+import { cp, mkdir, mkdtemp, readdir, rm, stat } from "fs/promises";
 import { Writable } from "node:stream";
+import { finished } from "node:stream/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { config } from "../config";
+import { getBuildContainerConfig, type BuildContainerConfig } from "../admin/buildSettings";
+import { buildDevSubdomainUrl, config } from "../config";
+import { publishDeploymentEvent } from "../deploymentEvents";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { parseExampleRepoUrl, resolveLocalExample } from "../examples";
 import { buildZipballUrl, parseGitHubRepoUrl } from "../github";
 import {
+  buildPreviewManifestKey,
+  cachePreviewManifest,
+  createPreviewManifest,
+  type PreviewManifest
+} from "../previewManifest";
+import {
   ackDeployment,
-  acquireAccountSlot,
-  deferDeployment,
   dequeueDeployment,
   reclaimDeployment,
-  releaseAccountSlot,
   touchPendingDeployment,
   type DeploymentJob
 } from "../queue";
-import { getRedisClient } from "../redis";
+import { consumeRepoCredential } from "../repoCredentials";
 import { isStorageConfigured, upload } from "../storage";
+import { parseEnvFileContent } from "../lib/parseEnvFileContent";
+import { parseStoredProjectCommandForBuild } from "../lib/parseProjectCommandLine";
+import {
+  resolveProjectRoots,
+  sanitizeRelativeWorkdir,
+  type RuntimeImageMode
+} from "../lib/projectPaths";
 import { guessContentType } from "../utils/contentType";
 import { detectBuildStrategy } from "./build/registry";
-import type { BuildRuntime, DeploymentBuildStrategy, RunCommandResult, ServeStrategy } from "./build/types";
+import type {
+  BuildRuntime,
+  DeploymentBuildStrategy,
+  PreviewResolution,
+  RunCommandResult,
+  RuntimeConfig,
+  RuntimeImageMode as WorkerRuntimeImageMode,
+  ServeStrategy
+} from "./build/types";
+import {
+  getEffectivePendingHeartbeatMs,
+  hasFreshWorkerHeartbeat
+} from "./workerTiming";
 
 const buildPreviewUrl = (shortId: string) =>
-  `${config.devProtocol}://${shortId}.${config.devDomain}:${config.port}`;
+  buildDevSubdomainUrl(shortId);
 
-const DEPLOYMENT_LOG_CHANNEL_PREFIX = "deployment:";
-const DEPLOYMENT_LOG_CHANNEL_SUFFIX = ":logs";
+const resolveCanonicalServeStrategy = (
+  previewMode: typeof schema.projects.$inferSelect.previewMode,
+  resolvedServeStrategy: ServeStrategy
+): ServeStrategy => {
+  if (previewMode === "server" || previewMode === "static") {
+    return previewMode;
+  }
+  return resolvedServeStrategy;
+};
+
 const MAX_DEPLOYMENT_ENV_FILE_BYTES = 64 * 1024;
 
 const DOCKER_MANAGED_LABEL = "io.pdploy.build=true";
 const DOCKER_RUNTIME_LABEL = "io.pdploy.runtime=true";
 const DOCKER_DEPLOYMENT_LABEL_KEY = "io.pdploy.deployment";
 const DOCKER_NODE_IMAGE = (process.env.BUILD_NODE_IMAGE ?? "node:22-bookworm").trim();
-const DOCKER_BUN_IMAGE = (process.env.BUILD_BUN_IMAGE ?? "oven/bun:1").trim();
+const DOCKER_BUN_IMAGE = (process.env.BUILD_BUN_IMAGE ?? "pdploy-bun-build-image:latest").trim();
 const DOCKER_PYTHON_IMAGE = (process.env.BUILD_PYTHON_IMAGE ?? "python:3.12-bookworm").trim();
 const RUNTIME_STATIC_BASE_IMAGE = (process.env.RUNTIME_STATIC_BASE_IMAGE ?? "nginx:alpine").trim();
 const BUILD_WORKDIR_ROOT = (process.env.BUILD_WORKDIR ?? path.join(tmpdir(), "pdploy-builds")).trim();
 const DOCKER_SOCKET_PATH = (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock").trim() || "/var/run/docker.sock";
 const CONTAINER_REPO_DIR = "/workspace";
-const BUILD_ACCOUNT_SLOT_TTL_MS = Math.max(1000, config.build.accountSlotTtlSeconds * 1000);
 const BUILD_RECLAIM_IDLE_MS = config.build.reclaimIdleMs;
 const BUILD_PENDING_HEARTBEAT_MS = config.build.pendingHeartbeatMs;
-const ACCOUNT_SLOT_RETRY_DELAY_MS = 250;
+const BUILD_COMMAND_INACTIVITY_TIMEOUT_MS = Number.parseInt(
+  process.env.BUILD_COMMAND_INACTIVITY_TIMEOUT_MS ?? "30000",
+  10
+);
+const EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS = getEffectivePendingHeartbeatMs(
+  BUILD_RECLAIM_IDLE_MS,
+  BUILD_PENDING_HEARTBEAT_MS
+);
+const RUNTIME_BUILD_ARG_ALLOWLIST = ["NEXUS_REGISTRY"] as const;
 
 type BuildContext = {
   repoDir: string;
   artifactPrefix: string;
   deploymentId: string;
   logs: string[];
+  buildLogKey: string;
+  scheduleLogFlush: (delayMs?: number) => void;
 };
 
 type StrategyRuntimeId = Exclude<DeploymentBuildStrategy, "unknown">;
@@ -66,6 +106,12 @@ const sleep = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+const buildEphemeralContainerName = (deploymentId: string) => {
+  const normalizedId = deploymentId.toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 12) || "job";
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `pdploy-deploy-step-${normalizedId}-${suffix}`;
+};
+
 const buildConsumerName = (): string => {
   const rawHost = Bun.env.HOSTNAME ?? process.env.HOSTNAME ?? "worker";
   const host = rawHost.replace(/[^A-Za-z0-9_.-]/g, "_");
@@ -73,55 +119,22 @@ const buildConsumerName = (): string => {
 };
 
 const publishDeploymentLog = (deploymentId: string, content: string): void => {
-  getRedisClient()
-    .then((client) => {
-      if (!client) return;
-      const channel = `${DEPLOYMENT_LOG_CHANNEL_PREFIX}${deploymentId}${DEPLOYMENT_LOG_CHANNEL_SUFFIX}`;
-      return client.publish(channel, content);
-    })
+  publishDeploymentEvent(deploymentId, { type: "log", content })
     .catch(() => {});
 };
 
 const logLine = (ctx: BuildContext, line: string) => {
   const formatted = `[${new Date().toISOString()}] ${line}\n`;
-  ctx.logs.push(formatted.trimEnd());
+  ctx.logs.push(formatted);
+  ctx.scheduleLogFlush();
   publishDeploymentLog(ctx.deploymentId, formatted);
 };
 
-const parseDeploymentEnvFile = (content: string): Record<string, string> => {
-  const parsed: Record<string, string> = {};
-  const lines = content.split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const withoutExport = trimmed.startsWith("export ")
-      ? trimmed.slice("export ".length).trim()
-      : trimmed;
-    const separatorIndex = withoutExport.indexOf("=");
-    if (separatorIndex <= 0) continue;
-
-    const key = withoutExport.slice(0, separatorIndex).trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
-
-    let value = withoutExport.slice(separatorIndex + 1).trim();
-    if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
-      value = value
-        .slice(1, -1)
-        .replace(/\\n/g, "\n")
-        .replace(/\\r/g, "\r")
-        .replace(/\\t/g, "\t")
-        .replace(/\\"/g, '"')
-        .replace(/\\\\/g, "\\");
-    } else if (value.startsWith("'") && value.endsWith("'") && value.length >= 2) {
-      value = value.slice(1, -1);
-    }
-
-    parsed[key] = value;
-  }
-
-  return parsed;
+const appendBuildLogChunk = (ctx: BuildContext, content: string) => {
+  if (!content) return;
+  ctx.logs.push(content);
+  ctx.scheduleLogFlush();
+  publishDeploymentLog(ctx.deploymentId, content);
 };
 
 const formatDotEnvValue = (value: string): string => {
@@ -148,7 +161,8 @@ const writeProjectDotEnv = async (repoDir: string, env: Record<string, string>) 
 };
 
 const prepareBuildEnv = async (
-  repoDir: string,
+  workspaceDir: string,
+  projectDir: string,
   projectBuildEnv: Record<string, string>,
   envFile: string | undefined,
   ctx: BuildContext
@@ -164,12 +178,18 @@ const prepareBuildEnv = async (
       );
     }
 
-    const parsed = parseDeploymentEnvFile(normalized);
+    const parsed = parseEnvFileContent(normalized);
     Object.assign(mergedEnv, parsed);
     logLine(ctx, `Applied deployment .env with ${Object.keys(parsed).length} variable(s)`);
   }
 
-  await writeProjectDotEnv(repoDir, mergedEnv);
+  await writeProjectDotEnv(workspaceDir, mergedEnv);
+  if (projectDir !== workspaceDir) {
+    await writeProjectDotEnv(projectDir, mergedEnv);
+    logLine(ctx, "Wrote build .env files to the workspace root and project root");
+  } else {
+    logLine(ctx, "Wrote build .env file to the project workspace");
+  }
   logLine(ctx, `Using ${Object.keys(mergedEnv).length} build environment variable(s)`);
 
   return mergedEnv;
@@ -238,6 +258,23 @@ const readProcessStream = async (
   return output;
 };
 
+const describeSilentCommandHint = (cmd: string[]): string | null => {
+  const joined = cmd.join(" ").toLowerCase();
+  if (joined.includes("bun install") || joined.includes("npm install") || joined.includes("npm ci") || joined.includes("pnpm install")) {
+    return "Dependency installs can go quiet during native module builds like node-gyp, canvas, or sharp.";
+  }
+  if (joined.includes("node-gyp")) {
+    return "node-gyp rebuilds can hang on missing native toolchains, headers, or prebuilt binary downloads.";
+  }
+  return null;
+};
+
+const buildInactivityMessage = (cmd: string[], timeoutMs: number): string => {
+  const base = `Command timed out after ${Math.floor(timeoutMs / 1000)}s without output: ${cmd.join(" ")}`;
+  const hint = describeSilentCommandHint(cmd);
+  return hint ? `${base}\n${hint}` : base;
+};
+
 const runHostCommand = async (
   cmd: string[],
   options: {
@@ -245,6 +282,7 @@ const runHostCommand = async (
     env?: Record<string, string>;
     onStdoutChunk?: (chunk: string) => void;
     onStderrChunk?: (chunk: string) => void;
+    onInactivityWarning?: (message: string) => void;
   }
 ): Promise<RunCommandResult> => {
   const proc = Bun.spawn(cmd, {
@@ -253,9 +291,45 @@ const runHostCommand = async (
     stdout: "pipe",
     stderr: "pipe"
   });
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let warningTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearTimers = () => {
+    if (timer) clearTimeout(timer);
+    if (warningTimer) clearTimeout(warningTimer);
+    timer = null;
+    warningTimer = null;
+  };
+  const resetInactivityTimers = () => {
+    clearTimers();
+    if (!Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) || BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0) {
+      return;
+    }
+    const warningDelay = Math.max(1000, Math.floor(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS / 2));
+    warningTimer = setTimeout(() => {
+      options.onInactivityWarning?.(
+        `No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`
+      );
+    }, warningDelay);
+    timer = setTimeout(() => {
+      timedOut = true;
+      options.onInactivityWarning?.(buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS));
+      proc.kill();
+    }, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+  };
+  resetInactivityTimers();
   const stdoutPromise = readProcessStream(proc.stdout, options.onStdoutChunk);
   const stderrPromise = readProcessStream(proc.stderr, options.onStderrChunk);
   const [stdout, stderr, code] = await Promise.all([stdoutPromise, stderrPromise, proc.exited]);
+  clearTimers();
+  if (timedOut) {
+    const timeoutMessage = buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+    return {
+      code: 124,
+      stdout,
+      stderr: stderr ? `${stderr}\n${timeoutMessage}` : timeoutMessage
+    };
+  }
   return { code, stdout, stderr };
 };
 
@@ -268,16 +342,10 @@ const runHostCommandWithDeploymentLogs = async (
   const result = await runHostCommand(cmd, {
     cwd: options.cwd,
     env: options.env,
-    onStdoutChunk: (chunk) => publishDeploymentLog(options.ctx.deploymentId, chunk),
-    onStderrChunk: (chunk) => publishDeploymentLog(options.ctx.deploymentId, chunk)
+    onStdoutChunk: (chunk) => appendBuildLogChunk(options.ctx, chunk),
+    onStderrChunk: (chunk) => appendBuildLogChunk(options.ctx, chunk),
+    onInactivityWarning: (message) => logLine(options.ctx, message)
   });
-
-  if (result.stdout.trim()) {
-    options.ctx.logs.push(result.stdout.trimEnd());
-  }
-  if (result.stderr.trim()) {
-    options.ctx.logs.push(result.stderr.trimEnd());
-  }
 
   return result;
 };
@@ -307,6 +375,19 @@ const isDockerNotFoundError = (error: unknown): boolean => {
   if (statusCode === 404) return true;
   const message = error instanceof Error ? error.message : String(error);
   return /No such (container|image)/i.test(message);
+};
+
+const isDockerRemovalInProgressError = (error: unknown): boolean => {
+  const err = error as {
+    statusCode?: unknown;
+    json?: { message?: string };
+    message?: string;
+  };
+  const statusCode = typeof err?.statusCode === "number" ? err.statusCode : undefined;
+  if (statusCode !== 409) return false;
+  const message =
+    err?.json?.message ?? (error instanceof Error ? error.message : String(error ?? ""));
+  return /removal of container .* is already in progress/i.test(message);
 };
 
 const isDockerDaemonUnavailableError = (error: unknown): boolean => {
@@ -397,7 +478,16 @@ const createStreamCollector = (onChunk?: (chunk: string) => void) => {
   };
 };
 
-const ensureDockerImage = async (image: string, deploymentId: string): Promise<void> => {
+type EnsureDockerImageOptions = {
+  deploymentId: string;
+  onLog?: (line: string) => void;
+};
+
+const ensureDockerImage = async (
+  image: string,
+  options: EnsureDockerImageOptions
+): Promise<void> => {
+  const { deploymentId, onLog } = options;
   const existing = dockerImageEnsureCache.get(image);
   if (existing) {
     await existing;
@@ -414,7 +504,9 @@ const ensureDockerImage = async (image: string, deploymentId: string): Promise<v
       }
     }
 
-    publishDeploymentLog(deploymentId, `[docker] Pulling image ${image}\n`);
+    const pullMsg = `[docker] Pulling image ${image}\n`;
+    publishDeploymentLog(deploymentId, pullMsg);
+    onLog?.(pullMsg.trimEnd());
     const pullStream = await dockerClient.pull(image);
     await new Promise<void>((resolve, reject) => {
       dockerClient.modem.followProgress(
@@ -440,7 +532,9 @@ const ensureDockerImage = async (image: string, deploymentId: string): Promise<v
             typeof id === "string" ? id : "",
             typeof progress === "string" ? progress : ""
           ].filter(Boolean);
-          publishDeploymentLog(deploymentId, `[docker] ${parts.join(" ")}\n`);
+          const progressMsg = `[docker] ${parts.join(" ")}\n`;
+          publishDeploymentLog(deploymentId, progressMsg);
+          onLog?.(progressMsg.trimEnd());
         }
       );
     });
@@ -460,9 +554,11 @@ const runDockerCommand = async (
   options: {
     cwd: string;
     env?: Record<string, string>;
+    workdirRelative?: string;
     deploymentId: string;
     strategyId: StrategyRuntimeId;
     buildConfig: BuildContainerConfig;
+    onLog?: (line: string) => void;
   }
 ): Promise<RunCommandResult> => {
   if (cmd.length === 0) {
@@ -470,7 +566,10 @@ const runDockerCommand = async (
   }
 
   const image = resolveDockerImageForCommand(options.strategyId, cmd);
-  const memoryBytes = parseMemoryBytes(options.buildConfig.memory);
+  let memoryBytes = parseMemoryBytes(options.buildConfig.memory);
+  if (options.strategyId === "python" && memoryBytes > 0 && memoryBytes < 2 * 1024 * 1024 * 1024) {
+    memoryBytes = 2 * 1024 * 1024 * 1024;
+  }
   const nanoCpus = parseNanoCpus(options.buildConfig.cpus);
   const managedLabel = labelToPair(DOCKER_MANAGED_LABEL);
   const labels: Record<string, string> = {
@@ -478,7 +577,20 @@ const runDockerCommand = async (
     [DOCKER_DEPLOYMENT_LABEL_KEY]: sanitizeDockerLabelValue(options.deploymentId)
   };
 
-  await ensureDockerImage(image, options.deploymentId);
+  const hostConfig: {
+    Binds: string[];
+    Memory?: number;
+    NanoCpus?: number;
+  } = {
+    Binds: [`${options.cwd}:${CONTAINER_REPO_DIR}`]
+  };
+  if (memoryBytes > 0) hostConfig.Memory = memoryBytes;
+  if (nanoCpus > 0) hostConfig.NanoCpus = nanoCpus;
+
+  await ensureDockerImage(image, {
+    deploymentId: options.deploymentId,
+    onLog: options.onLog
+  });
 
   const stdoutCollector = createStreamCollector((chunk) =>
     publishDeploymentLog(options.deploymentId, chunk)
@@ -488,21 +600,32 @@ const runDockerCommand = async (
   );
 
   let containerId = "";
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let warningTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearInactivityTimers = () => {
+    if (timer) clearTimeout(timer);
+    if (warningTimer) clearTimeout(warningTimer);
+    timer = null;
+    warningTimer = null;
+  };
   try {
+    const workdirRelative = sanitizeRelativeWorkdir(options.workdirRelative ?? ".");
+    const workingDir =
+      workdirRelative === "."
+        ? CONTAINER_REPO_DIR
+        : path.posix.join(CONTAINER_REPO_DIR, workdirRelative);
     const container = await dockerClient.createContainer({
+      name: buildEphemeralContainerName(options.deploymentId),
       Image: image,
       Cmd: cmd,
-      WorkingDir: CONTAINER_REPO_DIR,
+      WorkingDir: workingDir,
       Env: toDockerEnv(options.env),
       AttachStdout: true,
       AttachStderr: true,
       Tty: false,
       Labels: labels,
-      HostConfig: {
-        Binds: [`${options.cwd}:${CONTAINER_REPO_DIR}`],
-        Memory: memoryBytes,
-        NanoCpus: nanoCpus
-      }
+      HostConfig: hostConfig
     });
     containerId = container.id;
 
@@ -512,11 +635,44 @@ const runDockerCommand = async (
       stderr: true
     });
     dockerClient.modem.demuxStream(stream, stdoutCollector.stream, stderrCollector.stream);
+    const resetInactivityTimers = () => {
+      clearInactivityTimers();
+      if (!Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) || BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0) {
+        return;
+      }
+      const warningDelay = Math.max(1000, Math.floor(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS / 2));
+      warningTimer = setTimeout(() => {
+        options.onLog?.(`No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`);
+      }, warningDelay);
+      timer = setTimeout(async () => {
+        timedOut = true;
+        options.onLog?.(buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS));
+        try {
+          await container.remove({ force: true });
+        } catch {
+          // ignore, finally block also cleans up
+        }
+      }, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+    };
+    resetInactivityTimers();
+    stdoutCollector.stream.on("data", () => resetInactivityTimers());
+    stderrCollector.stream.on("data", () => resetInactivityTimers());
 
     await container.start();
     const waitResult = await container.wait();
     await finished(stream).catch(() => {});
+    clearInactivityTimers();
 
+    if (timedOut) {
+      const timeoutMessage = buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+      return {
+        code: 124,
+        stdout: stdoutCollector.getOutput(),
+        stderr: stderrCollector.getOutput()
+          ? `${stderrCollector.getOutput()}\n${timeoutMessage}`
+          : timeoutMessage
+      };
+    }
     return {
       code: typeof waitResult.StatusCode === "number" ? waitResult.StatusCode : 1,
       stdout: stdoutCollector.getOutput(),
@@ -536,11 +692,12 @@ const runDockerCommand = async (
     }
     throw error;
   } finally {
+    clearInactivityTimers();
     if (containerId) {
       try {
         await dockerClient.getContainer(containerId).remove({ force: true });
       } catch (error) {
-        if (!isDockerNotFoundError(error)) {
+        if (!isDockerNotFoundError(error) && !isDockerRemovalInProgressError(error)) {
           console.error("Failed to remove build container:", error);
         }
       }
@@ -578,9 +735,8 @@ const pruneBuildContainers = async (
       await dockerClient.getContainer(id).remove({ force: true });
       removed += 1;
     } catch (error) {
-      if (!isDockerNotFoundError(error)) {
-        throw error;
-      }
+      if (isDockerNotFoundError(error) || isDockerRemovalInProgressError(error)) continue;
+      console.warn("Failed to remove build container:", error);
     }
   }
 
@@ -592,6 +748,7 @@ const createBuildRuntime = (
   strategyId: StrategyRuntimeId,
   buildConfig: BuildContainerConfig
 ): BuildRuntime => ({
+  containerRepoDir: CONTAINER_REPO_DIR,
   exists,
   isDirectory,
   which: (command: string) => {
@@ -609,9 +766,11 @@ const createBuildRuntime = (
     runDockerCommand(cmd, {
       cwd: options.cwd,
       env: options.env,
+      workdirRelative: options.workdirRelative,
       deploymentId: ctx.deploymentId,
       strategyId,
-      buildConfig
+      buildConfig,
+      onLog: (line) => logLine(ctx, line)
     }),
   resolveBunCli: () => ({ command: "bun" })
 });
@@ -622,7 +781,11 @@ const detectionRuntime: BuildRuntime = {
   which: Bun.which,
   readJson,
   readToml,
-  runCommand: runHostCommand,
+  runCommand: (cmd, options) =>
+    runHostCommand(cmd, {
+      cwd: options.cwd,
+      env: options.env
+    }),
   resolveBunCli: () => ({ command: "bun" })
 };
 
@@ -645,8 +808,12 @@ const collectFiles = async (rootDir: string): Promise<string[]> => {
   return files;
 };
 
-const uploadArtifacts = async (ctx: BuildContext, outputDir: string) => {
+const uploadArtifacts = async (
+  ctx: BuildContext,
+  outputDir: string
+): Promise<{ previewManifestKey: string; manifest: PreviewManifest }> => {
   const files = await collectFiles(outputDir);
+  const previewManifest = createPreviewManifest(ctx.artifactPrefix, outputDir, files);
 
   logLine(ctx, `Found ${files.length} files to upload`);
 
@@ -657,6 +824,17 @@ const uploadArtifacts = async (ctx: BuildContext, outputDir: string) => {
     const blob = Bun.file(filePath);
     await upload(key, blob, { contentType });
   }
+
+  const previewManifestKey = buildPreviewManifestKey(ctx.artifactPrefix);
+  await upload(previewManifestKey, JSON.stringify(previewManifest), {
+    contentType: "application/json; charset=utf-8"
+  });
+  await cachePreviewManifest(ctx.deploymentId, previewManifest);
+
+  return {
+    previewManifestKey,
+    manifest: previewManifest
+  };
 };
 
 const createStaticRuntimeImageContext = async (outputDir: string, workDir: string): Promise<string> => {
@@ -677,14 +855,78 @@ const createStaticRuntimeImageContext = async (outputDir: string, workDir: strin
   return contextDir;
 };
 
+const resolveRuntimeBaseImage = (runtimeConfig: RuntimeConfig): string => {
+  const firstCommand = runtimeConfig.command[0] ?? "node";
+  if (firstCommand === "bun") {
+    return DOCKER_BUN_IMAGE;
+  }
+  return DOCKER_NODE_IMAGE;
+};
+
+const resolveRuntimeWorkingDir = (runtimeConfig: RuntimeConfig): string => {
+  const rawWorkingDir = runtimeConfig.workingDir?.trim() || ".";
+  const normalized = rawWorkingDir.replace(/\\/g, "/");
+  if (path.isAbsolute(normalized)) {
+    throw new Error("runtimeConfig.workingDir must be relative");
+  }
+  if (normalized.split("/").some((segment) => segment === "..")) {
+    throw new Error("runtimeConfig.workingDir must stay inside the repository root");
+  }
+  return normalized === "." ? "/workspace" : `/workspace/${normalized.replace(/^\.\/+/, "")}`;
+};
+
+const createServerRuntimeImageContext = async (
+  repoDir: string,
+  workDir: string,
+  runtimeConfig: RuntimeConfig
+): Promise<string> => {
+  const contextDir = path.join(workDir, "runtime-server-context");
+  const appDir = path.join(contextDir, "app");
+  await mkdir(contextDir, { recursive: true });
+  await cp(repoDir, appDir, { recursive: true, force: true });
+
+  const dockerfilePath = path.join(contextDir, "Dockerfile");
+  const dockerfile = [
+    `FROM ${resolveRuntimeBaseImage(runtimeConfig)}`,
+    "WORKDIR /workspace",
+    "COPY app/ /workspace/",
+    `WORKDIR ${resolveRuntimeWorkingDir(runtimeConfig)}`,
+    "ENV NODE_ENV=production",
+    `ENV PORT=${runtimeConfig.port}`,
+    "ENV HOST=0.0.0.0",
+    "ENV HOSTNAME=0.0.0.0",
+    `EXPOSE ${runtimeConfig.port}`,
+    `CMD ${JSON.stringify(runtimeConfig.command)}`
+  ].join("\n");
+  await Bun.write(dockerfilePath, `${dockerfile}\n`);
+
+  return contextDir;
+};
+
 const RUNTIME_IMAGE_TEMP_TAG = "pdploy-runtime-temp";
+
+const collectRuntimeBuildArgs = (): string[] => {
+  const args: string[] = [];
+  for (const key of RUNTIME_BUILD_ARG_ALLOWLIST) {
+    const value = process.env[key]?.trim();
+    if (!value) continue;
+    args.push("--build-arg", `${key}=${value}`);
+  }
+  return args;
+};
 
 const buildRuntimeImageArchive = async (
   contextDir: string,
   outputPath: string,
-  ctx: BuildContext
+  ctx: BuildContext,
+  options: {
+    dockerfilePath?: string;
+    buildTarget?: string | null;
+  } = {}
 ): Promise<void> => {
   const tag = `${RUNTIME_IMAGE_TEMP_TAG}:${ctx.deploymentId}`;
+  const dockerBuildArgs = collectRuntimeBuildArgs();
+  const normalizedDockerfilePath = options.dockerfilePath?.trim();
 
   const buildResult = await runHostCommandWithDeploymentLogs(
     [
@@ -696,6 +938,9 @@ const buildRuntimeImageArchive = async (
       DOCKER_RUNTIME_LABEL,
       "--label",
       `${DOCKER_DEPLOYMENT_LABEL_KEY}=${sanitizeDockerLabelValue(ctx.deploymentId)}`,
+      ...(normalizedDockerfilePath ? ["-f", normalizedDockerfilePath] : []),
+      ...(options.buildTarget ? ["--target", options.buildTarget] : []),
+      ...dockerBuildArgs,
       "-t",
       tag,
       ".",
@@ -741,16 +986,38 @@ const buildAndUploadStaticRuntimeOciArtifact = async (
 const buildAndUploadServerRuntimeOciArtifact = async (
   ctx: BuildContext,
   repoDir: string,
-  workDir: string
+  workDir: string,
+  runtimeConfig: RuntimeConfig,
+  options: {
+    runtimeImageMode: WorkerRuntimeImageMode;
+    dockerfilePath: string | null;
+    dockerBuildTarget: string | null;
+  }
 ): Promise<OciRuntimeArtifact | null> => {
-  const dockerfilePath = path.join(repoDir, "Dockerfile");
-  if (!(await exists(dockerfilePath))) {
-    logLine(ctx, "No Dockerfile found for server runtime image export; skipping runtime artifact");
-    return null;
+  const archivePath = path.join(workDir, "runtime-image.tar");
+  const resolvedDockerfilePath = path.join(repoDir, options.dockerfilePath ?? "Dockerfile");
+  const hasRepoDockerfile = await exists(resolvedDockerfilePath);
+
+  let contextDir = repoDir;
+  let dockerfileArgPath: string | undefined;
+  if (options.runtimeImageMode === "platform") {
+    contextDir = await createServerRuntimeImageContext(repoDir, workDir, runtimeConfig);
+  } else if (options.runtimeImageMode === "dockerfile") {
+    if (!hasRepoDockerfile) {
+      throw new Error(`Dockerfile not found for runtime image build: ${options.dockerfilePath ?? "Dockerfile"}`);
+    }
+    dockerfileArgPath = path.relative(contextDir, resolvedDockerfilePath).replace(/\\/g, "/") || "Dockerfile";
+  } else if (hasRepoDockerfile) {
+    dockerfileArgPath = path.relative(contextDir, resolvedDockerfilePath).replace(/\\/g, "/") || "Dockerfile";
+  } else {
+    contextDir = await createServerRuntimeImageContext(repoDir, workDir, runtimeConfig);
+    logLine(ctx, "No runtime Dockerfile found; synthesizing platform runtime image context");
   }
 
-  const archivePath = path.join(workDir, "runtime-image.tar");
-  await buildRuntimeImageArchive(repoDir, archivePath, ctx);
+  await buildRuntimeImageArchive(contextDir, archivePath, ctx, {
+    dockerfilePath: dockerfileArgPath,
+    buildTarget: options.dockerBuildTarget
+  });
 
   const artifactKey = `${ctx.artifactPrefix}/runtime-image.tar`;
   await upload(artifactKey, Bun.file(archivePath), {
@@ -845,12 +1112,30 @@ const buildProject = async (
   ctx: BuildContext,
   githubToken: string | null,
   envFile: string | undefined,
-  projectBuildEnv: Record<string, string>
+  projectBuildEnv: Record<string, string>,
+  projectConfig: Pick<
+    typeof schema.projects.$inferSelect,
+    | "previewMode"
+    | "serverPreviewTarget"
+    | "workspaceRootDir"
+    | "projectRootDir"
+    | "frameworkHint"
+    | "runtimeImageMode"
+    | "dockerfilePath"
+    | "dockerBuildTarget"
+    | "skipHostStrategyBuild"
+    | "runtimeContainerPort"
+    | "installCommand"
+    | "buildCommand"
+  >
 ): Promise<{
   buildStrategy: DeploymentBuildStrategy;
   serveStrategy: ServeStrategy;
   runtimeImageRef: string | null;
   runtimeImageArtifactKey: string | null;
+  runtimeConfig: RuntimeConfig | null;
+  previewManifestKey: string | null;
+  previewResolution: PreviewResolution;
 }> => {
   if (!isStorageConfigured()) {
     throw new Error("S3 storage is not configured");
@@ -878,33 +1163,133 @@ const buildProject = async (
       extractedRoot = await extractRepo(zipPath, path.join(workDir, "repo"), ctx);
     }
 
-    ctx.repoDir = extractedRoot;
-    const combinedBuildEnv = await prepareBuildEnv(extractedRoot, projectBuildEnv, envFile, ctx);
+    const roots = resolveProjectRoots(
+      extractedRoot,
+      projectConfig.workspaceRootDir,
+      projectConfig.projectRootDir
+    );
+    const workspaceDirStat = await stat(roots.workspaceDir).catch(() => null);
+    if (!workspaceDirStat?.isDirectory()) {
+      throw new Error(`Workspace root directory not found in repository: ${roots.workspaceRootDir}`);
+    }
+    const selectedProjectDirStat = await stat(roots.projectDir).catch(() => null);
+    if (!selectedProjectDirStat?.isDirectory()) {
+      throw new Error(`Project root directory not found in repository: ${roots.projectRootDir}`);
+    }
 
-    const strategy = await detectBuildStrategy(extractedRoot, detectionRuntime);
+    ctx.repoDir = roots.projectDir;
+    logLine(ctx, `Selected workspace root: ${roots.workspaceRelative}`);
+    logLine(ctx, `Selected project root: ${roots.projectRelative}`);
+    logLine(ctx, `Framework hint: ${projectConfig.frameworkHint}`);
+    logLine(ctx, `Runtime image mode: ${projectConfig.runtimeImageMode}`);
+    const combinedBuildEnv = await prepareBuildEnv(
+      roots.workspaceDir,
+      roots.projectDir,
+      projectBuildEnv,
+      envFile,
+      ctx
+    );
+
+    if (projectConfig.skipHostStrategyBuild && projectConfig.previewMode !== "server") {
+      throw new Error("skipHostStrategyBuild requires Preview type Server");
+    }
+
+    const strategy = projectConfig.skipHostStrategyBuild
+      ? null
+      : await detectBuildStrategy(roots.projectDir, detectionRuntime);
     if (!strategy) {
+      if (projectConfig.skipHostStrategyBuild) {
+        logLine(ctx, "Skipping host strategy build; runtime image will be built directly from Docker configuration");
+      } else {
       throw new Error(
-        "Unsupported project type. Expected Node (package.json) or Python (pyproject.toml/requirements.txt)."
+        "Unsupported project type. Expected Node (package.json), Python (pyproject.toml/requirements.txt), or a static site entrypoint at index.html, public/index.html, dist/index.html, or build/index.html."
+      );
+      }
+    }
+
+    const buildConfig = await getBuildContainerConfig();
+    const runtime = strategy ? createBuildRuntime(ctx, strategy.id, buildConfig) : null;
+
+    const installParsed = parseStoredProjectCommandForBuild(projectConfig.installCommand);
+    const buildParsed = parseStoredProjectCommandForBuild(projectConfig.buildCommand);
+    if (installParsed.warning) {
+      logLine(ctx, `Invalid stored install command ignored: ${installParsed.warning}`);
+    }
+    if (buildParsed.warning) {
+      logLine(ctx, `Invalid stored build command ignored: ${buildParsed.warning}`);
+    }
+
+    const rawInstallSetting = projectConfig.installCommand;
+    if (rawInstallSetting != null && rawInstallSetting.trim() !== "") {
+      if (installParsed.argv && installParsed.argv.length > 0) {
+        logLine(
+          ctx,
+          `Resolved project install command from settings: ${installParsed.argv.join(" ")}`
+        );
+      }
+    } else {
+      logLine(ctx, "No project install command in settings (package manager default for Node builds).");
+    }
+
+    const result = projectConfig.skipHostStrategyBuild
+      ? {
+          buildStrategy: "unknown" as DeploymentBuildStrategy,
+          serveStrategy: "server" as const,
+          runtimeConfig: {
+            port: projectConfig.runtimeContainerPort,
+            framework: "node" as const,
+            command: ["noop"],
+            workingDir: "."
+          },
+          previewResolution: {
+            code: "dockerfile_only_server" as const,
+            detail: "Docker build only (host strategy skipped)"
+          }
+        }
+      : await strategy!.build(
+          roots.projectDir,
+          {
+            deploymentId: ctx.deploymentId,
+            logs: ctx.logs,
+            log: (line: string) => logLine(ctx, line),
+            appendLogChunk: (content: string) => appendBuildLogChunk(ctx, content),
+            env: combinedBuildEnv,
+            repoDir: roots.projectDir,
+            workspaceDir: roots.workspaceDir,
+            repoRelativeDir: roots.projectRelative,
+            workspaceRelativeDir: roots.workspaceRelative,
+            previewMode: projectConfig.previewMode,
+            serverPreviewTarget: projectConfig.serverPreviewTarget,
+            frameworkHint: projectConfig.frameworkHint,
+            installCommandOverride: installParsed.argv,
+            buildCommandOverride: buildParsed.argv
+          },
+          runtime!
+        );
+    if (strategy) {
+      logLine(ctx, `Detected build strategy: ${strategy.id}`);
+    }
+    logLine(
+      ctx,
+      `Resolved preview strategy: ${result.serveStrategy} (${result.previewResolution.code})`
+    );
+    if (result.previewResolution.detail) {
+      logLine(ctx, result.previewResolution.detail);
+    }
+    logLine(ctx, `Server preview target: ${projectConfig.serverPreviewTarget}`);
+    if (
+      result.serveStrategy === "static" &&
+      (projectConfig.skipHostStrategyBuild || projectConfig.runtimeImageMode === "dockerfile")
+    ) {
+      throw new Error(
+        "Static deployments cannot use Dockerfile-only runtime image builds. Use Preview type Server or switch runtimeImageMode to auto/platform."
       );
     }
 
-    logLine(ctx, `Detected build strategy: ${strategy.id}`);
-    const buildConfig = await getBuildContainerConfig();
-    const runtime = createBuildRuntime(ctx, strategy.id, buildConfig);
-
-    const result = await strategy.build(
-      extractedRoot,
-      {
-        deploymentId: ctx.deploymentId,
-        logs: ctx.logs,
-        log: (line: string) => logLine(ctx, line),
-        env: combinedBuildEnv
-      },
-      runtime
-    );
-
     let runtimeImageRef: string | null = null;
     let runtimeImageArtifactKey: string | null = null;
+    let runtimeConfig: RuntimeConfig | null = result.runtimeConfig ?? null;
+    let previewManifestKey: string | null = null;
 
     if (result.serveStrategy === "static") {
       if (!result.outputDir) {
@@ -912,7 +1297,8 @@ const buildProject = async (
       }
 
       logLine(ctx, `Uploading artifacts from ${path.basename(result.outputDir)}`);
-      await uploadArtifacts(ctx, result.outputDir);
+      const uploadResult = await uploadArtifacts(ctx, result.outputDir);
+      previewManifestKey = uploadResult.previewManifestKey;
       logLine(ctx, "Artifact upload complete");
 
       try {
@@ -932,7 +1318,20 @@ const buildProject = async (
 
       try {
         logLine(ctx, "Building container image for server output");
-        const runtimeArtifact = await buildAndUploadServerRuntimeOciArtifact(ctx, extractedRoot, workDir);
+        if (!runtimeConfig) {
+          throw new Error("Server deployment did not provide runtimeConfig");
+        }
+        const runtimeArtifact = await buildAndUploadServerRuntimeOciArtifact(
+          ctx,
+          extractedRoot,
+          workDir,
+          runtimeConfig,
+          {
+            runtimeImageMode: projectConfig.runtimeImageMode,
+            dockerfilePath: projectConfig.dockerfilePath,
+            dockerBuildTarget: projectConfig.dockerBuildTarget
+          }
+        );
         if (runtimeArtifact) {
           runtimeImageRef = runtimeArtifact.ref;
           runtimeImageArtifactKey = runtimeArtifact.artifactKey;
@@ -950,7 +1349,10 @@ const buildProject = async (
       buildStrategy: result.buildStrategy,
       serveStrategy: result.serveStrategy,
       runtimeImageRef,
-      runtimeImageArtifactKey
+      runtimeImageArtifactKey,
+      runtimeConfig,
+      previewManifestKey,
+      previewResolution: result.previewResolution
     };
   } finally {
     await rm(workDir, { recursive: true, force: true });
@@ -978,42 +1380,65 @@ const processJob = async (job: DeploymentJob) => {
     throw new Error(`Project not found for deployment ${deployment.id}`);
   }
 
-  let githubToken: string | null = null;
-  if (project.userId) {
-    const [account] = await db
-      .select({ accessToken: schema.accounts.accessToken })
-      .from(schema.accounts)
-      .where(
-        and(eq(schema.accounts.userId, project.userId), eq(schema.accounts.providerId, "github"))
-      )
-      .limit(1);
-    if (account?.accessToken) {
-      githubToken = account.accessToken;
-    }
-  }
+  const githubToken = job.repoCredentialId
+    ? await consumeRepoCredential(job.repoCredentialId)
+    : null;
 
   const buildEnv = await getProjectBuildEnv(project.id);
-
-  await db
-    .update(schema.deployments)
-    .set({ status: "building" })
-    .where(eq(schema.deployments.id, deployment.id));
+  const buildLogKey = `${deployment.artifactPrefix}/build.log`;
 
   const logs: string[] = [];
   const ctx: BuildContext = {
     repoDir: "",
     artifactPrefix: deployment.artifactPrefix,
     deploymentId: deployment.id,
-    logs
+    logs,
+    buildLogKey,
+    scheduleLogFlush: () => {}
   };
 
+  let lastUploadedLogBody = "";
+  let flushChain: Promise<void> = Promise.resolve();
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flushLogsToStorage = async () => {
+    if (!isStorageConfigured()) return;
+    const logBody = logs.join("");
+    if (logBody === lastUploadedLogBody) return;
+    await upload(buildLogKey, logBody, {
+      contentType: "text/plain; charset=utf-8"
+    });
+    lastUploadedLogBody = logBody;
+  };
+
+  const enqueueLogFlush = (delayMs = 500) => {
+    if (!isStorageConfigured()) return;
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer);
+    }
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      flushChain = flushChain
+        .then(() => flushLogsToStorage())
+        .catch((error) => {
+          console.error("Failed to flush in-progress build log:", error);
+        });
+    }, delayMs);
+  };
+
+  ctx.scheduleLogFlush = enqueueLogFlush;
+
   logLine(ctx, `Loaded ${Object.keys(buildEnv).length} persisted build environment variable(s)`);
+  enqueueLogFlush(0);
 
   let status: "success" | "failed" = "success";
   let buildStrategy: DeploymentBuildStrategy = "unknown";
   let serveStrategy: ServeStrategy = "static";
   let runtimeImageRef: string | null = null;
   let runtimeImageArtifactKey: string | null = null;
+  let runtimeConfig: RuntimeConfig | null = null;
+  let previewManifestKey: string | null = null;
+  let previewResolution: PreviewResolution | null = null;
 
   try {
     const cleaned = await pruneBuildContainers({ deploymentId: deployment.id, includeRunning: true });
@@ -1027,33 +1452,60 @@ const processJob = async (job: DeploymentJob) => {
       ctx,
       githubToken,
       job.envFile,
-      buildEnv
+      buildEnv,
+      {
+        previewMode: deployment.buildPreviewMode ?? project.previewMode,
+        serverPreviewTarget:
+          deployment.buildServerPreviewTarget ?? project.serverPreviewTarget,
+        workspaceRootDir: project.workspaceRootDir,
+        projectRootDir: project.projectRootDir,
+        frameworkHint: project.frameworkHint,
+        runtimeImageMode: project.runtimeImageMode,
+        dockerfilePath: project.dockerfilePath,
+        dockerBuildTarget: project.dockerBuildTarget,
+        skipHostStrategyBuild: project.skipHostStrategyBuild,
+        runtimeContainerPort: project.runtimeContainerPort,
+        installCommand: project.installCommand,
+        buildCommand: project.buildCommand
+      }
     );
     buildStrategy = buildResult.buildStrategy;
-    serveStrategy = buildResult.serveStrategy;
+    serveStrategy = resolveCanonicalServeStrategy(
+      deployment.buildPreviewMode ?? project.previewMode,
+      buildResult.serveStrategy
+    );
     runtimeImageRef = buildResult.runtimeImageRef;
     runtimeImageArtifactKey = buildResult.runtimeImageArtifactKey;
+    runtimeConfig = buildResult.runtimeConfig;
+    previewManifestKey = buildResult.previewManifestKey;
+    previewResolution = buildResult.previewResolution;
   } catch (error) {
-    status = "failed";
-    logLine(ctx, `Build error: ${error instanceof Error ? error.message : String(error)}`);
-    throw error;
+      status = "failed";
+      logLine(ctx, `Build error: ${error instanceof Error ? error.message : String(error)}`);
+      enqueueLogFlush(0);
   } finally {
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
     try {
-      const cleanedAfter = await pruneBuildContainers({ deploymentId: deployment.id, includeRunning: true });
+      const cleanedAfter = await pruneBuildContainers({
+        deploymentId: deployment.id,
+        includeRunning: false
+      });
       if (cleanedAfter > 0) {
-        logLine(ctx, `Pruned ${cleanedAfter} build container(s) after completion`);
+        logLine(ctx, `Pruned ${cleanedAfter} exited build container(s) after completion`);
       }
     } catch (cleanupError) {
       console.error("Failed to cleanup build containers:", cleanupError);
     }
 
-    const logKey = `${deployment.artifactPrefix}/build.log`;
-    const logBody = logs.join("\n") + "\n";
     let uploadedLogKey: string | null = null;
     if (isStorageConfigured()) {
       try {
-        await upload(logKey, logBody, { contentType: "text/plain; charset=utf-8" });
-        uploadedLogKey = logKey;
+        await flushChain;
+        await flushLogsToStorage();
+        uploadedLogKey = buildLogKey;
       } catch (err) {
         console.error("Failed to upload build logs:", err);
       }
@@ -1069,15 +1521,29 @@ const processJob = async (job: DeploymentJob) => {
         buildLogKey: uploadedLogKey,
         previewUrl,
         buildStrategy,
-        serveStrategy,
+        ...(buildStrategy !== "unknown" ? { serveStrategy } : {}),
         runtimeImageRef,
-        runtimeImageArtifactKey
+        runtimeImageArtifactKey,
+        runtimeConfig,
+        previewManifestKey,
+        previewResolution,
+        buildPreviewMode: deployment.buildPreviewMode ?? project.previewMode,
+        buildServerPreviewTarget:
+          deployment.buildServerPreviewTarget ?? project.serverPreviewTarget
       })
       .where(eq(schema.deployments.id, deployment.id));
+    await publishDeploymentEvent(deployment.id, { type: "status", status });
+    await publishDeploymentEvent(deployment.id, { type: "done", status });
   }
 };
 
 export const runLoop = async () => {
+  if (EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS !== BUILD_PENDING_HEARTBEAT_MS) {
+    console.warn(
+      `Adjusted build heartbeat interval from ${BUILD_PENDING_HEARTBEAT_MS}ms to ${EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS}ms so active jobs are not reclaimed early.`
+    );
+  }
+
   try {
     const cleaned = await pruneBuildContainers();
     if (cleaned > 0) {
@@ -1091,7 +1557,7 @@ export const runLoop = async () => {
   console.log(`Build worker stream consumer: ${consumerName}`);
 
   while (true) {
-    let message = await dequeueDeployment(consumerName, 5000);
+    let message = await dequeueDeployment(consumerName, 2000);
     if (!message) {
       try {
         message = await reclaimDeployment(consumerName, BUILD_RECLAIM_IDLE_MS);
@@ -1111,40 +1577,65 @@ export const runLoop = async () => {
       continue;
     }
 
-    let shouldAckInFinally = true;
-    let accountSlotUserId: string | null = null;
+    const [deploymentCheck] = await db
+      .select({
+        status: schema.deployments.status,
+        workerId: schema.deployments.workerId,
+        lastHeartbeatAt: schema.deployments.lastHeartbeatAt,
+        artifactPrefix: schema.deployments.artifactPrefix
+      })
+      .from(schema.deployments)
+      .where(eq(schema.deployments.id, job.deploymentId))
+      .limit(1);
+    if (!deploymentCheck || deploymentCheck.status === "success" || deploymentCheck.status === "failed") {
+      try {
+        await ackDeployment(message.streamId);
+      } catch (err) {
+        console.error("Failed to ack already-completed deployment:", err);
+      }
+      continue;
+    }
+
+    if (
+      deploymentCheck.status === "building" &&
+      deploymentCheck.workerId &&
+      deploymentCheck.workerId !== consumerName &&
+      hasFreshWorkerHeartbeat(deploymentCheck.lastHeartbeatAt, BUILD_RECLAIM_IDLE_MS)
+    ) {
+      try {
+        await ackDeployment(message.streamId);
+      } catch (err) {
+        console.error("Failed to ack duplicate in-flight deployment:", err);
+      }
+      continue;
+    }
+
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
     try {
-      const jobUserId = job.userId?.trim();
-      const buildConfig = await getBuildContainerConfig();
-      const accountMaxConcurrent = buildConfig.accountMaxConcurrent;
-      if (jobUserId && accountMaxConcurrent > 0) {
-        const acquired = await acquireAccountSlot(
-          jobUserId,
-          job.deploymentId,
-          accountMaxConcurrent,
-          BUILD_ACCOUNT_SLOT_TTL_MS
-        );
-
-        if (!acquired) {
-          const deferred = await deferDeployment(message.streamId, job);
-          shouldAckInFinally = false;
-          if (!deferred) {
-            console.warn(
-              `Failed to defer deployment ${job.deploymentId} for busy account ${jobUserId}; leaving pending for reclaim.`
-            );
-          }
-          await sleep(ACCOUNT_SLOT_RETRY_DELAY_MS);
-          continue;
-        }
-        accountSlotUserId = jobUserId;
-      }
+      const now = new Date();
+      await db
+        .update(schema.deployments)
+        .set({
+          status: "building",
+          workerId: consumerName,
+          lastHeartbeatAt: now,
+          buildLogKey: `${deploymentCheck.artifactPrefix}/build.log`,
+          runAttempt: sql`${schema.deployments.runAttempt} + 1`
+        })
+        .where(eq(schema.deployments.id, job.deploymentId));
+      await publishDeploymentEvent(job.deploymentId, { type: "status", status: "building" });
 
       heartbeatInterval = setInterval(() => {
         touchPendingDeployment(message.streamId, consumerName).catch((error) => {
-          console.error(`Failed to heartbeat deployment stream entry ${message?.streamId}:`, error);
+          console.error("Failed to heartbeat deployment stream entry:", error);
         });
-      }, BUILD_PENDING_HEARTBEAT_MS);
+        db.update(schema.deployments)
+          .set({ lastHeartbeatAt: new Date() })
+          .where(eq(schema.deployments.id, job.deploymentId))
+          .catch((error) => {
+            console.error("Failed to update deployment heartbeat:", error);
+          });
+      }, EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS);
 
       await processJob(job);
     } catch (error) {
@@ -1157,20 +1648,10 @@ export const runLoop = async () => {
         clearInterval(heartbeatInterval);
       }
 
-      if (accountSlotUserId) {
-        try {
-          await releaseAccountSlot(accountSlotUserId, job.deploymentId, BUILD_ACCOUNT_SLOT_TTL_MS);
-        } catch (error) {
-          console.error(`Failed to release account build slot for ${accountSlotUserId}:`, error);
-        }
-      }
-
-      if (shouldAckInFinally) {
-        try {
-          await ackDeployment(message.streamId);
-        } catch (err) {
-          console.error(`Failed to ack deployment stream entry ${message.streamId}:`, err);
-        }
+      try {
+        await ackDeployment(message.streamId);
+      } catch (err) {
+        console.error(`Failed to ack deployment stream entry ${message.streamId}:`, err);
       }
     }
   }

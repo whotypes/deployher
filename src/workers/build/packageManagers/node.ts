@@ -13,51 +13,68 @@ export type NodePackageManager = {
 type NodePackageManagerDetector = {
   name: NodePackageManagerName;
   lockfiles: string[];
-  buildSpec: (runtime: BuildRuntime) => NodePackageManager;
 };
 
 const NODE_PACKAGE_MANAGER_DETECTORS: NodePackageManagerDetector[] = [
   {
     name: "bun",
-    lockfiles: ["bun.lockb", "bun.lock"],
-    buildSpec: (runtime) => {
+    lockfiles: ["bun.lockb", "bun.lock"]
+  },
+  {
+    name: "pnpm",
+    lockfiles: ["pnpm-lock.yaml"]
+  },
+  {
+    name: "yarn",
+    lockfiles: ["yarn.lock"]
+  },
+  {
+    name: "npm",
+    lockfiles: ["package-lock.json"]
+  }
+];
+
+const buildNodePackageManager = (
+  name: NodePackageManagerName,
+  runtime: BuildRuntime,
+  locked: boolean
+): NodePackageManager => {
+  switch (name) {
+    case "bun": {
       const bunCli = runtime.resolveBunCli();
       return {
         name: "bun",
-        install: [bunCli.command, "install", "--frozen-lockfile"],
+        install: locked
+          ? [bunCli.command, "install", "--frozen-lockfile"]
+          : [bunCli.command, "install"],
         runBuild: [bunCli.command, "run", "build"],
         ...(bunCli.env && { extraEnv: bunCli.env })
       };
     }
-  },
-  {
-    name: "pnpm",
-    lockfiles: ["pnpm-lock.yaml"],
-    buildSpec: () => ({
-      name: "pnpm",
-      install: ["corepack", "pnpm", "install", "--frozen-lockfile", "--prod=false"],
-      runBuild: ["corepack", "pnpm", "run", "build"]
-    })
-  },
-  {
-    name: "yarn",
-    lockfiles: ["yarn.lock"],
-    buildSpec: () => ({
-      name: "yarn",
-      install: ["corepack", "yarn", "install", "--frozen-lockfile"],
-      runBuild: ["corepack", "yarn", "build"]
-    })
-  },
-  {
-    name: "npm",
-    lockfiles: ["package-lock.json"],
-    buildSpec: () => ({
-      name: "npm",
-      install: ["npm", "ci"],
-      runBuild: ["npm", "run", "build"]
-    })
+    case "pnpm":
+      return {
+        name: "pnpm",
+        install: locked
+          ? ["corepack", "pnpm", "install", "--frozen-lockfile", "--prod=false"]
+          : ["corepack", "pnpm", "install", "--prod=false"],
+        runBuild: ["corepack", "pnpm", "run", "build"]
+      };
+    case "yarn":
+      return {
+        name: "yarn",
+        install: locked
+          ? ["corepack", "yarn", "install", "--frozen-lockfile"]
+          : ["corepack", "yarn", "install"],
+        runBuild: ["corepack", "yarn", "build"]
+      };
+    case "npm":
+      return {
+        name: "npm",
+        install: locked ? ["npm", "ci"] : ["npm", "install"],
+        runBuild: ["npm", "run", "build"]
+      };
   }
-];
+};
 
 const normalizePackageManager = (value: unknown): NodePackageManagerName | null => {
   if (typeof value !== "string") return null;
@@ -66,6 +83,19 @@ const normalizePackageManager = (value: unknown): NodePackageManagerName | null 
     return manager;
   }
   return null;
+};
+
+const hasAnyLockfileForDetector = async (
+  repoDir: string,
+  detector: NodePackageManagerDetector,
+  runtime: BuildRuntime
+): Promise<boolean> => {
+  for (const lockfile of detector.lockfiles) {
+    if (await runtime.exists(path.join(repoDir, lockfile))) {
+      return true;
+    }
+  }
+  return false;
 };
 
 export const detectNodePackageManager = async (
@@ -77,19 +107,16 @@ export const detectNodePackageManager = async (
   if (preferredManager) {
     const detector = NODE_PACKAGE_MANAGER_DETECTORS.find((entry) => entry.name === preferredManager);
     if (detector) {
-      return detector.buildSpec(runtime);
+      const locked = await hasAnyLockfileForDetector(repoDir, detector, runtime);
+      return buildNodePackageManager(preferredManager, runtime, locked);
     }
   }
 
   for (const detector of NODE_PACKAGE_MANAGER_DETECTORS) {
-    for (const lockfile of detector.lockfiles) {
-      if (await runtime.exists(path.join(repoDir, lockfile))) {
-        return detector.buildSpec(runtime);
-      }
+    if (await hasAnyLockfileForDetector(repoDir, detector, runtime)) {
+      return buildNodePackageManager(detector.name, runtime, true);
     }
   }
 
-  throw new Error(
-    "No supported Node lockfile found. Expected one of: bun.lockb, bun.lock, pnpm-lock.yaml, yarn.lock, package-lock.json"
-  );
+  return buildNodePackageManager("npm", runtime, false);
 };

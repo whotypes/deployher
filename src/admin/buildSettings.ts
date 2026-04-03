@@ -8,7 +8,7 @@ export type BuildContainerConfig = {
   accountMaxConcurrent: number;
 };
 
-const DEFAULT_MEMORY = (process.env.BUILD_CONTAINER_MEMORY ?? "1g").trim();
+const DEFAULT_MEMORY = (process.env.BUILD_CONTAINER_MEMORY ?? "2g").trim();
 const DEFAULT_CPUS = (process.env.BUILD_CONTAINER_CPUS ?? "0.5").trim();
 const DEFAULT_ACCOUNT_MAX_CONCURRENT = Math.max(
   0,
