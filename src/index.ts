@@ -1,6 +1,7 @@
+import path from "path";
 import { config } from "./config";
 import { setServer, setStartedAt } from "./appContext";
-import { buildClient } from "./client/build";
+import { buildClient, clientOutDir } from "./client/build";
 import { json } from "./http/helpers";
 import { router } from "./router";
 import { checkStorageConnectivity, isStorageConfigured } from "./storage";
@@ -13,6 +14,12 @@ const start = async () => {
     console.log("Skipping client asset build at startup (SKIP_CLIENT_BUILD enabled).");
   } else if (!buildResult.success) {
     console.warn("Client assets may be missing; /assets/* will 404 until build succeeds.");
+  }
+  const appCss = path.join(clientOutDir, "app.css");
+  if (!(await Bun.file(appCss).exists())) {
+    console.warn(
+      `Missing ${appCss}: UI will look unstyled. Run \`bun run build:client\` or unset SKIP_CLIENT_BUILD.`
+    );
   }
   const server = Bun.serve({
     port: config.port,

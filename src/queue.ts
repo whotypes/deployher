@@ -9,6 +9,7 @@ export type DeploymentJob = {
   enqueuedAt: string;
   userId?: string;
   envFile?: string;
+  repoCredentialId?: string;
 };
 
 export type DeploymentStreamMessage = {
@@ -43,6 +44,7 @@ const parseStreamMessage = (raw: unknown): DeploymentStreamMessage | null => {
   const enqueuedAt = fields["enqueuedAt"]?.trim() || new Date().toISOString();
   const userId = fields["userId"]?.trim();
   const envFile = fields["envFile"];
+  const repoCredentialId = fields["repoCredentialId"]?.trim();
 
   return {
     streamId,
@@ -50,7 +52,8 @@ const parseStreamMessage = (raw: unknown): DeploymentStreamMessage | null => {
       deploymentId,
       enqueuedAt,
       ...(userId ? { userId } : {}),
-      ...(typeof envFile === "string" && envFile.length > 0 ? { envFile } : {})
+      ...(typeof envFile === "string" && envFile.length > 0 ? { envFile } : {}),
+      ...(repoCredentialId ? { repoCredentialId } : {})
     }
   };
 };
@@ -164,7 +167,7 @@ export async function ensureDeploymentQueue(): Promise<void> {
 
 export async function enqueueDeployment(
   deploymentId: string,
-  options: { userId?: string; envFile?: string } = {}
+  options: { userId?: string; envFile?: string; repoCredentialId?: string } = {}
 ): Promise<void> {
   const client = await getRedisClient();
   if (!client) throw new Error("Redis is not configured");
@@ -175,7 +178,8 @@ export async function enqueueDeployment(
     deploymentId,
     enqueuedAt: new Date().toISOString(),
     ...(options.userId ? { userId: options.userId } : {}),
-    ...(options.envFile ? { envFile: options.envFile } : {})
+    ...(options.envFile ? { envFile: options.envFile } : {}),
+    ...(options.repoCredentialId ? { repoCredentialId: options.repoCredentialId } : {})
   };
 
   const fields = ["deploymentId", payload.deploymentId, "enqueuedAt", payload.enqueuedAt];
@@ -184,6 +188,9 @@ export async function enqueueDeployment(
   }
   if (payload.envFile) {
     fields.push("envFile", payload.envFile);
+  }
+  if (payload.repoCredentialId) {
+    fields.push("repoCredentialId", payload.repoCredentialId);
   }
 
   await client.send("XADD", [DEPLOY_STREAM_KEY, "*", ...fields]);

@@ -162,8 +162,27 @@ export async function getTextFromOffset(
 ): Promise<{ text: string; bytesRead: number }> {
   const client = getStorageClient();
   if (!client) throw new Error("S3 storage is not configured");
-  const file = client.file(key).slice(byteOffset);
-  const bytes = await file.bytes();
+
+  const offset = Number.isFinite(byteOffset) ? Math.max(0, Math.floor(byteOffset)) : 0;
+
+  if (offset === 0) {
+    const text = await client.file(key).text();
+    const bytesRead = new TextEncoder().encode(text).length;
+    return { text, bytesRead };
+  }
+
+  let size: number;
+  try {
+    size = await client.size(key);
+  } catch {
+    return { text: "", bytesRead: 0 };
+  }
+
+  if (offset >= size) {
+    return { text: "", bytesRead: 0 };
+  }
+
+  const bytes = await client.file(key).slice(offset).bytes();
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   return { text, bytesRead: bytes.length };
 }

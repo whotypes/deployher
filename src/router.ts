@@ -23,6 +23,7 @@ import * as pages from "./routes/pages";
 import * as projects from "./routes/projects";
 import { auth } from "../auth";
 import { guessContentType } from "./utils/contentType";
+import { attachCsrfCookie, ensureCsrfToken, validateMutationRequest } from "./security/csrf";
 
 type PublicRoute = {
   pattern: string;
@@ -31,6 +32,7 @@ type PublicRoute = {
 
 type ProtectedRoute = {
   pattern: string;
+  operatorOnly?: boolean;
   methods: Partial<Record<string, ProtectedRouteHandler>>;
 };
 
@@ -69,7 +71,7 @@ const matchRoute = (
 const publicRoutes: PublicRoute[] = [
   { pattern: "/", methods: { GET: pages.landingPage } },
   { pattern: "/login", methods: { GET: pages.loginPage } },
-  { pattern: "/health", methods: { GET: pages.health, POST: pages.health } },
+  { pattern: "/health", methods: { GET: pages.health } },
   { pattern: "/preview/*", methods: { GET: servePreview } }
 ];
 
@@ -87,16 +89,32 @@ const protectedRoutes: ProtectedRoute[] = [
     }
   },
   {
+    pattern: "/projects/:id/settings",
+    methods: { GET: pages.projectSettingsPage }
+  },
+  {
+    pattern: "/projects/:id/settings/env",
+    methods: { GET: pages.projectSettingsEnvPage }
+  },
+  {
+    pattern: "/projects/:id/settings/danger",
+    methods: { GET: pages.projectSettingsDangerPage }
+  },
+  {
     pattern: "/projects/:id/deployments",
     methods: {
       GET: deployments.listDeployments,
       POST: deployments.createDeployment
     }
   },
-  { pattern: "/admin", methods: { GET: pages.adminExamplesPage } },
+  { pattern: "/admin", operatorOnly: true, methods: { GET: pages.adminExamplesPage } },
   {
     pattern: "/deployments/:id",
     methods: { GET: pages.handleDeploymentRoute }
+  },
+  {
+    pattern: "/deployments/:id/cancel",
+    methods: { POST: deployments.cancelDeployment }
   },
   {
     pattern: "/deployments/:id/log",
@@ -140,13 +158,15 @@ const protectedRoutes: ProtectedRoute[] = [
       DELETE: projects.deleteProjectEnv
     }
   },
-  { pattern: "/api/admin/examples", methods: { GET: admin.listExamples } },
+  { pattern: "/api/admin/examples", operatorOnly: true, methods: { GET: admin.listExamples } },
   {
     pattern: "/api/admin/examples/:name/deploy",
+    operatorOnly: true,
     methods: { POST: admin.createExampleDeployment }
   },
-  { pattern: "/api/admin/build-settings", methods: { GET: admin.getBuildSettings, PATCH: admin.updateBuildSettings } },
+  { pattern: "/api/admin/build-settings", operatorOnly: true, methods: { GET: admin.getBuildSettings, PATCH: admin.updateBuildSettings } },
   { pattern: "/api/deployments/:id", methods: { GET: deployments.getDeployment } },
+  { pattern: "/api/deployments/:id/cancel", methods: { POST: deployments.cancelDeployment } },
   {
     pattern: "/api/deployments/:id/log",
     methods: { GET: deployments.getDeploymentLog }
@@ -212,6 +232,7 @@ export const router = async (req: Request): Promise<Response> => {
         const reqWithParams = Object.assign(req, { params });
         return handler(reqWithParams);
       }
+      return json({ error: "Method Not Allowed" }, { status: 405 });
     }
   }
 
@@ -224,9 +245,27 @@ export const router = async (req: Request): Promise<Response> => {
         if ("response" in result) {
           return result.response;
         }
-        const reqWithSession = Object.assign(req, { params, session: result.session });
-        return handler(reqWithSession);
+        const csrf = ensureCsrfToken(req);
+        const appOwnedMutation = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+        if (appOwnedMutation) {
+          const validation = await validateMutationRequest(req, csrf.token);
+          if (!validation.ok) {
+            return attachCsrfCookie(
+              json({ error: validation.reason }, { status: 403 }),
+              csrf
+            );
+          }
+        }
+
+        if (route.operatorOnly && result.session.user.role !== "operator") {
+          return attachCsrfCookie(json({ error: "Forbidden" }, { status: 403 }), csrf);
+        }
+
+        const reqWithSession = Object.assign(req, { params, session: result.session, csrfToken: csrf.token });
+        const response = await handler(reqWithSession);
+        return attachCsrfCookie(response, csrf);
       }
+      return json({ error: "Method Not Allowed" }, { status: 405 });
     }
   }
 
