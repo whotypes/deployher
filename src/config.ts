@@ -36,6 +36,12 @@ const normalizeUrl = (value: string | undefined) => {
   return v || undefined;
 };
 
+const parseBoolean = (value: string | undefined, fallback = false): boolean => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return fallback;
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+};
+
 function requireEnv(name: string): string {
   const v = rawEnv[name];
   if (v === undefined || typeof v !== "string" || !v.trim()) {
@@ -59,11 +65,25 @@ export const config = {
     workers: Math.max(0, parseInteger(rawEnv.BUILD_WORKERS, 2)),
     accountMaxConcurrent: Math.max(0, parseInteger(rawEnv.BUILD_ACCOUNT_MAX_CONCURRENT, 1)),
     accountSlotTtlSeconds: Math.max(30, parseInteger(rawEnv.BUILD_ACCOUNT_SLOT_TTL_SECONDS, 21600)),
-    reclaimIdleMs: Math.max(1000, parseInteger(rawEnv.BUILD_RECLAIM_IDLE_MS, 900000)),
+    repoCredentialTtlSeconds: Math.max(60, parseInteger(rawEnv.BUILD_REPO_CREDENTIAL_TTL_SECONDS, 3600)),
+    reclaimIdleMs: Math.max(1000, parseInteger(rawEnv.BUILD_RECLAIM_IDLE_MS, 5000)),
     pendingHeartbeatMs: Math.max(1000, parseInteger(rawEnv.BUILD_PENDING_HEARTBEAT_MS, 30000))
   },
   redis: {
     url: normalizeUrl(rawEnv.REDIS_URL)
+  },
+  auth: {
+    url: normalizeUrl(rawEnv.BETTER_AUTH_URL ?? rawEnv.APP_BASE_URL ?? rawEnv.AUTH_URL)
+  },
+  preview: {
+    assetBaseUrl: normalizeUrl(rawEnv.PREVIEW_ASSET_BASE_URL)
+  },
+  runner: {
+    url: normalizeUrl(rawEnv.RUNNER_URL),
+    trustedLocalDocker: parseBoolean(rawEnv.TRUSTED_LOCAL_DOCKER, false),
+    previewEnabled: parseBoolean(rawEnv.RUNNER_PREVIEW_ENABLED, false),
+    network: normalizeUrl(rawEnv.RUNNER_PREVIEW_NETWORK),
+    sharedSecret: normalizeUrl(rawEnv.RUNNER_SHARED_SECRET)
   },
   s3: {
     endpoint: normalizeS3Endpoint(rawEnv.S3_ENDPOINT),
@@ -73,6 +93,46 @@ export const config = {
     secretAccessKey: (rawEnv.S3_SECRET_ACCESS_KEY ?? rawEnv.AWS_SECRET_ACCESS_KEY ?? "").trim() || undefined
   }
 };
+
+const withOptionalPort = (protocol: string, domain: string, port: number) => {
+  const normalizedPort = Number.isFinite(port) ? port : 3000;
+  const defaultPort = protocol === "https" ? 443 : 80;
+  return normalizedPort === defaultPort ? `${protocol}://${domain}` : `${protocol}://${domain}:${normalizedPort}`;
+};
+
+export const getDevBaseUrl = () => withOptionalPort(config.devProtocol, config.devDomain, config.port);
+
+export const getProdBaseUrl = () => withOptionalPort(config.prodProtocol, config.prodDomain, config.port);
+
+export const getTrustedAppOrigins = (): string[] => {
+  const origins = new Set<string>([getDevBaseUrl(), getProdBaseUrl()]);
+  if (config.auth.url) {
+    origins.add(config.auth.url);
+  }
+  return [...origins];
+};
+
+export const getAuthBaseUrl = (): string => config.auth.url ?? (
+  config.env === "development" ? getDevBaseUrl() : getProdBaseUrl()
+);
+
+export const getDevProjectUrlPattern = () => withOptionalPort(
+  config.devProtocol,
+  `{project}.${config.devDomain}`,
+  config.port
+);
+
+export const getProdProjectUrlPattern = () => withOptionalPort(
+  config.prodProtocol,
+  `{project}.${config.prodDomain}`,
+  config.port
+);
+
+export const buildDevSubdomainUrl = (label: string) => withOptionalPort(
+  config.devProtocol,
+  `${label}.${config.devDomain}`,
+  config.port
+);
 
 export const resolveProjectDomains = (project: { id: string; name: string }) => {
   const slug = project.name
@@ -85,7 +145,7 @@ export const resolveProjectDomains = (project: { id: string; name: string }) => 
   const label = slug || project.id;
 
   return {
-    dev: `${config.devProtocol}://${label}.${config.devDomain}`,
-    prod: `${config.prodProtocol}://${label}.${config.prodDomain}`
+    dev: buildDevSubdomainUrl(label),
+    prod: withOptionalPort(config.prodProtocol, `${label}.${config.prodDomain}`, config.port)
   };
 };
