@@ -4,3 +4,7 @@ infra/meta
 infra/data
 infra/.garage.env
 .env
+.pdploy-venv
+.pdploy-venv-*
+logs/
+.cursor/
