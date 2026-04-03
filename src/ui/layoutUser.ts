@@ -1,0 +1,21 @@
+export type LayoutUser = {
+  name: string | null;
+  email: string;
+  image: string | null;
+  role: "user" | "operator";
+};
+
+export type SidebarProjectDeploymentStatus = "queued" | "building" | "success" | "failed";
+
+export type SidebarProjectSummary = {
+  id: string;
+  name: string;
+  deploymentStatus: SidebarProjectDeploymentStatus | null;
+};
+
+export type SidebarFeaturedDeployment = {
+  id: string;
+  shortId: string;
+  status: "queued" | "building" | "success" | "failed";
+  sidebarRole: "live" | "failed" | "in_progress";
+};
