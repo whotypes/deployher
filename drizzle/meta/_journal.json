@@ -78,6 +78,55 @@
       "when": 1771496422293,
       "tag": "0010_quiet_wraith",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1771557486739,
+      "tag": "0011_regular_the_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1774902358647,
+      "tag": "0012_greedy_grim_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774941563744,
+      "tag": "0013_noisy_george_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1774950000000,
+      "tag": "0014_preview_mode_and_resolution",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1774953600000,
+      "tag": "0015_project_root_and_framework_hint",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1774957200000,
+      "tag": "0016_project_install_build_commands",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774960900543,
+      "tag": "0017_gigantic_firedrake",
+      "breakpoints": true
     }
   ]
 }

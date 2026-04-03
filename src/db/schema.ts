@@ -1,4 +1,14 @@
-import { boolean, index, pgTable, text, timestamp, uuid, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  uniqueIndex
+} from "drizzle-orm/pg-core";
 
 /**
  * Better Auth core schema (user, session, account, verification).
@@ -9,6 +19,7 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   name: text("name"),
   email: text("email").notNull().unique(),
+  role: text("role").notNull().default("user").$type<"user" | "operator">(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -69,11 +80,36 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   repoUrl: text("repo_url").notNull(),
   branch: text("branch").notNull(),
+  workspaceRootDir: text("workspace_root_dir").notNull().default("."),
+  projectRootDir: text("project_root_dir").notNull().default("."),
+  frameworkHint: text("framework_hint")
+    .notNull()
+    .default("auto")
+    .$type<"auto" | "nextjs" | "node" | "python" | "static">(),
+  previewMode: text("preview_mode")
+    .notNull()
+    .default("auto")
+    .$type<"auto" | "static" | "server">(),
+  serverPreviewTarget: text("server_preview_target")
+    .notNull()
+    .default("isolated-runner")
+    .$type<"isolated-runner" | "trusted-local-docker">(),
+  runtimeImageMode: text("runtime_image_mode")
+    .notNull()
+    .default("auto")
+    .$type<"auto" | "platform" | "dockerfile">(),
+  dockerfilePath: text("dockerfile_path"),
+  dockerBuildTarget: text("docker_build_target"),
+  skipHostStrategyBuild: boolean("skip_host_strategy_build").notNull().default(false),
+  runtimeContainerPort: integer("runtime_container_port").notNull().default(3000),
+  installCommand: text("install_command"),
+  buildCommand: text("build_command"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   currentDeploymentId: uuid("current_deployment_id")
 });
 
+/** Tenant isolation: API checks project ownership before reading/writing rows (no DB-level RLS in this app). */
 export const projectEnvs = pgTable(
   "project_envs",
   {
@@ -107,7 +143,7 @@ export const deployments = pgTable("deployments", {
   buildStrategy: text("build_strategy")
     .notNull()
     .default("unknown")
-    .$type<"node" | "python" | "unknown">(),
+    .$type<"node" | "python" | "static" | "unknown">(),
   serveStrategy: text("serve_strategy")
     .notNull()
     .default("static")
@@ -116,7 +152,48 @@ export const deployments = pgTable("deployments", {
   buildLogKey: text("build_log_key"),
   runtimeImageRef: text("runtime_image_ref"),
   runtimeImageArtifactKey: text("runtime_image_artifact_key"),
+  runtimeConfig: jsonb("runtime_config").$type<{
+    workingDir?: string;
+    port?: number;
+    command?: string[];
+    framework?: "nextjs" | "node";
+  } | null>(),
+  previewResolution: jsonb("preview_resolution").$type<{
+    code:
+      | "project_forced_static"
+      | "project_forced_server"
+      | "next_dot_next"
+      | "static_index_html"
+      | "python_static_output"
+      | "dockerfile_only_server";
+    detail?: string;
+  } | null>(),
+  buildPreviewMode: text("build_preview_mode").$type<"auto" | "static" | "server" | null>(),
+  buildServerPreviewTarget: text("build_server_preview_target").$type<
+    "isolated-runner" | "trusted-local-docker" | null
+  >(),
+  previewManifestKey: text("preview_manifest_key"),
   previewUrl: text("preview_url"),
+  workerId: text("worker_id"),
+  lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+  runAttempt: integer("run_attempt").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   finishedAt: timestamp("finished_at", { withTimezone: true })
 });
+
+export const deploymentEvents = pgTable(
+  "deployment_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    deploymentId: uuid("deployment_id")
+      .notNull()
+      .references(() => deployments.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    status: text("status"),
+    content: text("content"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    index("deployment_events_deployment_id_created_at_idx").on(table.deploymentId, table.createdAt)
+  ]
+);
