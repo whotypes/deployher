@@ -77,8 +77,9 @@ const DOCKER_SOCKET_PATH = (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.s
 const CONTAINER_REPO_DIR = "/workspace";
 const BUILD_RECLAIM_IDLE_MS = config.build.reclaimIdleMs;
 const BUILD_PENDING_HEARTBEAT_MS = config.build.pendingHeartbeatMs;
+const DEFAULT_BUILD_COMMAND_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 const BUILD_COMMAND_INACTIVITY_TIMEOUT_MS = Number.parseInt(
-  process.env.BUILD_COMMAND_INACTIVITY_TIMEOUT_MS ?? "30000",
+  process.env.BUILD_COMMAND_INACTIVITY_TIMEOUT_MS ?? String(DEFAULT_BUILD_COMMAND_INACTIVITY_TIMEOUT_MS),
   10
 );
 const EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS = getEffectivePendingHeartbeatMs(
@@ -275,6 +276,9 @@ const buildInactivityMessage = (cmd: string[], timeoutMs: number): string => {
   return hint ? `${base}\n${hint}` : base;
 };
 
+const getBuildCommandWarningDelay = (timeoutMs: number): number =>
+  Math.max(1000, Math.min(30_000, Math.floor(timeoutMs / 2)));
+
 const runHostCommand = async (
   cmd: string[],
   options: {
@@ -305,7 +309,7 @@ const runHostCommand = async (
     if (!Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) || BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0) {
       return;
     }
-    const warningDelay = Math.max(1000, Math.floor(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS / 2));
+    const warningDelay = getBuildCommandWarningDelay(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
     warningTimer = setTimeout(() => {
       options.onInactivityWarning?.(
         `No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`
@@ -640,7 +644,7 @@ const runDockerCommand = async (
       if (!Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) || BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0) {
         return;
       }
-      const warningDelay = Math.max(1000, Math.floor(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS / 2));
+      const warningDelay = getBuildCommandWarningDelay(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
       warningTimer = setTimeout(() => {
         options.onLog?.(`No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`);
       }, warningDelay);

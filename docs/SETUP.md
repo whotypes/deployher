@@ -217,6 +217,7 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | **Yes (app startup)** | OAuth app credentials; **required** or the app exits on boot. Callback URL must match your app URL + `/api/auth/callback/github`. |
 | `DEV_DOMAIN`, `PROD_DOMAIN`, `DEV_PROTOCOL`, `PROD_PROTOCOL` | No | Used for auth callback URL and preview URLs. Defaults in `.env.example`. Subdomain previews match `Host` against `<id>.<DEV_DOMAIN>` or `<id>.<PROD_DOMAIN>`. |
 | `BUILD_WORKERS` | No | Legacy in-process worker count for app-thread workers. Keep `0` when using the standalone `deployment-worker` service. |
+| `BUILD_COMMAND_INACTIVITY_TIMEOUT_MS` | No | Silence timeout for build commands. Default `300000` (5 minutes). Increase this for repos whose dependency installs go quiet during native/prebuilt package work such as `sharp`, `canvas`, or `node-gyp`. Set `0` or a negative value to disable the inactivity kill entirely. |
 | `NEXUS_REGISTRY`, `NEXUS_USER`, `NEXUS_PASSWORD` | **All three required** for Nexus image sync | If any is empty, `./infra/dev.sh` skips pushing base images to the local registry, but Dockerfiles may still default to `localhost:8082`, causing confusing build failures. Set `NEXUS_PASSWORD` to **≥8 characters** for Nexus admin bootstrap. On Linux you may need Docker [`insecure-registries`](https://docs.docker.com/engine/daemon/insecure-registries/) for `localhost:8082` if pulls use HTTP. |
 | `RUNTIME_STATIC_BASE_IMAGE` | No | Base image for standardized OCI runtime artifact generation from static build output. Default `nginx:alpine`. |
 | `SKIP_CLIENT_BUILD` | No | Set to `1` in Docker/prod so the app uses prebuilt client assets. |
@@ -310,6 +311,12 @@ Set **`NEXUS_REGISTRY`**, **`NEXUS_USER`**, and **`NEXUS_PASSWORD`** in `.env`. 
 ### No space left on device (during `docker build`)
 
 Free space with `docker builder prune -af` and `docker system prune -af` (destructive to unused images/volumes). Enlarge the VM or Docker disk if usage stays high. The Bun builder image installs many `-dev` packages; full stack + Nexus needs a **generous** disk allocation.
+
+### `npm ci` / `npm install` timed out after no output
+
+The worker treats long silent commands as stuck and kills them after `BUILD_COMMAND_INACTIVITY_TIMEOUT_MS`. Some installs legitimately stay quiet while downloading or compiling native dependencies such as `sharp`, `canvas`, or `node-gyp`.
+
+Set `BUILD_COMMAND_INACTIVITY_TIMEOUT_MS=300000` (5 minutes) or higher in the worker environment and restart `deployment-worker`. Set `0` to disable the inactivity kill if you prefer.
 
 ### App container `Restarting` — `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
 
