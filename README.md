@@ -47,7 +47,7 @@ Each deployment emits a container image tarball (`runtime-image.tar`, Docker sav
 
 1. Install [Docker][docker-get] (and [Docker Compose][compose-install] if not bundled).
 2. Clone, **`cp .env.example .env`**, and fill **GitHub OAuth**, **`BETTER_AUTH_SECRET`**, and **Nexus** (`NEXUS_*`) — see **[docs/SETUP.md](docs/SETUP.md)**.
-3. Install [Bun][bun-install] and run **`./infra/dev.sh start`** once (bootstrap: infra, migrations, seed, app + workers). **This step requires Bun on the host.**
+3. Run **`./infra/dev.sh start`** once (bootstrap: infra, migrations + seed via **`oven/bun` in Docker**, app + workers). **No Bun on the host** — only Docker.
 4. After that, choose how you run day-to-day:
 
 **Full stack in Docker only (no Bun on the host for day-to-day):**
@@ -56,7 +56,7 @@ Each deployment emits a container image tarball (`runtime-image.tar`, Docker sav
 docker compose up -d --build
 ```
 
-App: `http://localhost:3000`. Migrations run in the app container; **seed** is not re-run by Compose — use `./infra/dev.sh seed` or `bun run seed` when you need demo data again.
+App: `http://localhost:3000`. Migrations run in the app container; **seed** is not re-run by Compose — use `./infra/dev.sh seed` (Docker) or `bun run seed` on the host when using hot-reload dev below.
 
 **Infra in Docker, app + worker on the host (hot reload, requires Bun):**
 
@@ -110,8 +110,8 @@ See `examples/README.md` for usage.
 | `src/db/` | Drizzle schema and DB client |
 | `auth.ts` | Better Auth config |
 | `drizzle/` | Migrations |
-| `infra/dev.sh` | Dev infra script (start/stop/reset Postgres, Redis, Garage) |
-| `docker-compose.yml` | App, deployment-worker, Postgres, Redis, Garage |
+| `infra/dev.sh` | Dev infra: Postgres, Redis, Garage, Nexus; migrate/seed via **`oven/bun` in Docker**; app + workers |
+| `docker-compose.yml` | App, deployment-worker, builder images, Postgres, Redis, Garage, Nexus |
 | `Dockerfile` | Multi-stage build for the app image |
 | `docker/build-worker.Dockerfile` | Docker image for the standalone deployment worker |
 
@@ -146,5 +146,5 @@ SKIP_CLIENT_BUILD=1 ./dist/pdploy
 
 ## Documentation
 
-- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, both dev workflows (Docker-only and Bun on host), env vars, ports, infra script reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **troubleshooting**.
+- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, **`./infra/dev.sh`** (migrate/seed via **`oven/bun` in Docker**, no Bun on host), both dev workflows, env vars, ports, infra script reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **troubleshooting**.
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Monorepo workspace/app roots, runtime image modes, Dockerfile-first server deploys, Nexus-aware Docker build args, and security notes.

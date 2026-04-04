@@ -2,7 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
+
+BUN_IMAGE="${BUN_IMAGE:-oven/bun:1.3.5}"
 
 export DATABASE_URL="${DATABASE_URL:-postgresql://app:app@localhost:5432/placeholder}"
 
@@ -139,7 +142,50 @@ wait_for_nexus() {
 
 GARAGE_BUCKET_NAME="${GARAGE_BUCKET_NAME:-placeholder-bucket}"
 GARAGE_KEY_NAME="${GARAGE_KEY_NAME:-devkey}"
-BACKEND_ENV_FILE="$SCRIPT_DIR/../.env"
+BACKEND_ENV_FILE="$REPO_ROOT/.env"
+
+compose_postgres_network() {
+  local cid
+  cid="$(dc ps -q postgres 2>/dev/null | head -1)"
+  if [[ -z "$cid" ]]; then
+    echo "Postgres container not found. Is the stack up?" >&2
+    return 1
+  fi
+  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$cid" | head -1
+}
+
+run_bun_script() {
+  local script_name="$1"
+  if [[ ! -f "$BACKEND_ENV_FILE" ]]; then
+    echo "Missing $BACKEND_ENV_FILE — copy .env.example and configure it." >&2
+    return 1
+  fi
+  local net
+  net="$(compose_postgres_network)" || return 1
+  [[ -n "$net" ]] || {
+    echo "Could not resolve Docker network for Postgres." >&2
+    return 1
+  }
+  echo "Running $script_name in $BUN_IMAGE (Docker)..."
+  docker run --rm \
+    --network "$net" \
+    -v "$REPO_ROOT:/usr/src/app" \
+    -w /usr/src/app \
+    --env-file "$BACKEND_ENV_FILE" \
+    -e DATABASE_URL=postgresql://app:app@postgres:5432/placeholder \
+    "$BUN_IMAGE" \
+    sh -lc "set -euo pipefail; bun install --frozen-lockfile && bun $script_name"
+}
+
+bun_nexus_eula_disclaimer() {
+  docker run --rm -i "$BUN_IMAGE" bun -e \
+    'const input = await new Response(Bun.stdin.stream()).text(); const parsed = JSON.parse(input); process.stdout.write(typeof parsed.disclaimer === "string" ? parsed.disclaimer : "");'
+}
+
+bun_nexus_eula_payload() {
+  docker run --rm -i "$BUN_IMAGE" bun -e \
+    'const disclaimer = await new Response(Bun.stdin.stream()).text(); process.stdout.write(JSON.stringify({ accepted: true, disclaimer }));'
+}
 
 garage_cli() {
   docker exec garage /garage "$@" 2>&1 | grep -v -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' || true
@@ -244,7 +290,7 @@ inject_s3_env() {
   echo "Injecting S3 credentials into $BACKEND_ENV_FILE..."
 
   if [[ ! -f "$BACKEND_ENV_FILE" ]]; then
-    cp "$BACKEND_ENV_FILE.example" "$BACKEND_ENV_FILE" 2>/dev/null || touch "$BACKEND_ENV_FILE"
+    cp "$REPO_ROOT/.env.example" "$BACKEND_ENV_FILE" 2>/dev/null || touch "$BACKEND_ENV_FILE"
   fi
 
   local tmp_file
@@ -423,7 +469,7 @@ ensure_nexus_eula() {
   fi
 
   local disclaimer
-  disclaimer="$(printf '%s' "$eula" | bun -e 'const input = await new Response(Bun.stdin.stream()).text(); const parsed = JSON.parse(input); process.stdout.write(typeof parsed.disclaimer === "string" ? parsed.disclaimer : "");')"
+  disclaimer="$(printf '%s' "$eula" | bun_nexus_eula_disclaimer)"
   if [[ -z "$disclaimer" ]]; then
     echo "Failed to read Nexus EULA disclaimer."
     exit 1
@@ -431,7 +477,7 @@ ensure_nexus_eula() {
 
   echo "Accepting Nexus Community Edition EULA..."
   local payload
-  payload="$(printf '%s' "$disclaimer" | bun -e 'const disclaimer = await new Response(Bun.stdin.stream()).text(); process.stdout.write(JSON.stringify({ accepted: true, disclaimer }));')"
+  payload="$(printf '%s' "$disclaimer" | bun_nexus_eula_payload)"
   nexus_api POST "/service/rest/v1/system/eula" "$NEXUS_USER" "$NEXUS_PASSWORD" "$payload" >/dev/null
   echo "Nexus EULA accepted."
 }
@@ -572,8 +618,8 @@ ensure_stack() {
 
 cmd_start() {
   ensure_stack
-  bun "$SCRIPT_DIR/../migrate.ts"
-  bun "$SCRIPT_DIR/../seed.ts"
+  run_bun_script migrate.ts
+  run_bun_script seed.ts
   ensure_app_stack
   echo "Stack started (infra + app + deployment-worker), DB migrated, data seeded."
 }
@@ -592,21 +638,21 @@ cmd_reset() {
   rm -f "$GARAGE_ENV_FILE"
 
   ensure_stack
-  bun "$SCRIPT_DIR/../migrate.ts"
-  bun "$SCRIPT_DIR/../seed.ts"
+  run_bun_script migrate.ts
+  run_bun_script seed.ts
   ensure_app_stack
   echo "Full reset complete (volumes recreated, app + deployment-worker rebuilt)."
 }
 
 cmd_migrate() {
   ensure_stack
-  bun "$SCRIPT_DIR/../migrate.ts"
+  run_bun_script migrate.ts
   echo "Migrations complete."
 }
 
 cmd_seed() {
   ensure_stack
-  bun "$SCRIPT_DIR/../seed.ts"
+  run_bun_script seed.ts
   echo "Seeding complete."
 }
 
@@ -617,6 +663,8 @@ cmd_logs() {
 
 cmd_help() {
   echo "Usage: $0 {start|stop|reset|migrate|seed|logs}"
+  echo ""
+  echo "Requires Docker (and docker compose). Migrate/seed run via $BUN_IMAGE — no Bun on the host."
   echo ""
   echo "Commands:"
   echo "  start    start stack (postgres + redis + garage + app + deployment-worker), migrate, seed"

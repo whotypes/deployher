@@ -8,7 +8,7 @@
 
 # Setup and development
 
-Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) runs in Docker. The app can run either **fully in Docker** (no Bun on host *after* bootstrap) or **on the host with hot reload** (Bun required). This doc covers both.
+Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) runs in Docker. **`./infra/dev.sh` does not require Bun on the host** (migrate/seed run inside **`oven/bun`** via Docker). You can also run the app **fully in Docker** or **on the host with hot reload** ([Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host), Bun required on the host). This doc covers both.
 
 ## Table of contents
 
@@ -34,11 +34,11 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 |-------------|-------------|---------|
 | Docker | Always (infra and optionally app) | [Install Docker][docker-get] ([Docker Desktop][docker-desktop] includes Compose) |
 | Docker Compose | Always | Bundled with Docker Desktop; on Linux see [Install Compose][compose-install] |
-| Bun 1.3+ | **`./infra/dev.sh start`** (migrate, seed, Garage/Nexus bootstrap), **and** [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) (host app/worker) | [Bun installation][bun-install] (use the official installer; avoid `npm i -g bun` without fixing global npm permissions) |
+| Bun 1.3+ | Only [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) (host app + worker, hot reload) | [Bun installation][bun-install] (use the official installer; avoid `npm i -g bun` without fixing global npm permissions) |
 | Disk | Full stack + Nexus + image builds | Leave plenty of free space on the Docker data disk (rough guide: **≥30–40 GB** for a comfortable dev VM). |
 
 > [!NOTE]
-> **`./infra/dev.sh start` requires Bun on the machine where you run it.** After a successful bootstrap, you can run **`docker compose up -d --build`** without Bun on the host for day-to-day full-stack-in-Docker use ([Workflow A](#workflow-a-full-stack-in-docker-no-bun)).
+> **`./infra/dev.sh`** runs migrate/seed inside **`oven/bun`** via Docker — **no Bun on the host.** Override image with **`BUN_IMAGE`** if needed. After bootstrap, you can use **`docker compose up -d --build`** for day-to-day full-stack-in-Docker ([Workflow A](#workflow-a-full-stack-in-docker-no-bun)).
 
 > [!NOTE]
 > The app image is slim and does not run build jobs. Build toolchains (Docker CLI, Node/Python package managers, uv, Poetry, `unzip`) live in the dedicated `deployment-worker` image, which talks to the host Docker daemon through `/var/run/docker.sock`.
@@ -68,7 +68,7 @@ cp .env.example .env
 ./infra/dev.sh start
 ```
 
-This requires **Bun** on the host. It starts Postgres, Redis, Garage, Nexus, runs migrations and seed, syncs build images to Nexus when configured, then builds and starts the app and deployment-worker.
+It starts Postgres, Redis, Garage, Nexus, runs migrations and seed **in Docker** (`oven/bun` by default), syncs build images to Nexus when configured, then builds and starts the app and deployment-worker. **No Bun on the host** — only Docker.
 
 > [!WARNING]
 > Do not commit `.env`. It will contain secrets after bootstrap and OAuth setup.
@@ -87,7 +87,7 @@ The app derives the auth base URL from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT` 
 
 Good for: CI, testing the containerized path, or **running Compose without Bun on the host** after the repo is already bootstrapped.
 
-**First-time setup:** run [One-time bootstrap](#one-time-bootstrap) (`./infra/dev.sh start` with Bun). That provisions Garage S3 keys in `.env`, Nexus, migrations, and seed. **Seed** (`seed.ts`) runs via that script, not automatically on every `docker compose up`.
+**First-time setup:** run [One-time bootstrap](#one-time-bootstrap) (`./infra/dev.sh start`). That provisions Garage S3 keys in `.env`, Nexus, migrations, and seed (via **`oven/bun` in Docker**). **Seed** (`seed.ts`) runs via that script, not automatically on every `docker compose up`.
 
 **After bootstrap**, you can bring the stack up with Compose alone:
 
@@ -97,7 +97,7 @@ docker compose up -d --build
 
 This also builds dedicated Node and Bun build images (`pdploy-node-build-image:latest` and `pdploy-bun-build-image:latest`) used by deployment workers for Node repos. The Bun image includes Python and common native build dependencies so packages like `canvas` can compile reliably.
 
-**Migrations:** the app container runs `migrate.ts` on startup when `RUN_MIGRATIONS=1`. **Seeding** is not re-run by Compose; use `./infra/dev.sh seed` or `bun run seed` with a working `.env` if you need demo data again.
+**Migrations:** the app container runs `migrate.ts` on startup when `RUN_MIGRATIONS=1`. **Seeding** is not re-run by Compose; use `./infra/dev.sh seed` (Dockerized Bun) or **`bun run seed`** on the host if you use [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) and need demo data again.
 
 2. App URL: `http://localhost:3000` (or `http://<vm-ip>:3000` from another machine; see [Troubleshooting](#troubleshooting))
 
@@ -140,11 +140,18 @@ docker compose stop app deployment-worker
 
 If OrbStack or another non-Compose service is already listening on the app port, that command is still required but not sufficient. Host Bun dev should use `PORT=3001` so it does not compete with the existing listener.
 
-2. Run migrations and seed (if not already done):
+2. Run migrations and seed (if not already done). With **Bun** on the host:
 
 ```bash
 bun run migrate
 bun run seed
+```
+
+Without Bun on the host, use Docker (same as bootstrap) while infra is up:
+
+```bash
+./infra/dev.sh migrate
+./infra/dev.sh seed
 ```
 
 3. Start the app with hot reload:
@@ -173,13 +180,18 @@ bun run start:worker
 
 ```bash
 ./infra/dev.sh reset
-bun run migrate
-bun run seed
+```
+
+`reset` runs migrate and seed inside Docker. Then start the host app and worker again:
+
+```bash
 # terminal 1
 bun run dev
 # terminal 2
 bun run start:worker
 ```
+
+If you use host Bun and prefer explicit migrate/seed after reset, you can still run `bun run migrate` and `bun run seed`, or `./infra/dev.sh migrate` / `./infra/dev.sh seed`.
 
 > [!TIP]
 > For day-to-day dev, keep infra running and use either Docker (`app` + `deployment-worker`) or host processes (`bun run dev` + `bun run start:worker`) consistently for a session.
@@ -190,11 +202,11 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 
 | Command | Description |
 |---------|-------------|
-| `./infra/dev.sh start` | Start Postgres, Redis, Garage, Nexus; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; run **`bun migrate.ts`** and **`bun seed.ts`** on the host; sync Nexus images when `NEXUS_*` are set; build and start app and deployment-worker; verify Docker access from deployment-worker. **Requires Bun on the host.** |
+| `./infra/dev.sh start` | Start Postgres, Redis, Garage, Nexus; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; run **`migrate.ts`** and **`seed.ts`** inside **`oven/bun`** (Docker); sync Nexus images when `NEXUS_*` are set; build and start app and deployment-worker; verify Docker access from deployment-worker. **No Bun on the host.** |
 | `./infra/dev.sh stop` | Stop all compose services (including app and deployment-worker). |
-| `./infra/dev.sh reset` | `docker compose down -v`, clear Garage data and secrets, then run `start` again. Run migrate/seed after. |
-| `./infra/dev.sh migrate` | Ensure stack is up, then run `bun migrate.ts`. |
-| `./infra/dev.sh seed` | Ensure stack is up, then run `bun seed.ts`. |
+| `./infra/dev.sh reset` | `docker compose down -v`, clear Garage data and secrets, then full `start` again (migrate + seed in Docker, then app + workers). |
+| `./infra/dev.sh migrate` | Ensure stack is up, then run `migrate.ts` in Docker (`oven/bun`). |
+| `./infra/dev.sh seed` | Ensure stack is up, then run `seed.ts` in Docker (`oven/bun`). |
 | `./infra/dev.sh logs` | `docker compose logs -f`. |
 
 > [!CAUTION]
@@ -221,6 +233,7 @@ All from repository root. `dc` in the script points at `docker-compose.yml` in t
 | `RUNTIME_STATIC_BASE_IMAGE` | No | Base image for standardized OCI runtime artifact generation from static build output. Default `nginx:alpine`. |
 | `SKIP_CLIENT_BUILD` | No | Set to `1` in Docker/prod so the app uses prebuilt client assets. |
 | `RUN_MIGRATIONS` | No | Set to `1` to run migrations on app startup (default in Docker). |
+| `BUN_IMAGE` | No | Image for `./infra/dev.sh` migrate/seed and Nexus EULA helpers (default `oven/bun:1.3.5`). Set for air-gapped mirrors or version pinning. |
 
 ## Ports
 
@@ -268,7 +281,11 @@ In addition to existing static artifact uploads, the worker builds and uploads a
 
 ## Database and migrations
 
-Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `accounts`, `verification`) plus `projects` and `deployments`. Migrations are in `drizzle/` and run via `bun migrate.ts` (or on container startup when `RUN_MIGRATIONS=1`).
+Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `accounts`, `verification`) plus `projects` and `deployments`. Migrations live in `drizzle/`. Apply them by:
+
+- **`./infra/dev.sh migrate`** — runs `migrate.ts` inside **`oven/bun`** via Docker (no Bun on the host; needs Docker + stack up).
+- **`bun run migrate`** / **`bun migrate.ts`** — when you have Bun on the host and `DATABASE_URL` in `.env`.
+- **App container** — `migrate.ts` on startup when `RUN_MIGRATIONS=1`.
 
 - **Generate a new migration**: `bun run db:generate`. Requires `DATABASE_URL` in `.env`. Writes to `drizzle/`.
 - **Open Drizzle Studio**: `bun run db:studio`. Connects to the DB from `.env` for browsing and editing data.
@@ -289,15 +306,13 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 | `bun run db:studio` | Open Drizzle Studio. |
 | `bun run garage` | Run `docker exec -ti garage /garage` to use the Garage CLI inside the container. |
 
+**Infra (Docker only, no Bun on host):** `./infra/dev.sh migrate` and `./infra/dev.sh seed` run `migrate.ts` / `seed.ts` in **`oven/bun`** with the repo bind-mounted. Override image with **`BUN_IMAGE`**. See [Infra script reference](#infra-script-reference).
+
 ## Troubleshooting
 
 ### Postgres: “failed to start in time”
 
 On a slow disk or first-time DB init, Postgres can take longer than the wait loop in `infra/dev.sh`. Check `docker logs postgres`. Wait until you see the database ready, then run `./infra/dev.sh start` again or `./infra/dev.sh migrate` once the DB is up.
-
-### `bun: not found` when running `./infra/dev.sh`
-
-Install [Bun][bun-install] on the host (official `curl` installer installs to your home directory). Avoid `npm i -g bun` without fixing global npm permissions (`EACCES`). Alternatively, after infra exists, use [Workflow A](#workflow-a-full-stack-in-docker-no-bun) with `docker compose` only — you still need seed/migrate parity documented there.
 
 ### Missing `.env`
 

@@ -833,18 +833,18 @@ Presigned URLs are supported too, for cases where you want to give a client dire
 
 ### Garage bootstrap: the infra script
 
-The `infra/dev.sh` script (468 lines of bash) is a full orchestrator for bootstrapping the storage layer. Running `./infra/dev.sh start` will:
+The `infra/dev.sh` script is a bash orchestrator for bootstrapping the storage layer and app stack. **It does not require Bun on the host** — migrate/seed run inside **`oven/bun`** via `docker run` (override with **`BUN_IMAGE`**). Running `./infra/dev.sh start` will:
 
 1. **Generate Garage secrets** — RPC secret (64-hex), admin token, metrics token → writes `.garage.env`
-2. **Start infrastructure** — `docker compose up -d garage postgres redis`
+2. **Start infrastructure** — `docker compose up -d garage postgres redis nexus` (and related services)
 3. **Wait for health** — polls container logs for specific readiness messages
 4. **Configure Garage layout** — finds the node ID, assigns 1GB capacity, applies the layout
 5. **Create S3 bucket** — `garage bucket create placeholder-bucket`
 6. **Create access key** — `garage key create devkey`, parses the key ID and secret
 7. **Grant permissions** — `garage bucket allow --read --write placeholder-bucket --key devkey`
 8. **Inject credentials** — writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`
-9. **Run migrations** — `bun migrate.ts`
-10. **Seed database** — `bun seed.ts`
+9. **Run migrations** — `migrate.ts` inside a **`oven/bun`** container (bind-mounted repo, `bun install` + `bun migrate.ts`)
+10. **Seed database** — `seed.ts` the same way
 11. **Start app services** — builds and starts `app`, `deployment-worker`, `node-build-image`, `bun-build-image`
 12. **Verify Docker access** — confirms the deployment-worker can talk to the Docker daemon
 
