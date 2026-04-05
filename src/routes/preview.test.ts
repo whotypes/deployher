@@ -2,6 +2,21 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 const existingKeys = new Set<string>();
 const storedJson = new Map<string, unknown>();
+let currentDeployment: Record<string, unknown> | null = null;
+const runnerConfig = {
+  previewEnabled: false,
+  url: undefined as string | undefined,
+  sharedSecret: undefined as string | undefined
+};
+
+const mockBuildConfig = {
+  workers: 2,
+  accountMaxConcurrent: 1,
+  accountSlotTtlSeconds: 21600,
+  repoCredentialTtlSeconds: 3600,
+  reclaimIdleMs: 5000,
+  pendingHeartbeatMs: 30000
+} as const;
 
 mock.module("../config", () => ({
   config: {
@@ -10,14 +25,14 @@ mock.module("../config", () => ({
     devProtocol: "http",
     prodProtocol: "https",
     port: 3001,
+    build: mockBuildConfig,
     preview: {
       assetBaseUrl: "https://assets.example.test"
     },
-    runner: {
-      previewEnabled: false,
-      url: undefined,
-      trustedLocalDocker: false,
-      sharedSecret: undefined
+    runner: runnerConfig,
+    observability: {
+      previewTrafficSampleRate: 0,
+      trustProxy: false
     },
     redis: {
       url: undefined
@@ -26,12 +41,19 @@ mock.module("../config", () => ({
   buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`
 }));
 
-mock.module("../previewRuntime", () => ({
-  ensureTrustedLocalPreviewContainer: async () => ({ baseUrl: "http://127.0.0.1:3000" })
-}));
-
 mock.module("../db/db", () => ({
-  db: {}
+  db: {
+    select() {
+      return this;
+    },
+    from() {
+      return this;
+    },
+    where() {
+      return this;
+    },
+    limit: async () => (currentDeployment ? [currentDeployment] : [])
+  }
 }));
 
 mock.module("../redis", () => ({
@@ -46,16 +68,42 @@ mock.module("../storage", () => ({
   presign: (key: string) => `https://signed.example.test/${key}`
 }));
 
-const { buildSubdomainPreviewUrl, serveDeploymentAsset } = await import("./preview");
+const {
+  buildSubdomainPreviewUrl,
+  resolvePreviewAssetPathForStrategy,
+  serveDeploymentAsset,
+  serveSubdomainPreview
+} = await import("./preview");
 
 const deployment = {
   artifactPrefix: "artifacts/deployment-1"
 } as never;
 
+describe("resolvePreviewAssetPathForStrategy", () => {
+  it("maps empty path to index.html for static previews", () => {
+    expect(resolvePreviewAssetPathForStrategy("", "static")).toBe("index.html");
+    expect(resolvePreviewAssetPathForStrategy("", null)).toBe("index.html");
+  });
+
+  it("maps empty path to empty string for server previews (Next.js serves / not /index.html)", () => {
+    expect(resolvePreviewAssetPathForStrategy("", "server")).toBe("");
+  });
+
+  it("preserves non-empty paths", () => {
+    expect(resolvePreviewAssetPathForStrategy("_next/static/chunk.js", "server")).toBe(
+      "_next/static/chunk.js"
+    );
+  });
+});
+
 describe("serveDeploymentAsset", () => {
   beforeEach(() => {
     existingKeys.clear();
     storedJson.clear();
+    currentDeployment = null;
+    runnerConfig.previewEnabled = false;
+    runnerConfig.url = undefined;
+    runnerConfig.sharedSecret = undefined;
   });
 
   it("serves root index.html for /", async () => {
@@ -122,5 +170,34 @@ describe("serveDeploymentAsset", () => {
 
   it("builds preview URLs with the configured port", () => {
     expect(buildSubdomainPreviewUrl("abc123def4")).toBe("http://abc123def4.localhost:3001");
+  });
+
+  it("returns 503 for server previews that have no runtime image", async () => {
+    runnerConfig.previewEnabled = true;
+    runnerConfig.url = "http://runner.internal";
+    currentDeployment = {
+      id: "94c2f168-7f58-4042-ae62-9d1837cb67d3",
+      shortId: "2vp09bk3m",
+      status: "success",
+      serveStrategy: "server",
+      buildServerPreviewTarget: "isolated-runner",
+      runtimeImagePullRef: null,
+      runtimeImageArtifactKey: null,
+      runtimeConfig: {
+        port: 3000,
+        command: []
+      },
+      artifactPrefix: "artifacts/test"
+    };
+
+    const response = await serveSubdomainPreview(
+      new Request("http://2vp09bk3m.localhost:3001/"),
+      { id: "2vp09bk3m", isShortId: true }
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "No runtime image is available for this deployment"
+    });
   });
 });

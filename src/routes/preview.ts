@@ -3,13 +3,25 @@ import { buildDevSubdomainUrl, config } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { badRequest, json, notFound, type RequestWithParams } from "../http/helpers";
-import { ensureTrustedLocalPreviewContainer } from "../previewRuntime";
-import { loadPreviewManifest, resolvePreviewManifestEntry } from "../previewManifest";
+import {
+  loadPreviewManifest,
+  maybeLogPreviewTraffic,
+  resolvePreviewManifestEntry
+} from "../lib/previewServe";
+import { sanitizeProxyResponseHeaders } from "../lib/proxyHeaders";
 import { getStream, exists as storageExists, isStorageConfigured } from "../storage";
 import { guessContentType } from "../utils/contentType";
 
 export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const SHORT_ID_REGEX = /^[0-9a-z]{9,10}$/;
+
+export const resolvePreviewAssetPathForStrategy = (
+  pathAfterLeadingSlashStrip: string,
+  serveStrategy: "static" | "server" | null | undefined
+): string => {
+  if (pathAfterLeadingSlashStrip) return pathAfterLeadingSlashStrip;
+  return (serveStrategy ?? "static") === "server" ? "" : "index.html";
+};
 
 export const extractDeploymentIdFromHost = (
   host: string
@@ -114,6 +126,8 @@ export const serveDeploymentAsset = async (
   return notFound(`File not found: ${assetPath}`);
 };
 
+const PREVIEW_RUNNER_FETCH_TIMEOUT_MS = 20 * 60 * 1000;
+
 const serveDeploymentByStrategy = async (
   req: Request,
   deployment: typeof schema.deployments.$inferSelect,
@@ -126,74 +140,91 @@ const serveDeploymentByStrategy = async (
     static: (request, d, p) => serveDeploymentAsset(d, p, request),
     server: async (request, d, p) => {
       const previewTarget = d.buildServerPreviewTarget ?? "isolated-runner";
-      let upstreamUrl: URL;
-      if (previewTarget === "trusted-local-docker") {
-        if (!config.runner.trustedLocalDocker) {
-          return json(
-            { error: "Trusted local Docker previews are disabled on this pdploy instance" },
-            { status: 503 }
-          );
-        }
-        try {
-          const local = await ensureTrustedLocalPreviewContainer({
-            id: d.id,
-            runtimeImageArtifactKey: d.runtimeImageArtifactKey,
-            runtimeConfig: d.runtimeConfig
-          });
-          upstreamUrl = new URL(`/${p.replace(/^\/+/, "")}`, `${local.baseUrl}/`);
-        } catch (error) {
-          return json(
-            {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Trusted local Docker preview is unavailable"
-            },
-            { status: 503 }
-          );
-        }
-      } else {
-        if (!config.runner.previewEnabled) {
-          return json(
-            { error: "Server previews are disabled until an isolated runner is configured" },
-            { status: 503 }
-          );
-        }
-        if (!config.runner.url) {
-          return json(
-            { error: "Server preview runner URL is not configured" },
-            { status: 503 }
-          );
-        }
-
-        const runnerBase = config.runner.url.endsWith("/")
-          ? config.runner.url.slice(0, -1)
-          : config.runner.url;
-        upstreamUrl = new URL(
-          `/preview/${d.id}/${p.replace(/^\/+/, "")}`,
-          `${runnerBase}/`
+      if (!config.runner.previewEnabled) {
+        return json(
+          { error: "Server previews are disabled until an isolated runner is configured" },
+          { status: 503 }
+        );
+      }
+      if (!config.runner.url) {
+        return json(
+          { error: "Server preview runner URL is not configured" },
+          { status: 503 }
+        );
+      }
+      const pullRef = d.runtimeImagePullRef?.trim() ?? "";
+      const artifactKey = d.runtimeImageArtifactKey?.trim() ?? "";
+      if (!pullRef && !artifactKey) {
+        return json(
+          { error: "No runtime image is available for this deployment" },
+          { status: 503 }
         );
       }
 
+      const runnerBase = config.runner.url.endsWith("/")
+        ? config.runner.url.slice(0, -1)
+        : config.runner.url;
+      const upstreamUrl = new URL(
+        `/preview/${d.id}/${p.replace(/^\/+/, "")}`,
+        `${runnerBase}/`
+      );
+
+      const runtimeConfigPayload = d.runtimeConfig ?? {
+        port: 3000,
+        command: [] as string[]
+      };
+
       const headers = new Headers(request.headers);
       headers.delete("host");
-      headers.set("x-pdploy-deployment-id", d.id);
-      headers.set("x-pdploy-preview-path", p);
-      headers.set("x-pdploy-preview-target", previewTarget);
+      const clientHost = request.headers.get("host")?.trim();
+      if (clientHost && !headers.has("x-forwarded-host")) {
+        headers.set("x-forwarded-host", clientHost);
+      }
+      const incomingUrl = new URL(request.url);
+      if (!headers.has("x-forwarded-proto")) {
+        headers.set("x-forwarded-proto", incomingUrl.protocol === "https:" ? "https" : "http");
+      }
+      headers.set("x-deployher-deployment-id", d.id);
+      headers.set("x-deployher-project-id", d.projectId);
+      headers.set("x-deployher-preview-path", p);
+      headers.set("x-deployher-preview-target", previewTarget);
+      if (pullRef) {
+        headers.set("x-deployher-runtime-image-pull-ref", pullRef);
+      } else {
+        headers.set("x-deployher-runtime-image-key", artifactKey);
+      }
+      headers.set("x-deployher-runtime-config", JSON.stringify(runtimeConfigPayload));
       if (config.runner.sharedSecret) {
-        headers.set("x-pdploy-runner-secret", config.runner.sharedSecret);
+        headers.set("x-deployher-runner-secret", config.runner.sharedSecret);
       }
 
-      const upstreamResponse = await fetch(upstreamUrl, {
-        method: request.method,
-        headers,
-        ...(request.method === "GET" || request.method === "HEAD" ? {} : { body: request.body }),
-        redirect: "manual"
-      });
+      let upstreamResponse: Response;
+      try {
+        upstreamResponse = await fetch(upstreamUrl.toString(), {
+          method: request.method,
+          headers,
+          signal: AbortSignal.timeout(PREVIEW_RUNNER_FETCH_TIMEOUT_MS),
+          ...(request.method === "GET" || request.method === "HEAD" ? {} : { body: request.body }),
+          redirect: "manual"
+        });
+      } catch (e) {
+        const name = e instanceof Error ? e.name : "";
+        const message = e instanceof Error ? e.message : String(e);
+        if (name === "TimeoutError" || name === "AbortError") {
+          return json(
+            {
+              error:
+                "Preview runner took too long to respond (cold start: docker pull + container boot). Retry in a moment."
+            },
+            { status: 504 }
+          );
+        }
+        throw e;
+      }
 
       return new Response(upstreamResponse.body, {
         status: upstreamResponse.status,
-        headers: upstreamResponse.headers
+        headers: sanitizeProxyResponseHeaders(upstreamResponse.headers)
       });
     }
   };
@@ -238,23 +269,27 @@ export const serveSubdomainPreview = async (
   }
 
   const url = new URL(req.url);
-  let assetPath = url.pathname.replace(/^\/+/, "") || "index.html";
+  let assetPath = url.pathname.replace(/^\/+/, "");
 
-  const legacyPrefixes = [
+  const stripPrefixes = [
     `preview/${deployment.id}/`,
     `preview/${deployment.shortId}/`,
     `d/${deployment.id}/`,
     `d/${deployment.shortId}/`
   ];
-  for (const prefix of legacyPrefixes) {
+  for (const prefix of stripPrefixes) {
     if (assetPath.startsWith(prefix)) {
-      assetPath = assetPath.slice(prefix.length) || "index.html";
+      assetPath = assetPath.slice(prefix.length);
       break;
     }
   }
 
+  assetPath = resolvePreviewAssetPathForStrategy(assetPath, deployment.serveStrategy);
+
   try {
-    return await serveDeploymentByStrategy(req, deployment, assetPath);
+    const response = await serveDeploymentByStrategy(req, deployment, assetPath);
+    maybeLogPreviewTraffic(req, deployment, assetPath, response.status);
+    return response;
   } catch (err) {
     console.error("Subdomain preview error:", err);
     return json({ error: "Failed to serve file" }, { status: 500 });
@@ -262,9 +297,9 @@ export const serveSubdomainPreview = async (
 };
 
 export const servePathBasedPreview = async (
-  _req: Request,
+  req: Request,
   idInfo: { id: string; isShortId: boolean },
-  assetPath: string
+  rawPath: string
 ): Promise<Response> => {
   if (!isStorageConfigured()) {
     return json({ error: "S3 storage is not configured" }, { status: 503 });
@@ -282,8 +317,15 @@ export const servePathBasedPreview = async (
     );
   }
 
+  const assetPath = resolvePreviewAssetPathForStrategy(
+    rawPath.replace(/^\/+/, ""),
+    deployment.serveStrategy
+  );
+
   try {
-    return await serveDeploymentByStrategy(_req, deployment, assetPath);
+    const response = await serveDeploymentByStrategy(req, deployment, assetPath);
+    maybeLogPreviewTraffic(req, deployment, assetPath, response.status);
+    return response;
   } catch (err) {
     console.error("Path-based preview error:", err);
     return json({ error: "Failed to serve file" }, { status: 500 });
