@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: release
-    container_name: pdploy-app
+    container_name: deployher-app
     user: "0:0"
     restart: unless-stopped
     depends_on:
@@ -13,6 +13,8 @@ services:
       redis:
         condition: service_healthy
       garage:
+        condition: service_started
+      preview-runner:
         condition: service_started
     env_file:
       - .env
@@ -26,10 +28,49 @@ services:
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
       BUILD_WORKERS: "0"
-      RUNNER_PREVIEW_ENABLED: ${RUNNER_PREVIEW_ENABLED:-0}
-      RUNNER_URL: ${RUNNER_URL:-}
+      RUNNER_PREVIEW_ENABLED: "1"
+      RUNNER_URL: http://preview-runner:8787
     ports:
       - "3000:3000"
+
+  preview-runner:
+    build:
+      context: .
+      dockerfile: docker/preview-runner.Dockerfile
+    container_name: deployher-preview-runner
+    restart: unless-stopped
+    user: "0:0"
+    depends_on:
+      garage:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      nexus:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      PORT: "8787"
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://garage:3900
+      RUNNER_DOCKER_NETWORK: deployher_default
+      RUNNER_SHARED_SECRET: ${RUNNER_SHARED_SECRET:-}
+      PREVIEW_TTL_MS: ${PREVIEW_TTL_MS:-1800000}
+      PREVIEW_MEMORY_BYTES: ${PREVIEW_MEMORY_BYTES:-1073741824}
+      PREVIEW_NANO_CPUS: ${PREVIEW_NANO_CPUS:-1}
+      # Docker Engine (via mounted socket) resolves this on the host, not the compose network — use a
+      # published registry address (not the service name "nexus"). Override if the daemon cannot reach loopback.
+      PREVIEW_RUNTIME_REGISTRY: ${PREVIEW_RUNTIME_DOCKER_DAEMON_REGISTRY:-127.0.0.1:8082}
+      PREVIEW_RUNTIME_DOCKER_REPO: ${PREVIEW_RUNTIME_DOCKER_REPO:-docker-hosted}
+      PREVIEW_RUNTIME_IMAGE_NAME: ${PREVIEW_RUNTIME_IMAGE_NAME:-deployher-preview-runtime}
+      PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS: ${PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS:-900000}
+      PREVIEW_RUNNER_IMAGE_MAX_AGE_MS: ${PREVIEW_RUNNER_IMAGE_MAX_AGE_MS:-604800000}
+      # Ask the app to prewarm images + start preview containers for each project current server deployment (retries if app is still booting).
+      PREVIEW_REHYDRATE_TRIGGER_URL: http://app:3000/internal/trigger-preview-rehydrate
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8787:8787"
 
   deployment-worker:
     build:
@@ -50,6 +91,8 @@ services:
         condition: service_healthy
       garage:
         condition: service_started
+      nexus:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -59,18 +102,17 @@ services:
       DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
-      BUILD_NODE_IMAGE: ${BUILD_NODE_BUILDER_IMAGE:-pdploy-node-build-image:latest}
-      BUILD_BUN_IMAGE: ${BUILD_BUN_BUILDER_IMAGE:-pdploy-bun-build-image:latest}
-      BUILD_RECLAIM_IDLE_MS: ${BUILD_RECLAIM_IDLE_MS:-5000}
-      BUILD_ACCOUNT_MAX_CONCURRENT: ${BUILD_ACCOUNT_MAX_CONCURRENT:-4}
-      BUILD_WORKDIR: /tmp/pdploy-builds
+      BUILD_WORKDIR: /tmp/deployher-builds
       DEV_DOMAIN: localhost
       DEV_PROTOCOL: http
-      TRUSTED_LOCAL_DOCKER: ${TRUSTED_LOCAL_DOCKER:-1}
-      RUNNER_PREVIEW_ENABLED: ${RUNNER_PREVIEW_ENABLED:-0}
+      RUNNER_PREVIEW_ENABLED: "1"
+      RUNNER_URL: http://preview-runner:8787
+      PREVIEW_RUNTIME_REGISTRY: ${PREVIEW_RUNTIME_DOCKER_DAEMON_REGISTRY:-127.0.0.1:8082}
+      PREVIEW_RUNTIME_DOCKER_REPO: ${PREVIEW_RUNTIME_DOCKER_REPO:-docker-hosted}
+      PREVIEW_RUNTIME_IMAGE_NAME: ${PREVIEW_RUNTIME_IMAGE_NAME:-deployher-preview-runtime}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/pdploy-builds:/tmp/pdploy-builds
+      - /tmp/deployher-builds:/tmp/deployher-builds
 
   node-build-image:
     build:
@@ -78,8 +120,8 @@ services:
       dockerfile: docker/node-builder.Dockerfile
       args:
         NEXUS_REGISTRY: ${NEXUS_REGISTRY:-localhost:8082}
-    image: pdploy-node-build-image:latest
-    container_name: pdploy-node-build-image
+    image: deployher-node-build-image:latest
+    container_name: deployher-node-build-image
     command: ["sh", "-c", "echo node builder image ready"]
     restart: "no"
 
@@ -89,8 +131,8 @@ services:
       dockerfile: docker/bun-builder.Dockerfile
       args:
         NEXUS_REGISTRY: ${NEXUS_REGISTRY:-localhost:8082}
-    image: pdploy-bun-build-image:latest
-    container_name: pdploy-bun-build-image
+    image: deployher-bun-build-image:latest
+    container_name: deployher-bun-build-image
     command: ["sh", "-c", "echo bun builder image ready"]
     restart: "no"
 
@@ -149,6 +191,10 @@ services:
       interval: 2s
       timeout: 5s
       retries: 5
+
+networks:
+  default:
+    name: deployher_default
 
 volumes:
   postgres_data:
