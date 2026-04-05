@@ -35,6 +35,7 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 | Docker | Always (infra and optionally app) | [Install Docker][docker-get] ([Docker Desktop][docker-desktop] includes Compose) |
 | Docker Compose | Always | Bundled with Docker Desktop; on Linux see [Install Compose][compose-install] |
 | Bun 1.3+ | **`./infra/dev.sh start`** (migrate, seed, Garage/Nexus bootstrap), **and** [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) (host app/worker) | [Bun installation][bun-install] (use the official installer; avoid `npm i -g bun` without fixing global npm permissions) |
+| Go 1.22+ | [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) (host worker only) | Required to build the `pdploy-repo-ingest` helper binary before `bun run start:worker`. |
 | Disk | Full stack + Nexus + image builds | Leave plenty of free space on the Docker data disk (rough guide: **≥30–40 GB** for a comfortable dev VM). |
 
 > [!NOTE]
@@ -158,6 +159,8 @@ bun run dev
 ```bash
 bun run start:worker
 ```
+
+That command now builds the Go-based `pdploy-repo-ingest` helper before starting the Bun worker.
 
 5. App URL: `http://localhost:3001`
 

@@ -32,12 +32,19 @@ FROM base AS deps
 COPY package.json bun.lock ./
 RUN bun install --production
 
+FROM golang:1.22-bookworm AS repo-ingest-builder
+WORKDIR /src
+COPY go.mod ./go.mod
+COPY tools/repoingest ./tools/repoingest
+RUN CGO_ENABLED=0 go build -o /out/pdploy-repo-ingest ./tools/repoingest
+
 FROM base AS release
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
 ENV APP_ENV=production
 
 COPY --from=deps /usr/src/app/node_modules ./node_modules
+COPY --from=repo-ingest-builder /out/pdploy-repo-ingest /usr/local/bin/pdploy-repo-ingest
 COPY src ./src
 COPY drizzle ./drizzle
 COPY examples ./examples

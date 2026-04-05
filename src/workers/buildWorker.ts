@@ -5,7 +5,10 @@ import { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { getBuildContainerConfig, type BuildContainerConfig } from "../admin/buildSettings";
+import {
+  getBuildContainerConfig,
+  type BuildContainerConfig,
+} from "../admin/buildSettings";
 import { buildDevSubdomainUrl, config } from "../config";
 import { publishDeploymentEvent } from "../deploymentEvents";
 import { db } from "../db/db";
@@ -16,14 +19,14 @@ import {
   buildPreviewManifestKey,
   cachePreviewManifest,
   createPreviewManifest,
-  type PreviewManifest
+  type PreviewManifest,
 } from "../previewManifest";
 import {
   ackDeployment,
   dequeueDeployment,
   reclaimDeployment,
   touchPendingDeployment,
-  type DeploymentJob
+  type DeploymentJob,
 } from "../queue";
 import { consumeRepoCredential } from "../repoCredentials";
 import { isStorageConfigured, upload } from "../storage";
@@ -32,7 +35,7 @@ import { parseStoredProjectCommandForBuild } from "../lib/parseProjectCommandLin
 import {
   resolveProjectRoots,
   sanitizeRelativeWorkdir,
-  type RuntimeImageMode
+  type RuntimeImageMode,
 } from "../lib/projectPaths";
 import { guessContentType } from "../utils/contentType";
 import { detectBuildStrategy } from "./build/registry";
@@ -43,19 +46,18 @@ import type {
   RunCommandResult,
   RuntimeConfig,
   RuntimeImageMode as WorkerRuntimeImageMode,
-  ServeStrategy
+  ServeStrategy,
 } from "./build/types";
 import {
   getEffectivePendingHeartbeatMs,
-  hasFreshWorkerHeartbeat
+  hasFreshWorkerHeartbeat,
 } from "./workerTiming";
 
-const buildPreviewUrl = (shortId: string) =>
-  buildDevSubdomainUrl(shortId);
+const buildPreviewUrl = (shortId: string) => buildDevSubdomainUrl(shortId);
 
 const resolveCanonicalServeStrategy = (
   previewMode: typeof schema.projects.$inferSelect.previewMode,
-  resolvedServeStrategy: ServeStrategy
+  resolvedServeStrategy: ServeStrategy,
 ): ServeStrategy => {
   if (previewMode === "server" || previewMode === "static") {
     return previewMode;
@@ -68,23 +70,36 @@ const MAX_DEPLOYMENT_ENV_FILE_BYTES = 64 * 1024;
 const DOCKER_MANAGED_LABEL = "io.pdploy.build=true";
 const DOCKER_RUNTIME_LABEL = "io.pdploy.runtime=true";
 const DOCKER_DEPLOYMENT_LABEL_KEY = "io.pdploy.deployment";
-const DOCKER_NODE_IMAGE = (process.env.BUILD_NODE_IMAGE ?? "node:22-bookworm").trim();
-const DOCKER_BUN_IMAGE = (process.env.BUILD_BUN_IMAGE ?? "pdploy-bun-build-image:latest").trim();
-const DOCKER_PYTHON_IMAGE = (process.env.BUILD_PYTHON_IMAGE ?? "python:3.12-bookworm").trim();
-const RUNTIME_STATIC_BASE_IMAGE = (process.env.RUNTIME_STATIC_BASE_IMAGE ?? "nginx:alpine").trim();
-const BUILD_WORKDIR_ROOT = (process.env.BUILD_WORKDIR ?? path.join(tmpdir(), "pdploy-builds")).trim();
-const DOCKER_SOCKET_PATH = (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock").trim() || "/var/run/docker.sock";
+const DOCKER_NODE_IMAGE = (
+  process.env.BUILD_NODE_IMAGE ?? "node:22-bookworm"
+).trim();
+const DOCKER_BUN_IMAGE = (
+  process.env.BUILD_BUN_IMAGE ?? "pdploy-bun-build-image:latest"
+).trim();
+const DOCKER_PYTHON_IMAGE = (
+  process.env.BUILD_PYTHON_IMAGE ?? "python:3.12-bookworm"
+).trim();
+const RUNTIME_STATIC_BASE_IMAGE = (
+  process.env.RUNTIME_STATIC_BASE_IMAGE ?? "nginx:alpine"
+).trim();
+const BUILD_WORKDIR_ROOT = (
+  process.env.BUILD_WORKDIR ?? path.join(tmpdir(), "pdploy-builds")
+).trim();
+const DOCKER_SOCKET_PATH =
+  (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock").trim() ||
+  "/var/run/docker.sock";
 const CONTAINER_REPO_DIR = "/workspace";
 const BUILD_RECLAIM_IDLE_MS = config.build.reclaimIdleMs;
 const BUILD_PENDING_HEARTBEAT_MS = config.build.pendingHeartbeatMs;
 const DEFAULT_BUILD_COMMAND_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 const BUILD_COMMAND_INACTIVITY_TIMEOUT_MS = Number.parseInt(
-  process.env.BUILD_COMMAND_INACTIVITY_TIMEOUT_MS ?? String(DEFAULT_BUILD_COMMAND_INACTIVITY_TIMEOUT_MS),
-  10
+  process.env.BUILD_COMMAND_INACTIVITY_TIMEOUT_MS ??
+    String(DEFAULT_BUILD_COMMAND_INACTIVITY_TIMEOUT_MS),
+  10,
 );
 const EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS = getEffectivePendingHeartbeatMs(
   BUILD_RECLAIM_IDLE_MS,
-  BUILD_PENDING_HEARTBEAT_MS
+  BUILD_PENDING_HEARTBEAT_MS,
 );
 const RUNTIME_BUILD_ARG_ALLOWLIST = ["NEXUS_REGISTRY"] as const;
 
@@ -108,7 +123,11 @@ const sleep = async (ms: number): Promise<void> => {
 };
 
 const buildEphemeralContainerName = (deploymentId: string) => {
-  const normalizedId = deploymentId.toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 12) || "job";
+  const normalizedId =
+    deploymentId
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]/g, "")
+      .slice(0, 12) || "job";
   const suffix = Math.random().toString(36).slice(2, 8);
   return `pdploy-deploy-step-${normalizedId}-${suffix}`;
 };
@@ -120,8 +139,9 @@ const buildConsumerName = (): string => {
 };
 
 const publishDeploymentLog = (deploymentId: string, content: string): void => {
-  publishDeploymentEvent(deploymentId, { type: "log", content })
-    .catch(() => {});
+  publishDeploymentEvent(deploymentId, { type: "log", content }).catch(
+    () => {},
+  );
 };
 
 const logLine = (ctx: BuildContext, line: string) => {
@@ -146,7 +166,10 @@ const formatDotEnvValue = (value: string): string => {
   return JSON.stringify(value);
 };
 
-const writeProjectDotEnv = async (repoDir: string, env: Record<string, string>) => {
+const writeProjectDotEnv = async (
+  repoDir: string,
+  env: Record<string, string>,
+) => {
   const keys = Object.keys(env);
   if (keys.length === 0) {
     return;
@@ -166,7 +189,7 @@ const prepareBuildEnv = async (
   projectDir: string,
   projectBuildEnv: Record<string, string>,
   envFile: string | undefined,
-  ctx: BuildContext
+  ctx: BuildContext,
 ): Promise<Record<string, string>> => {
   const mergedEnv: Record<string, string> = { ...projectBuildEnv };
 
@@ -175,23 +198,32 @@ const prepareBuildEnv = async (
     const byteLength = Buffer.byteLength(normalized, "utf8");
     if (byteLength > MAX_DEPLOYMENT_ENV_FILE_BYTES) {
       throw new Error(
-        `Deployment .env file is too large (${byteLength} bytes). Max allowed is ${MAX_DEPLOYMENT_ENV_FILE_BYTES} bytes.`
+        `Deployment .env file is too large (${byteLength} bytes). Max allowed is ${MAX_DEPLOYMENT_ENV_FILE_BYTES} bytes.`,
       );
     }
 
     const parsed = parseEnvFileContent(normalized);
     Object.assign(mergedEnv, parsed);
-    logLine(ctx, `Applied deployment .env with ${Object.keys(parsed).length} variable(s)`);
+    logLine(
+      ctx,
+      `Applied deployment .env with ${Object.keys(parsed).length} variable(s)`,
+    );
   }
 
   await writeProjectDotEnv(workspaceDir, mergedEnv);
   if (projectDir !== workspaceDir) {
     await writeProjectDotEnv(projectDir, mergedEnv);
-    logLine(ctx, "Wrote build .env files to the workspace root and project root");
+    logLine(
+      ctx,
+      "Wrote build .env files to the workspace root and project root",
+    );
   } else {
     logLine(ctx, "Wrote build .env file to the project workspace");
   }
-  logLine(ctx, `Using ${Object.keys(mergedEnv).length} build environment variable(s)`);
+  logLine(
+    ctx,
+    `Using ${Object.keys(mergedEnv).length} build environment variable(s)`,
+  );
 
   return mergedEnv;
 };
@@ -234,7 +266,7 @@ const readToml = async <T>(filePath: string): Promise<T | null> => {
 
 const readProcessStream = async (
   stream: ReadableStream<Uint8Array> | null,
-  onChunk?: (chunk: string) => void
+  onChunk?: (chunk: string) => void,
 ): Promise<string> => {
   if (!stream) return "";
   const reader = stream.getReader();
@@ -261,7 +293,12 @@ const readProcessStream = async (
 
 const describeSilentCommandHint = (cmd: string[]): string | null => {
   const joined = cmd.join(" ").toLowerCase();
-  if (joined.includes("bun install") || joined.includes("npm install") || joined.includes("npm ci") || joined.includes("pnpm install")) {
+  if (
+    joined.includes("bun install") ||
+    joined.includes("npm install") ||
+    joined.includes("npm ci") ||
+    joined.includes("pnpm install")
+  ) {
     return "Dependency installs can go quiet during native module builds like node-gyp, canvas, or sharp.";
   }
   if (joined.includes("node-gyp")) {
@@ -287,13 +324,13 @@ const runHostCommand = async (
     onStdoutChunk?: (chunk: string) => void;
     onStderrChunk?: (chunk: string) => void;
     onInactivityWarning?: (message: string) => void;
-  }
+  },
 ): Promise<RunCommandResult> => {
   const proc = Bun.spawn(cmd, {
     cwd: options.cwd,
     env: options.env,
     stdout: "pipe",
-    stderr: "pipe"
+    stderr: "pipe",
   });
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -306,55 +343,73 @@ const runHostCommand = async (
   };
   const resetInactivityTimers = () => {
     clearTimers();
-    if (!Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) || BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0) {
+    if (
+      !Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) ||
+      BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0
+    ) {
       return;
     }
-    const warningDelay = getBuildCommandWarningDelay(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+    const warningDelay = getBuildCommandWarningDelay(
+      BUILD_COMMAND_INACTIVITY_TIMEOUT_MS,
+    );
     warningTimer = setTimeout(() => {
       options.onInactivityWarning?.(
-        `No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`
+        `No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`,
       );
     }, warningDelay);
     timer = setTimeout(() => {
       timedOut = true;
-      options.onInactivityWarning?.(buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS));
+      options.onInactivityWarning?.(
+        buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS),
+      );
       proc.kill();
     }, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
   };
   resetInactivityTimers();
   const stdoutPromise = readProcessStream(proc.stdout, options.onStdoutChunk);
   const stderrPromise = readProcessStream(proc.stderr, options.onStderrChunk);
-  const [stdout, stderr, code] = await Promise.all([stdoutPromise, stderrPromise, proc.exited]);
+  const [stdout, stderr, code] = await Promise.all([
+    stdoutPromise,
+    stderrPromise,
+    proc.exited,
+  ]);
   clearTimers();
   if (timedOut) {
-    const timeoutMessage = buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+    const timeoutMessage = buildInactivityMessage(
+      cmd,
+      BUILD_COMMAND_INACTIVITY_TIMEOUT_MS,
+    );
     return {
       code: 124,
       stdout,
-      stderr: stderr ? `${stderr}\n${timeoutMessage}` : timeoutMessage
+      stderr: stderr ? `${stderr}\n${timeoutMessage}` : timeoutMessage,
     };
   }
   return { code, stdout, stderr };
 };
 
-const sanitizeDockerLabelValue = (value: string): string => value.replace(/[^A-Za-z0-9_.-]/g, "_");
+const sanitizeDockerLabelValue = (value: string): string =>
+  value.replace(/[^A-Za-z0-9_.-]/g, "_");
 
 const runHostCommandWithDeploymentLogs = async (
   cmd: string[],
-  options: { cwd: string; env?: Record<string, string>; ctx: BuildContext }
+  options: { cwd: string; env?: Record<string, string>; ctx: BuildContext },
 ): Promise<RunCommandResult> => {
   const result = await runHostCommand(cmd, {
     cwd: options.cwd,
     env: options.env,
     onStdoutChunk: (chunk) => appendBuildLogChunk(options.ctx, chunk),
     onStderrChunk: (chunk) => appendBuildLogChunk(options.ctx, chunk),
-    onInactivityWarning: (message) => logLine(options.ctx, message)
+    onInactivityWarning: (message) => logLine(options.ctx, message),
   });
 
   return result;
 };
 
-const resolveDockerImageForCommand = (strategyId: StrategyRuntimeId, cmd: string[]): string => {
+const resolveDockerImageForCommand = (
+  strategyId: StrategyRuntimeId,
+  cmd: string[],
+): string => {
   const first = cmd[0] ?? "";
 
   if (strategyId === "python") {
@@ -387,10 +442,12 @@ const isDockerRemovalInProgressError = (error: unknown): boolean => {
     json?: { message?: string };
     message?: string;
   };
-  const statusCode = typeof err?.statusCode === "number" ? err.statusCode : undefined;
+  const statusCode =
+    typeof err?.statusCode === "number" ? err.statusCode : undefined;
   if (statusCode !== 409) return false;
   const message =
-    err?.json?.message ?? (error instanceof Error ? error.message : String(error ?? ""));
+    err?.json?.message ??
+    (error instanceof Error ? error.message : String(error ?? ""));
   return /removal of container .* is already in progress/i.test(message);
 };
 
@@ -429,7 +486,7 @@ const parseMemoryBytes = (value: string): number => {
     m: 1024 ** 2,
     g: 1024 ** 3,
     t: 1024 ** 4,
-    p: 1024 ** 5
+    p: 1024 ** 5,
   };
   const multiplier = multipliers[unit];
   if (multiplier === undefined) {
@@ -461,7 +518,7 @@ const labelToPair = (label: string): { key: string; value: string } => {
   }
   return {
     key: label.slice(0, separator),
-    value: label.slice(separator + 1)
+    value: label.slice(separator + 1),
   };
 };
 
@@ -469,16 +526,18 @@ const createStreamCollector = (onChunk?: (chunk: string) => void) => {
   let output = "";
   const stream = new Writable({
     write(chunk, _encoding, callback) {
-      const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+      const text = Buffer.isBuffer(chunk)
+        ? chunk.toString("utf8")
+        : String(chunk);
       output += text;
       if (text && onChunk) onChunk(text);
       callback();
-    }
+    },
   });
 
   return {
     stream,
-    getOutput: () => output
+    getOutput: () => output,
   };
 };
 
@@ -489,7 +548,7 @@ type EnsureDockerImageOptions = {
 
 const ensureDockerImage = async (
   image: string,
-  options: EnsureDockerImageOptions
+  options: EnsureDockerImageOptions,
 ): Promise<void> => {
   const { deploymentId, onLog } = options;
   const existing = dockerImageEnsureCache.get(image);
@@ -534,12 +593,12 @@ const ensureDockerImage = async (
           const parts = [
             status,
             typeof id === "string" ? id : "",
-            typeof progress === "string" ? progress : ""
+            typeof progress === "string" ? progress : "",
           ].filter(Boolean);
           const progressMsg = `[docker] ${parts.join(" ")}\n`;
           publishDeploymentLog(deploymentId, progressMsg);
           onLog?.(progressMsg.trimEnd());
-        }
+        },
       );
     });
   })();
@@ -563,7 +622,7 @@ const runDockerCommand = async (
     strategyId: StrategyRuntimeId;
     buildConfig: BuildContainerConfig;
     onLog?: (line: string) => void;
-  }
+  },
 ): Promise<RunCommandResult> => {
   if (cmd.length === 0) {
     return { code: 1, stdout: "", stderr: "No command provided" };
@@ -571,14 +630,20 @@ const runDockerCommand = async (
 
   const image = resolveDockerImageForCommand(options.strategyId, cmd);
   let memoryBytes = parseMemoryBytes(options.buildConfig.memory);
-  if (options.strategyId === "python" && memoryBytes > 0 && memoryBytes < 2 * 1024 * 1024 * 1024) {
+  if (
+    options.strategyId === "python" &&
+    memoryBytes > 0 &&
+    memoryBytes < 2 * 1024 * 1024 * 1024
+  ) {
     memoryBytes = 2 * 1024 * 1024 * 1024;
   }
   const nanoCpus = parseNanoCpus(options.buildConfig.cpus);
   const managedLabel = labelToPair(DOCKER_MANAGED_LABEL);
   const labels: Record<string, string> = {
     [managedLabel.key]: managedLabel.value,
-    [DOCKER_DEPLOYMENT_LABEL_KEY]: sanitizeDockerLabelValue(options.deploymentId)
+    [DOCKER_DEPLOYMENT_LABEL_KEY]: sanitizeDockerLabelValue(
+      options.deploymentId,
+    ),
   };
 
   const hostConfig: {
@@ -586,21 +651,21 @@ const runDockerCommand = async (
     Memory?: number;
     NanoCpus?: number;
   } = {
-    Binds: [`${options.cwd}:${CONTAINER_REPO_DIR}`]
+    Binds: [`${options.cwd}:${CONTAINER_REPO_DIR}`],
   };
   if (memoryBytes > 0) hostConfig.Memory = memoryBytes;
   if (nanoCpus > 0) hostConfig.NanoCpus = nanoCpus;
 
   await ensureDockerImage(image, {
     deploymentId: options.deploymentId,
-    onLog: options.onLog
+    onLog: options.onLog,
   });
 
   const stdoutCollector = createStreamCollector((chunk) =>
-    publishDeploymentLog(options.deploymentId, chunk)
+    publishDeploymentLog(options.deploymentId, chunk),
   );
   const stderrCollector = createStreamCollector((chunk) =>
-    publishDeploymentLog(options.deploymentId, chunk)
+    publishDeploymentLog(options.deploymentId, chunk),
   );
 
   let containerId = "";
@@ -614,7 +679,9 @@ const runDockerCommand = async (
     warningTimer = null;
   };
   try {
-    const workdirRelative = sanitizeRelativeWorkdir(options.workdirRelative ?? ".");
+    const workdirRelative = sanitizeRelativeWorkdir(
+      options.workdirRelative ?? ".",
+    );
     const workingDir =
       workdirRelative === "."
         ? CONTAINER_REPO_DIR
@@ -629,28 +696,41 @@ const runDockerCommand = async (
       AttachStderr: true,
       Tty: false,
       Labels: labels,
-      HostConfig: hostConfig
+      HostConfig: hostConfig,
     });
     containerId = container.id;
 
     const stream = await container.attach({
       stream: true,
       stdout: true,
-      stderr: true
+      stderr: true,
     });
-    dockerClient.modem.demuxStream(stream, stdoutCollector.stream, stderrCollector.stream);
+    dockerClient.modem.demuxStream(
+      stream,
+      stdoutCollector.stream,
+      stderrCollector.stream,
+    );
     const resetInactivityTimers = () => {
       clearInactivityTimers();
-      if (!Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) || BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0) {
+      if (
+        !Number.isFinite(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS) ||
+        BUILD_COMMAND_INACTIVITY_TIMEOUT_MS <= 0
+      ) {
         return;
       }
-      const warningDelay = getBuildCommandWarningDelay(BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+      const warningDelay = getBuildCommandWarningDelay(
+        BUILD_COMMAND_INACTIVITY_TIMEOUT_MS,
+      );
       warningTimer = setTimeout(() => {
-        options.onLog?.(`No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`);
+        options.onLog?.(
+          `No output for ${Math.floor(warningDelay / 1000)}s while running: ${cmd.join(" ")}`,
+        );
       }, warningDelay);
       timer = setTimeout(async () => {
         timedOut = true;
-        options.onLog?.(buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS));
+        options.onLog?.(
+          buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS),
+        );
         try {
           await container.remove({ force: true });
         } catch {
@@ -668,19 +748,23 @@ const runDockerCommand = async (
     clearInactivityTimers();
 
     if (timedOut) {
-      const timeoutMessage = buildInactivityMessage(cmd, BUILD_COMMAND_INACTIVITY_TIMEOUT_MS);
+      const timeoutMessage = buildInactivityMessage(
+        cmd,
+        BUILD_COMMAND_INACTIVITY_TIMEOUT_MS,
+      );
       return {
         code: 124,
         stdout: stdoutCollector.getOutput(),
         stderr: stderrCollector.getOutput()
           ? `${stderrCollector.getOutput()}\n${timeoutMessage}`
-          : timeoutMessage
+          : timeoutMessage,
       };
     }
     return {
-      code: typeof waitResult.StatusCode === "number" ? waitResult.StatusCode : 1,
+      code:
+        typeof waitResult.StatusCode === "number" ? waitResult.StatusCode : 1,
       stdout: stdoutCollector.getOutput(),
-      stderr: stderrCollector.getOutput()
+      stderr: stderrCollector.getOutput(),
     };
   } catch (error) {
     if (isDockerDaemonUnavailableError(error)) {
@@ -691,7 +775,7 @@ const runDockerCommand = async (
       return {
         code: 1,
         stdout: stdoutCollector.getOutput(),
-        stderr: withHint
+        stderr: withHint,
       };
     }
     throw error;
@@ -701,7 +785,10 @@ const runDockerCommand = async (
       try {
         await dockerClient.getContainer(containerId).remove({ force: true });
       } catch (error) {
-        if (!isDockerNotFoundError(error) && !isDockerRemovalInProgressError(error)) {
+        if (
+          !isDockerNotFoundError(error) &&
+          !isDockerRemovalInProgressError(error)
+        ) {
           console.error("Failed to remove build container:", error);
         }
       }
@@ -710,16 +797,16 @@ const runDockerCommand = async (
 };
 
 const pruneBuildContainers = async (
-  options: { deploymentId?: string; includeRunning?: boolean } = {}
+  options: { deploymentId?: string; includeRunning?: boolean } = {},
 ): Promise<number> => {
   const labelFilters = [DOCKER_MANAGED_LABEL];
   const filters: Record<string, string[]> = {
-    label: labelFilters
+    label: labelFilters,
   };
 
   if (options.deploymentId) {
     labelFilters.push(
-      `${DOCKER_DEPLOYMENT_LABEL_KEY}=${sanitizeDockerLabelValue(options.deploymentId)}`
+      `${DOCKER_DEPLOYMENT_LABEL_KEY}=${sanitizeDockerLabelValue(options.deploymentId)}`,
     );
   }
   if (!options.includeRunning) {
@@ -739,7 +826,8 @@ const pruneBuildContainers = async (
       await dockerClient.getContainer(id).remove({ force: true });
       removed += 1;
     } catch (error) {
-      if (isDockerNotFoundError(error) || isDockerRemovalInProgressError(error)) continue;
+      if (isDockerNotFoundError(error) || isDockerRemovalInProgressError(error))
+        continue;
       console.warn("Failed to remove build container:", error);
     }
   }
@@ -750,16 +838,25 @@ const pruneBuildContainers = async (
 const createBuildRuntime = (
   ctx: BuildContext,
   strategyId: StrategyRuntimeId,
-  buildConfig: BuildContainerConfig
+  buildConfig: BuildContainerConfig,
 ): BuildRuntime => ({
   containerRepoDir: CONTAINER_REPO_DIR,
   exists,
   isDirectory,
   which: (command: string) => {
-    if (strategyId === "python" && (command === "python" || command === "python3")) {
+    if (
+      strategyId === "python" &&
+      (command === "python" || command === "python3")
+    ) {
       return command;
     }
-    if (strategyId === "node" && (command === "node" || command === "npm" || command === "corepack" || command === "bun")) {
+    if (
+      strategyId === "node" &&
+      (command === "node" ||
+        command === "npm" ||
+        command === "corepack" ||
+        command === "bun")
+    ) {
       return command;
     }
     return Bun.which(command);
@@ -774,9 +871,9 @@ const createBuildRuntime = (
       deploymentId: ctx.deploymentId,
       strategyId,
       buildConfig,
-      onLog: (line) => logLine(ctx, line)
+      onLog: (line) => logLine(ctx, line),
     }),
-  resolveBunCli: () => ({ command: "bun" })
+  resolveBunCli: () => ({ command: "bun" }),
 });
 
 const detectionRuntime: BuildRuntime = {
@@ -788,9 +885,9 @@ const detectionRuntime: BuildRuntime = {
   runCommand: (cmd, options) =>
     runHostCommand(cmd, {
       cwd: options.cwd,
-      env: options.env
+      env: options.env,
     }),
-  resolveBunCli: () => ({ command: "bun" })
+  resolveBunCli: () => ({ command: "bun" }),
 };
 
 const collectFiles = async (rootDir: string): Promise<string[]> => {
@@ -814,10 +911,14 @@ const collectFiles = async (rootDir: string): Promise<string[]> => {
 
 const uploadArtifacts = async (
   ctx: BuildContext,
-  outputDir: string
+  outputDir: string,
 ): Promise<{ previewManifestKey: string; manifest: PreviewManifest }> => {
   const files = await collectFiles(outputDir);
-  const previewManifest = createPreviewManifest(ctx.artifactPrefix, outputDir, files);
+  const previewManifest = createPreviewManifest(
+    ctx.artifactPrefix,
+    outputDir,
+    files,
+  );
 
   logLine(ctx, `Found ${files.length} files to upload`);
 
@@ -831,17 +932,20 @@ const uploadArtifacts = async (
 
   const previewManifestKey = buildPreviewManifestKey(ctx.artifactPrefix);
   await upload(previewManifestKey, JSON.stringify(previewManifest), {
-    contentType: "application/json; charset=utf-8"
+    contentType: "application/json; charset=utf-8",
   });
   await cachePreviewManifest(ctx.deploymentId, previewManifest);
 
   return {
     previewManifestKey,
-    manifest: previewManifest
+    manifest: previewManifest,
   };
 };
 
-const createStaticRuntimeImageContext = async (outputDir: string, workDir: string): Promise<string> => {
+const createStaticRuntimeImageContext = async (
+  outputDir: string,
+  workDir: string,
+): Promise<string> => {
   const contextDir = path.join(workDir, "runtime-static-context");
   const publicDir = path.join(contextDir, "public");
   await mkdir(contextDir, { recursive: true });
@@ -852,7 +956,7 @@ const createStaticRuntimeImageContext = async (outputDir: string, workDir: strin
     `FROM ${RUNTIME_STATIC_BASE_IMAGE}`,
     "WORKDIR /usr/share/nginx/html",
     "RUN rm -rf /usr/share/nginx/html/*",
-    "COPY public/ /usr/share/nginx/html/"
+    "COPY public/ /usr/share/nginx/html/",
   ].join("\n");
   await Bun.write(dockerfilePath, `${dockerfile}\n`);
 
@@ -874,15 +978,19 @@ const resolveRuntimeWorkingDir = (runtimeConfig: RuntimeConfig): string => {
     throw new Error("runtimeConfig.workingDir must be relative");
   }
   if (normalized.split("/").some((segment) => segment === "..")) {
-    throw new Error("runtimeConfig.workingDir must stay inside the repository root");
+    throw new Error(
+      "runtimeConfig.workingDir must stay inside the repository root",
+    );
   }
-  return normalized === "." ? "/workspace" : `/workspace/${normalized.replace(/^\.\/+/, "")}`;
+  return normalized === "."
+    ? "/workspace"
+    : `/workspace/${normalized.replace(/^\.\/+/, "")}`;
 };
 
 const createServerRuntimeImageContext = async (
   repoDir: string,
   workDir: string,
-  runtimeConfig: RuntimeConfig
+  runtimeConfig: RuntimeConfig,
 ): Promise<string> => {
   const contextDir = path.join(workDir, "runtime-server-context");
   const appDir = path.join(contextDir, "app");
@@ -900,7 +1008,7 @@ const createServerRuntimeImageContext = async (
     "ENV HOST=0.0.0.0",
     "ENV HOSTNAME=0.0.0.0",
     `EXPOSE ${runtimeConfig.port}`,
-    `CMD ${JSON.stringify(runtimeConfig.command)}`
+    `CMD ${JSON.stringify(runtimeConfig.command)}`,
   ].join("\n");
   await Bun.write(dockerfilePath, `${dockerfile}\n`);
 
@@ -926,7 +1034,7 @@ const buildRuntimeImageArchive = async (
   options: {
     dockerfilePath?: string;
     buildTarget?: string | null;
-  } = {}
+  } = {},
 ): Promise<void> => {
   const tag = `${RUNTIME_IMAGE_TEMP_TAG}:${ctx.deploymentId}`;
   const dockerBuildArgs = collectRuntimeBuildArgs();
@@ -949,28 +1057,37 @@ const buildRuntimeImageArchive = async (
       tag,
       ".",
     ],
-    { cwd: contextDir, ctx }
+    { cwd: contextDir, ctx },
   );
 
   if (buildResult.code !== 0) {
-    throw new Error(`Runtime image build failed: ${buildResult.stderr || buildResult.stdout}`);
+    throw new Error(
+      `Runtime image build failed: ${buildResult.stderr || buildResult.stdout}`,
+    );
   }
 
-  const saveResult = await runHostCommand(["docker", "save", "-o", outputPath, tag], {
-    cwd: contextDir
-  });
+  const saveResult = await runHostCommand(
+    ["docker", "save", "-o", outputPath, tag],
+    {
+      cwd: contextDir,
+    },
+  );
 
-  await runHostCommand(["docker", "rmi", tag], { cwd: contextDir }).catch(() => {});
+  await runHostCommand(["docker", "rmi", tag], { cwd: contextDir }).catch(
+    () => {},
+  );
 
   if (saveResult.code !== 0) {
-    throw new Error(`Failed to export runtime image: ${saveResult.stderr || saveResult.stdout}`);
+    throw new Error(
+      `Failed to export runtime image: ${saveResult.stderr || saveResult.stdout}`,
+    );
   }
 };
 
 const buildAndUploadStaticRuntimeOciArtifact = async (
   ctx: BuildContext,
   outputDir: string,
-  workDir: string
+  workDir: string,
 ): Promise<OciRuntimeArtifact> => {
   const archivePath = path.join(workDir, "runtime-image.tar");
   const contextDir = await createStaticRuntimeImageContext(outputDir, workDir);
@@ -978,12 +1095,12 @@ const buildAndUploadStaticRuntimeOciArtifact = async (
 
   const artifactKey = `${ctx.artifactPrefix}/runtime-image.tar`;
   await upload(artifactKey, Bun.file(archivePath), {
-    contentType: "application/x-tar"
+    contentType: "application/x-tar",
   });
 
   return {
     ref: `container://${artifactKey}`,
-    artifactKey
+    artifactKey,
   };
 };
 
@@ -996,106 +1113,179 @@ const buildAndUploadServerRuntimeOciArtifact = async (
     runtimeImageMode: WorkerRuntimeImageMode;
     dockerfilePath: string | null;
     dockerBuildTarget: string | null;
-  }
+  },
 ): Promise<OciRuntimeArtifact | null> => {
   const archivePath = path.join(workDir, "runtime-image.tar");
-  const resolvedDockerfilePath = path.join(repoDir, options.dockerfilePath ?? "Dockerfile");
+  const resolvedDockerfilePath = path.join(
+    repoDir,
+    options.dockerfilePath ?? "Dockerfile",
+  );
   const hasRepoDockerfile = await exists(resolvedDockerfilePath);
 
   let contextDir = repoDir;
   let dockerfileArgPath: string | undefined;
   if (options.runtimeImageMode === "platform") {
-    contextDir = await createServerRuntimeImageContext(repoDir, workDir, runtimeConfig);
+    contextDir = await createServerRuntimeImageContext(
+      repoDir,
+      workDir,
+      runtimeConfig,
+    );
   } else if (options.runtimeImageMode === "dockerfile") {
     if (!hasRepoDockerfile) {
-      throw new Error(`Dockerfile not found for runtime image build: ${options.dockerfilePath ?? "Dockerfile"}`);
+      throw new Error(
+        `Dockerfile not found for runtime image build: ${options.dockerfilePath ?? "Dockerfile"}`,
+      );
     }
-    dockerfileArgPath = path.relative(contextDir, resolvedDockerfilePath).replace(/\\/g, "/") || "Dockerfile";
+    dockerfileArgPath =
+      path.relative(contextDir, resolvedDockerfilePath).replace(/\\/g, "/") ||
+      "Dockerfile";
   } else if (hasRepoDockerfile) {
-    dockerfileArgPath = path.relative(contextDir, resolvedDockerfilePath).replace(/\\/g, "/") || "Dockerfile";
+    dockerfileArgPath =
+      path.relative(contextDir, resolvedDockerfilePath).replace(/\\/g, "/") ||
+      "Dockerfile";
   } else {
-    contextDir = await createServerRuntimeImageContext(repoDir, workDir, runtimeConfig);
-    logLine(ctx, "No runtime Dockerfile found; synthesizing platform runtime image context");
+    contextDir = await createServerRuntimeImageContext(
+      repoDir,
+      workDir,
+      runtimeConfig,
+    );
+    logLine(
+      ctx,
+      "No runtime Dockerfile found; synthesizing platform runtime image context",
+    );
   }
 
   await buildRuntimeImageArchive(contextDir, archivePath, ctx, {
     dockerfilePath: dockerfileArgPath,
-    buildTarget: options.dockerBuildTarget
+    buildTarget: options.dockerBuildTarget,
   });
 
   const artifactKey = `${ctx.artifactPrefix}/runtime-image.tar`;
   await upload(artifactKey, Bun.file(archivePath), {
-    contentType: "application/x-tar"
+    contentType: "application/x-tar",
   });
 
   return {
     ref: `container://${artifactKey}`,
-    artifactKey
+    artifactKey,
   };
 };
 
-const downloadRepo = async (
+const REPO_INGEST_BIN_ENV = "REPO_INGEST_BIN";
+const DEFAULT_REPO_INGEST_BIN_CANDIDATES = [
+  "/usr/local/bin/pdploy-repo-ingest",
+  path.join(process.cwd(), "dist/bin/pdploy-repo-ingest"),
+] as const;
+
+const resolveRepoIngestBinary = async (): Promise<string> => {
+  const envPath = process.env[REPO_INGEST_BIN_ENV]?.trim();
+  const candidates = envPath
+    ? [envPath, ...DEFAULT_REPO_INGEST_BIN_CANDIDATES]
+    : [...DEFAULT_REPO_INGEST_BIN_CANDIDATES];
+
+  for (const candidate of candidates) {
+    if (await exists(candidate)) {
+      return candidate;
+    }
+  }
+
+  const searched = candidates.map((candidate) => `'${candidate}'`).join(", ");
+  throw new Error(
+    `Repo ingest binary not found. Set ${REPO_INGEST_BIN_ENV} or build pdploy-repo-ingest. Searched ${searched}.`,
+  );
+};
+
+const ingestRepoWithGo = async (
   repoUrl: string,
   branch: string,
   targetDir: string,
   ctx: BuildContext,
-  githubToken: string | null
+  githubToken: string | null,
 ) => {
   const spec = parseGitHubRepoUrl(repoUrl);
   if (!spec) {
-    throw new Error("Only https://github.com/<owner>/<repo> URLs are supported for now.");
+    throw new Error(
+      "Only https://github.com/<owner>/<repo> URLs are supported for now.",
+    );
   }
   const ref = branch.trim();
   if (!ref) {
     throw new Error("Branch is required for deployment");
   }
   const zipUrl = buildZipballUrl(spec, ref);
-  logLine(ctx, `Downloading ${zipUrl}`);
-  const headers: Record<string, string> = {
-    "User-Agent": "vercel-clone-build",
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28"
-  };
-  if (githubToken) {
-    headers.Authorization = `Bearer ${githubToken}`;
-  }
-  const response = await fetch(zipUrl, { headers });
-  if (!response.ok) {
-    throw new Error(`GitHub download failed with status ${response.status}`);
-  }
-  const zipPath = path.join(targetDir, "repo.zip");
-  if (response.body) {
-    const buffer = await new Response(response.body).arrayBuffer();
-    await Bun.write(zipPath, Buffer.from(buffer));
-  } else {
-    const buffer = await response.arrayBuffer();
-    await Bun.write(zipPath, Buffer.from(buffer));
-  }
-  logLine(ctx, "Download complete");
-  return zipPath;
-};
+  const ingestBin = await resolveRepoIngestBinary();
+  console.log("ingest binary: ", ingestBin);
+  logLine(ctx, `Running Go repo ingest for ${zipUrl}`);
 
-const extractRepo = async (zipPath: string, targetDir: string, ctx: BuildContext) => {
   await mkdir(targetDir, { recursive: true });
-  logLine(ctx, "Extracting archive");
-  const result = await runHostCommand(["unzip", "-q", zipPath, "-d", targetDir], { cwd: targetDir });
+
+  const ingestEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  if (githubToken) {
+    ingestEnv["PDPLOY_GITHUB_TOKEN"] = githubToken;
+  }
+
+  const result = await runHostCommand(
+    [ingestBin, "--zip-url", zipUrl, "--target-dir", targetDir],
+    {
+      cwd: targetDir,
+      env: ingestEnv,
+      onStderrChunk: (chunk) => appendBuildLogChunk(ctx, chunk),
+      onInactivityWarning: (message) => logLine(ctx, message),
+    },
+  );
   if (result.code !== 0) {
-    throw new Error(`Unzip failed: ${result.stderr || result.stdout}`);
+    throw new Error(`Go repo ingest failed: ${result.stderr || result.stdout}`);
   }
-  const entries = await readdir(targetDir, { withFileTypes: true });
-  const rootEntry = entries.find((e) => e.isDirectory());
-  if (!rootEntry) {
-    throw new Error("Extracted archive is empty");
+
+  let parsed: { extractedRoot?: unknown };
+  try {
+    parsed = JSON.parse(result.stdout) as { extractedRoot?: unknown };
+  } catch {
+    throw new Error(
+      `Go repo ingest returned invalid JSON: ${result.stdout.trim() || "<empty>"}`,
+    );
   }
-  return path.join(targetDir, rootEntry.name);
+
+  if (
+    typeof parsed.extractedRoot !== "string" ||
+    parsed.extractedRoot.trim() === ""
+  ) {
+    throw new Error("Go repo ingest did not return extractedRoot");
+  }
+
+  const resolvedTargetDir = path.resolve(targetDir);
+  const resolvedExtractedRoot = path.resolve(parsed.extractedRoot);
+  if (
+    resolvedExtractedRoot !== resolvedTargetDir &&
+    !resolvedExtractedRoot.startsWith(`${resolvedTargetDir}${path.sep}`)
+  ) {
+    throw new Error(
+      `Go repo ingest returned path outside target dir: ${parsed.extractedRoot}`,
+    );
+  }
+
+  const extractedRootStat = await stat(resolvedExtractedRoot).catch(() => null);
+  if (!extractedRootStat?.isDirectory()) {
+    throw new Error(
+      `Go repo ingest returned missing directory: ${parsed.extractedRoot}`,
+    );
+  }
+
+  return resolvedExtractedRoot;
 };
 
-const getProjectBuildEnv = async (projectId: string): Promise<Record<string, string>> => {
+const getProjectBuildEnv = async (
+  projectId: string,
+): Promise<Record<string, string>> => {
   const rows = await db
     .select({
       key: schema.projectEnvs.key,
       value: schema.projectEnvs.value,
-      isPublic: schema.projectEnvs.isPublic
+      isPublic: schema.projectEnvs.isPublic,
     })
     .from(schema.projectEnvs)
     .where(eq(schema.projectEnvs.projectId, projectId));
@@ -1131,7 +1321,7 @@ const buildProject = async (
     | "runtimeContainerPort"
     | "installCommand"
     | "buildCommand"
-  >
+  >,
 ): Promise<{
   buildStrategy: DeploymentBuildStrategy;
   serveStrategy: ServeStrategy;
@@ -1149,36 +1339,56 @@ const buildProject = async (
   const workDir = await mkdtemp(path.join(BUILD_WORKDIR_ROOT, "build-"));
 
   try {
+    const repoIngestTimerLabel = `[deployment:${ctx.deploymentId}] repo-ingest`;
+    console.time(repoIngestTimerLabel);
     const exampleName = parseExampleRepoUrl(repoUrl);
     let extractedRoot = "";
 
-    if (exampleName) {
-      const sourceExample = await resolveLocalExample(exampleName);
-      if (!sourceExample) {
-        throw new Error(`Local example not found: ${exampleName}`);
+    try {
+      if (exampleName) {
+        const sourceExample = await resolveLocalExample(exampleName);
+        if (!sourceExample) {
+          throw new Error(`Local example not found: ${exampleName}`);
+        }
+        const targetDir = path.join(workDir, "repo", sourceExample.name);
+        logLine(ctx, `Using local example source: ${sourceExample.name}`);
+        await mkdir(path.dirname(targetDir), { recursive: true });
+        await cp(sourceExample.path, targetDir, {
+          recursive: true,
+          force: true,
+        });
+        extractedRoot = targetDir;
+      } else {
+        extractedRoot = await ingestRepoWithGo(
+          repoUrl,
+          branch,
+          path.join(workDir, "repo"),
+          ctx,
+          githubToken,
+        );
       }
-      const targetDir = path.join(workDir, "repo", sourceExample.name);
-      logLine(ctx, `Using local example source: ${sourceExample.name}`);
-      await mkdir(path.dirname(targetDir), { recursive: true });
-      await cp(sourceExample.path, targetDir, { recursive: true, force: true });
-      extractedRoot = targetDir;
-    } else {
-      const zipPath = await downloadRepo(repoUrl, branch, workDir, ctx, githubToken);
-      extractedRoot = await extractRepo(zipPath, path.join(workDir, "repo"), ctx);
+    } finally {
+      console.timeEnd(repoIngestTimerLabel);
     }
 
     const roots = resolveProjectRoots(
       extractedRoot,
       projectConfig.workspaceRootDir,
-      projectConfig.projectRootDir
+      projectConfig.projectRootDir,
     );
     const workspaceDirStat = await stat(roots.workspaceDir).catch(() => null);
     if (!workspaceDirStat?.isDirectory()) {
-      throw new Error(`Workspace root directory not found in repository: ${roots.workspaceRootDir}`);
+      throw new Error(
+        `Workspace root directory not found in repository: ${roots.workspaceRootDir}`,
+      );
     }
-    const selectedProjectDirStat = await stat(roots.projectDir).catch(() => null);
+    const selectedProjectDirStat = await stat(roots.projectDir).catch(
+      () => null,
+    );
     if (!selectedProjectDirStat?.isDirectory()) {
-      throw new Error(`Project root directory not found in repository: ${roots.projectRootDir}`);
+      throw new Error(
+        `Project root directory not found in repository: ${roots.projectRootDir}`,
+      );
     }
 
     ctx.repoDir = roots.projectDir;
@@ -1191,10 +1401,13 @@ const buildProject = async (
       roots.projectDir,
       projectBuildEnv,
       envFile,
-      ctx
+      ctx,
     );
 
-    if (projectConfig.skipHostStrategyBuild && projectConfig.previewMode !== "server") {
+    if (
+      projectConfig.skipHostStrategyBuild &&
+      projectConfig.previewMode !== "server"
+    ) {
       throw new Error("skipHostStrategyBuild requires Preview type Server");
     }
 
@@ -1203,24 +1416,39 @@ const buildProject = async (
       : await detectBuildStrategy(roots.projectDir, detectionRuntime);
     if (!strategy) {
       if (projectConfig.skipHostStrategyBuild) {
-        logLine(ctx, "Skipping host strategy build; runtime image will be built directly from Docker configuration");
+        logLine(
+          ctx,
+          "Skipping host strategy build; runtime image will be built directly from Docker configuration",
+        );
       } else {
-      throw new Error(
-        "Unsupported project type. Expected Node (package.json), Python (pyproject.toml/requirements.txt), or a static site entrypoint at index.html, public/index.html, dist/index.html, or build/index.html."
-      );
+        throw new Error(
+          "Unsupported project type. Expected Node (package.json), Python (pyproject.toml/requirements.txt), or a static site entrypoint at index.html, public/index.html, dist/index.html, or build/index.html.",
+        );
       }
     }
 
     const buildConfig = await getBuildContainerConfig();
-    const runtime = strategy ? createBuildRuntime(ctx, strategy.id, buildConfig) : null;
+    const runtime = strategy
+      ? createBuildRuntime(ctx, strategy.id, buildConfig)
+      : null;
 
-    const installParsed = parseStoredProjectCommandForBuild(projectConfig.installCommand);
-    const buildParsed = parseStoredProjectCommandForBuild(projectConfig.buildCommand);
+    const installParsed = parseStoredProjectCommandForBuild(
+      projectConfig.installCommand,
+    );
+    const buildParsed = parseStoredProjectCommandForBuild(
+      projectConfig.buildCommand,
+    );
     if (installParsed.warning) {
-      logLine(ctx, `Invalid stored install command ignored: ${installParsed.warning}`);
+      logLine(
+        ctx,
+        `Invalid stored install command ignored: ${installParsed.warning}`,
+      );
     }
     if (buildParsed.warning) {
-      logLine(ctx, `Invalid stored build command ignored: ${buildParsed.warning}`);
+      logLine(
+        ctx,
+        `Invalid stored build command ignored: ${buildParsed.warning}`,
+      );
     }
 
     const rawInstallSetting = projectConfig.installCommand;
@@ -1228,11 +1456,14 @@ const buildProject = async (
       if (installParsed.argv && installParsed.argv.length > 0) {
         logLine(
           ctx,
-          `Resolved project install command from settings: ${installParsed.argv.join(" ")}`
+          `Resolved project install command from settings: ${installParsed.argv.join(" ")}`,
         );
       }
     } else {
-      logLine(ctx, "No project install command in settings (package manager default for Node builds).");
+      logLine(
+        ctx,
+        "No project install command in settings (package manager default for Node builds).",
+      );
     }
 
     const result = projectConfig.skipHostStrategyBuild
@@ -1243,12 +1474,12 @@ const buildProject = async (
             port: projectConfig.runtimeContainerPort,
             framework: "node" as const,
             command: ["noop"],
-            workingDir: "."
+            workingDir: ".",
           },
           previewResolution: {
             code: "dockerfile_only_server" as const,
-            detail: "Docker build only (host strategy skipped)"
-          }
+            detail: "Docker build only (host strategy skipped)",
+          },
         }
       : await strategy!.build(
           roots.projectDir,
@@ -1256,7 +1487,8 @@ const buildProject = async (
             deploymentId: ctx.deploymentId,
             logs: ctx.logs,
             log: (line: string) => logLine(ctx, line),
-            appendLogChunk: (content: string) => appendBuildLogChunk(ctx, content),
+            appendLogChunk: (content: string) =>
+              appendBuildLogChunk(ctx, content),
             env: combinedBuildEnv,
             repoDir: roots.projectDir,
             workspaceDir: roots.workspaceDir,
@@ -1266,16 +1498,16 @@ const buildProject = async (
             serverPreviewTarget: projectConfig.serverPreviewTarget,
             frameworkHint: projectConfig.frameworkHint,
             installCommandOverride: installParsed.argv,
-            buildCommandOverride: buildParsed.argv
+            buildCommandOverride: buildParsed.argv,
           },
-          runtime!
+          runtime!,
         );
     if (strategy) {
       logLine(ctx, `Detected build strategy: ${strategy.id}`);
     }
     logLine(
       ctx,
-      `Resolved preview strategy: ${result.serveStrategy} (${result.previewResolution.code})`
+      `Resolved preview strategy: ${result.serveStrategy} (${result.previewResolution.code})`,
     );
     if (result.previewResolution.detail) {
       logLine(ctx, result.previewResolution.detail);
@@ -1283,10 +1515,11 @@ const buildProject = async (
     logLine(ctx, `Server preview target: ${projectConfig.serverPreviewTarget}`);
     if (
       result.serveStrategy === "static" &&
-      (projectConfig.skipHostStrategyBuild || projectConfig.runtimeImageMode === "dockerfile")
+      (projectConfig.skipHostStrategyBuild ||
+        projectConfig.runtimeImageMode === "dockerfile")
     ) {
       throw new Error(
-        "Static deployments cannot use Dockerfile-only runtime image builds. Use Preview type Server or switch runtimeImageMode to auto/platform."
+        "Static deployments cannot use Dockerfile-only runtime image builds. Use Preview type Server or switch runtimeImageMode to auto/platform.",
       );
     }
 
@@ -1297,28 +1530,40 @@ const buildProject = async (
 
     if (result.serveStrategy === "static") {
       if (!result.outputDir) {
-        throw new Error(`Build strategy '${result.buildStrategy}' did not provide an output directory`);
+        throw new Error(
+          `Build strategy '${result.buildStrategy}' did not provide an output directory`,
+        );
       }
 
-      logLine(ctx, `Uploading artifacts from ${path.basename(result.outputDir)}`);
+      logLine(
+        ctx,
+        `Uploading artifacts from ${path.basename(result.outputDir)}`,
+      );
       const uploadResult = await uploadArtifacts(ctx, result.outputDir);
       previewManifestKey = uploadResult.previewManifestKey;
       logLine(ctx, "Artifact upload complete");
 
       try {
         logLine(ctx, "Building container image for static output");
-        const runtimeArtifact = await buildAndUploadStaticRuntimeOciArtifact(ctx, result.outputDir, workDir);
+        const runtimeArtifact = await buildAndUploadStaticRuntimeOciArtifact(
+          ctx,
+          result.outputDir,
+          workDir,
+        );
         runtimeImageRef = runtimeArtifact.ref;
         runtimeImageArtifactKey = runtimeArtifact.artifactKey;
         logLine(ctx, `Runtime image uploaded (${runtimeImageArtifactKey})`);
       } catch (error) {
         logLine(
           ctx,
-          `Runtime image generation skipped: ${error instanceof Error ? error.message : String(error)}`
+          `Runtime image generation skipped: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     } else {
-      logLine(ctx, "Build completed with server serve strategy; skipping static artifact upload");
+      logLine(
+        ctx,
+        "Build completed with server serve strategy; skipping static artifact upload",
+      );
 
       try {
         logLine(ctx, "Building container image for server output");
@@ -1333,8 +1578,8 @@ const buildProject = async (
           {
             runtimeImageMode: projectConfig.runtimeImageMode,
             dockerfilePath: projectConfig.dockerfilePath,
-            dockerBuildTarget: projectConfig.dockerBuildTarget
-          }
+            dockerBuildTarget: projectConfig.dockerBuildTarget,
+          },
         );
         if (runtimeArtifact) {
           runtimeImageRef = runtimeArtifact.ref;
@@ -1344,7 +1589,7 @@ const buildProject = async (
       } catch (error) {
         logLine(
           ctx,
-          `Runtime image generation skipped: ${error instanceof Error ? error.message : String(error)}`
+          `Runtime image generation skipped: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -1356,7 +1601,7 @@ const buildProject = async (
       runtimeImageArtifactKey,
       runtimeConfig,
       previewManifestKey,
-      previewResolution: result.previewResolution
+      previewResolution: result.previewResolution,
     };
   } finally {
     await rm(workDir, { recursive: true, force: true });
@@ -1398,7 +1643,7 @@ const processJob = async (job: DeploymentJob) => {
     deploymentId: deployment.id,
     logs,
     buildLogKey,
-    scheduleLogFlush: () => {}
+    scheduleLogFlush: () => {},
   };
 
   let lastUploadedLogBody = "";
@@ -1410,7 +1655,7 @@ const processJob = async (job: DeploymentJob) => {
     const logBody = logs.join("");
     if (logBody === lastUploadedLogBody) return;
     await upload(buildLogKey, logBody, {
-      contentType: "text/plain; charset=utf-8"
+      contentType: "text/plain; charset=utf-8",
     });
     lastUploadedLogBody = logBody;
   };
@@ -1432,7 +1677,10 @@ const processJob = async (job: DeploymentJob) => {
 
   ctx.scheduleLogFlush = enqueueLogFlush;
 
-  logLine(ctx, `Loaded ${Object.keys(buildEnv).length} persisted build environment variable(s)`);
+  logLine(
+    ctx,
+    `Loaded ${Object.keys(buildEnv).length} persisted build environment variable(s)`,
+  );
   enqueueLogFlush(0);
 
   let status: "success" | "failed" = "success";
@@ -1445,9 +1693,15 @@ const processJob = async (job: DeploymentJob) => {
   let previewResolution: PreviewResolution | null = null;
 
   try {
-    const cleaned = await pruneBuildContainers({ deploymentId: deployment.id, includeRunning: true });
+    const cleaned = await pruneBuildContainers({
+      deploymentId: deployment.id,
+      includeRunning: true,
+    });
     if (cleaned > 0) {
-      logLine(ctx, `Pruned ${cleaned} stale build container(s) before starting`);
+      logLine(
+        ctx,
+        `Pruned ${cleaned} stale build container(s) before starting`,
+      );
     }
 
     const buildResult = await buildProject(
@@ -1470,13 +1724,13 @@ const processJob = async (job: DeploymentJob) => {
         skipHostStrategyBuild: project.skipHostStrategyBuild,
         runtimeContainerPort: project.runtimeContainerPort,
         installCommand: project.installCommand,
-        buildCommand: project.buildCommand
-      }
+        buildCommand: project.buildCommand,
+      },
     );
     buildStrategy = buildResult.buildStrategy;
     serveStrategy = resolveCanonicalServeStrategy(
       deployment.buildPreviewMode ?? project.previewMode,
-      buildResult.serveStrategy
+      buildResult.serveStrategy,
     );
     runtimeImageRef = buildResult.runtimeImageRef;
     runtimeImageArtifactKey = buildResult.runtimeImageArtifactKey;
@@ -1484,9 +1738,12 @@ const processJob = async (job: DeploymentJob) => {
     previewManifestKey = buildResult.previewManifestKey;
     previewResolution = buildResult.previewResolution;
   } catch (error) {
-      status = "failed";
-      logLine(ctx, `Build error: ${error instanceof Error ? error.message : String(error)}`);
-      enqueueLogFlush(0);
+    status = "failed";
+    logLine(
+      ctx,
+      `Build error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    enqueueLogFlush(0);
   } finally {
     if (flushTimer !== null) {
       clearTimeout(flushTimer);
@@ -1495,10 +1752,13 @@ const processJob = async (job: DeploymentJob) => {
     try {
       const cleanedAfter = await pruneBuildContainers({
         deploymentId: deployment.id,
-        includeRunning: false
+        includeRunning: false,
       });
       if (cleanedAfter > 0) {
-        logLine(ctx, `Pruned ${cleanedAfter} exited build container(s) after completion`);
+        logLine(
+          ctx,
+          `Pruned ${cleanedAfter} exited build container(s) after completion`,
+        );
       }
     } catch (cleanupError) {
       console.error("Failed to cleanup build containers:", cleanupError);
@@ -1515,7 +1775,8 @@ const processJob = async (job: DeploymentJob) => {
       }
     }
 
-    const previewUrl = status === "success" ? buildPreviewUrl(deployment.shortId) : null;
+    const previewUrl =
+      status === "success" ? buildPreviewUrl(deployment.shortId) : null;
 
     await db
       .update(schema.deployments)
@@ -1533,7 +1794,7 @@ const processJob = async (job: DeploymentJob) => {
         previewResolution,
         buildPreviewMode: deployment.buildPreviewMode ?? project.previewMode,
         buildServerPreviewTarget:
-          deployment.buildServerPreviewTarget ?? project.serverPreviewTarget
+          deployment.buildServerPreviewTarget ?? project.serverPreviewTarget,
       })
       .where(eq(schema.deployments.id, deployment.id));
     await publishDeploymentEvent(deployment.id, { type: "status", status });
@@ -1544,7 +1805,7 @@ const processJob = async (job: DeploymentJob) => {
 export const runLoop = async () => {
   if (EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS !== BUILD_PENDING_HEARTBEAT_MS) {
     console.warn(
-      `Adjusted build heartbeat interval from ${BUILD_PENDING_HEARTBEAT_MS}ms to ${EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS}ms so active jobs are not reclaimed early.`
+      `Adjusted build heartbeat interval from ${BUILD_PENDING_HEARTBEAT_MS}ms to ${EFFECTIVE_BUILD_PENDING_HEARTBEAT_MS}ms so active jobs are not reclaimed early.`,
     );
   }
 
@@ -1554,7 +1815,10 @@ export const runLoop = async () => {
       console.warn(`Recovered by pruning ${cleaned} stale build container(s).`);
     }
   } catch (error) {
-    console.error("Failed to prune stale build containers at worker startup:", error);
+    console.error(
+      "Failed to prune stale build containers at worker startup:",
+      error,
+    );
   }
 
   const consumerName = buildConsumerName();
@@ -1566,7 +1830,10 @@ export const runLoop = async () => {
       try {
         message = await reclaimDeployment(consumerName, BUILD_RECLAIM_IDLE_MS);
       } catch (error) {
-        console.error("Failed to reclaim stale deployment stream entry:", error);
+        console.error(
+          "Failed to reclaim stale deployment stream entry:",
+          error,
+        );
       }
     }
     if (!message) continue;
@@ -1586,12 +1853,16 @@ export const runLoop = async () => {
         status: schema.deployments.status,
         workerId: schema.deployments.workerId,
         lastHeartbeatAt: schema.deployments.lastHeartbeatAt,
-        artifactPrefix: schema.deployments.artifactPrefix
+        artifactPrefix: schema.deployments.artifactPrefix,
       })
       .from(schema.deployments)
       .where(eq(schema.deployments.id, job.deploymentId))
       .limit(1);
-    if (!deploymentCheck || deploymentCheck.status === "success" || deploymentCheck.status === "failed") {
+    if (
+      !deploymentCheck ||
+      deploymentCheck.status === "success" ||
+      deploymentCheck.status === "failed"
+    ) {
       try {
         await ackDeployment(message.streamId);
       } catch (err) {
@@ -1604,7 +1875,10 @@ export const runLoop = async () => {
       deploymentCheck.status === "building" &&
       deploymentCheck.workerId &&
       deploymentCheck.workerId !== consumerName &&
-      hasFreshWorkerHeartbeat(deploymentCheck.lastHeartbeatAt, BUILD_RECLAIM_IDLE_MS)
+      hasFreshWorkerHeartbeat(
+        deploymentCheck.lastHeartbeatAt,
+        BUILD_RECLAIM_IDLE_MS,
+      )
     ) {
       try {
         await ackDeployment(message.streamId);
@@ -1624,15 +1898,23 @@ export const runLoop = async () => {
           workerId: consumerName,
           lastHeartbeatAt: now,
           buildLogKey: `${deploymentCheck.artifactPrefix}/build.log`,
-          runAttempt: sql`${schema.deployments.runAttempt} + 1`
+          runAttempt: sql`${schema.deployments.runAttempt} + 1`,
         })
         .where(eq(schema.deployments.id, job.deploymentId));
-      await publishDeploymentEvent(job.deploymentId, { type: "status", status: "building" });
+      await publishDeploymentEvent(job.deploymentId, {
+        type: "status",
+        status: "building",
+      });
 
       heartbeatInterval = setInterval(() => {
-        touchPendingDeployment(message.streamId, consumerName).catch((error) => {
-          console.error("Failed to heartbeat deployment stream entry:", error);
-        });
+        touchPendingDeployment(message.streamId, consumerName).catch(
+          (error) => {
+            console.error(
+              "Failed to heartbeat deployment stream entry:",
+              error,
+            );
+          },
+        );
         db.update(schema.deployments)
           .set({ lastHeartbeatAt: new Date() })
           .where(eq(schema.deployments.id, job.deploymentId))
@@ -1643,7 +1925,10 @@ export const runLoop = async () => {
 
       await processJob(job);
     } catch (error) {
-      console.error("Build failed:", error instanceof Error ? error.message : String(error));
+      console.error(
+        "Build failed:",
+        error instanceof Error ? error.message : String(error),
+      );
       if (error instanceof Error && error.stack) {
         console.error(error.stack);
       }
@@ -1655,7 +1940,10 @@ export const runLoop = async () => {
       try {
         await ackDeployment(message.streamId);
       } catch (err) {
-        console.error(`Failed to ack deployment stream entry ${message.streamId}:`, err);
+        console.error(
+          `Failed to ack deployment stream entry ${message.streamId}:`,
+          err,
+        );
       }
     }
   }
