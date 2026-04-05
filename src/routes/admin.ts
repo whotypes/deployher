@@ -8,12 +8,41 @@ import {
 } from "../admin/buildSettings";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
-import { resolveLocalExample, toExampleRepoUrl } from "../examples";
+import { parseExampleRepoUrl, resolveLocalExample, toExampleRepoUrl } from "../examples";
 import { json, notFound } from "../http/helpers";
 import { enqueueDeployment } from "../queue";
 import { isRedisConfigured } from "../redis";
 import { isStorageConfigured } from "../storage";
 import { generateShortId } from "../utils/shortId";
+import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
+
+const pythonServerStreamProjectSeed = {
+  previewMode: "server" as const,
+  skipHostStrategyBuild: true,
+  runtimeImageMode: "dockerfile" as const,
+  runtimeContainerPort: 3000,
+  frameworkHint: "python" as const
+};
+
+const exampleProjectSeed = (
+  exampleName: string
+): Partial<typeof schema.projects.$inferInsert> | undefined => {
+  if (exampleName === "python-server-stream") {
+    return pythonServerStreamProjectSeed;
+  }
+  return undefined;
+};
+
+const needsPythonServerStreamProjectFix = (project: typeof schema.projects.$inferSelect): boolean => {
+  if (parseExampleRepoUrl(project.repoUrl) !== "python-server-stream") {
+    return false;
+  }
+  return (
+    !project.skipHostStrategyBuild ||
+    project.previewMode !== "server" ||
+    project.runtimeImageMode !== "dockerfile"
+  );
+};
 
 const getOrCreateExampleProject = async (userId: string, exampleName: string) => {
   const repoUrl = toExampleRepoUrl(exampleName);
@@ -24,16 +53,26 @@ const getOrCreateExampleProject = async (userId: string, exampleName: string) =>
     .limit(1);
 
   if (existing) {
+    if (needsPythonServerStreamProjectFix(existing)) {
+      const [fixed] = await db
+        .update(schema.projects)
+        .set({ ...pythonServerStreamProjectSeed, updatedAt: new Date() })
+        .where(eq(schema.projects.id, existing.id))
+        .returning();
+      return fixed ?? existing;
+    }
     return existing;
   }
 
+  const seed = exampleProjectSeed(exampleName);
   const [created] = await db
     .insert(schema.projects)
     .values({
       userId,
       name: `example-${exampleName}`,
       repoUrl,
-      branch: "local"
+      branch: "local",
+      ...seed
     })
     .returning();
 
@@ -96,6 +135,7 @@ export const createExampleDeployment = async (req: RequestWithParamsAndSession) 
       .update(schema.deployments)
       .set({ status: "failed", finishedAt: new Date() })
       .where(eq(schema.deployments.id, deployment.id));
+    void onDeploymentTerminalStatus(project.id, "failed");
     return json({ error: "Failed to queue deployment" }, { status: 503 });
   }
 

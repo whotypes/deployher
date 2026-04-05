@@ -9,6 +9,7 @@ import { parseRepoRelativePath, parseRuntimeImageMode } from "../lib/projectPath
 import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
 import { pickFeaturedDeploymentFromSortedDesc } from "../lib/sidebarFeaturedDeployment";
 import { parseProjectCommandForStorage } from "../lib/parseProjectCommandLine";
+import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
 
 type Project = typeof schema.projects.$inferSelect;
 type ProjectEnv = typeof schema.projectEnvs.$inferSelect;
@@ -22,10 +23,7 @@ const MAX_ENV_KEY_LENGTH = 128;
 const MAX_ENV_VALUE_LENGTH = 16 * 1024;
 const DEFAULT_RUNTIME_CONTAINER_PORT = 3000;
 const PREVIEW_MODES = new Set<PreviewMode>(["auto", "static", "server"]);
-const SERVER_PREVIEW_TARGETS = new Set<ServerPreviewTarget>([
-  "isolated-runner",
-  "trusted-local-docker"
-]);
+const SERVER_PREVIEW_TARGETS = new Set<ServerPreviewTarget>(["isolated-runner"]);
 const FRAMEWORK_HINTS = new Set<FrameworkHint>(["auto", "nextjs", "node", "python", "static"]);
 
 const parsePreviewMode = (value: unknown): PreviewMode | null => {
@@ -126,7 +124,9 @@ export const listSidebarProjectSummariesForUser = async (userId: string) => {
     .select({
       id: schema.projects.id,
       name: schema.projects.name,
-      currentStatus: schema.deployments.status
+      currentStatus: schema.deployments.status,
+      siteIconUrl: schema.projects.siteIconUrl,
+      siteOgImageUrl: schema.projects.siteOgImageUrl
     })
     .from(schema.projects)
     .leftJoin(
@@ -138,7 +138,9 @@ export const listSidebarProjectSummariesForUser = async (userId: string) => {
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
-    deploymentStatus: parseSidebarProjectDeploymentStatus(r.currentStatus)
+    deploymentStatus: parseSidebarProjectDeploymentStatus(r.currentStatus),
+    siteIconUrl: r.siteIconUrl ?? null,
+    siteOgImageUrl: r.siteOgImageUrl ?? null
   }));
 };
 
@@ -198,7 +200,7 @@ export const createProject = async (req: RequestWithParamsAndSession) => {
       ? "isolated-runner"
       : parseServerPreviewTarget(body.serverPreviewTarget);
   if (!serverPreviewTarget) {
-    return badRequest("serverPreviewTarget must be one of: isolated-runner, trusted-local-docker");
+    return badRequest("serverPreviewTarget must be: isolated-runner");
   }
   const projectRootDir =
     body.projectRootDir === undefined ? "." : parseProjectRootDir(body.projectRootDir);
@@ -511,6 +513,7 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
     runtimeContainerPort?: unknown;
     installCommand?: unknown;
     buildCommand?: unknown;
+    currentDeploymentId?: unknown;
   }>(req);
   if (!body) {
     return badRequest("Invalid JSON body");
@@ -580,7 +583,7 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
   if (body.serverPreviewTarget !== undefined) {
     const serverPreviewTarget = parseServerPreviewTarget(body.serverPreviewTarget);
     if (!serverPreviewTarget) {
-      return badRequest("serverPreviewTarget must be one of: isolated-runner, trusted-local-docker");
+      return badRequest("serverPreviewTarget must be: isolated-runner");
     }
     updates.serverPreviewTarget = serverPreviewTarget;
   }
@@ -630,6 +633,14 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
     updates.buildCommand = parsed.stored;
   }
 
+  if (body.currentDeploymentId !== undefined) {
+    if (body.currentDeploymentId !== null && typeof body.currentDeploymentId !== "string") {
+      return badRequest("currentDeploymentId must be a string UUID or null");
+    }
+    updates.currentDeploymentId =
+      body.currentDeploymentId === null ? null : body.currentDeploymentId.trim() || null;
+  }
+
   if (Object.keys(updates).length <= 1) {
     return badRequest("Provide at least one field to update");
   }
@@ -656,6 +667,30 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
     return badRequest(configError);
   }
 
+  if (updates.currentDeploymentId !== undefined) {
+    const targetId = updates.currentDeploymentId;
+    if (targetId === null) {
+      // allow clearing current pointer
+    } else {
+      const [dep] = await db
+        .select({
+          id: schema.deployments.id,
+          status: schema.deployments.status
+        })
+        .from(schema.deployments)
+        .where(
+          and(eq(schema.deployments.id, targetId), eq(schema.deployments.projectId, id))
+        )
+        .limit(1);
+      if (!dep) {
+        return badRequest("currentDeploymentId must reference a deployment that belongs to this project");
+      }
+      if (dep.status !== "success") {
+        return badRequest("currentDeploymentId must reference a successful deployment");
+      }
+    }
+  }
+
   const [project] = await db
     .update(schema.projects)
     .set(updates)
@@ -667,6 +702,32 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
   }
 
   return json(withProjectMeta(project));
+};
+
+export const postRefreshProjectSiteMetadata = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Project not found");
+  }
+  const userId = req.session.user.id;
+  const [owned] = await db
+    .select({ id: schema.projects.id })
+    .from(schema.projects)
+    .where(and(eq(schema.projects.id, id), eq(schema.projects.userId, userId)))
+    .limit(1);
+  if (!owned) {
+    return notFound("Project not found");
+  }
+  const result = await refreshProjectSiteMetadata(id);
+  if (!result.ok) {
+    return json({ error: result.error }, { status: 422 });
+  }
+  return json({
+    ok: true,
+    siteIconUrl: result.siteIconUrl,
+    siteOgImageUrl: result.siteOgImageUrl,
+    siteMetaFetchedAt: result.siteMetaFetchedAt.toISOString()
+  });
 };
 
 export const deleteProject = async (req: RequestWithParamsAndSession) => {
