@@ -1,3 +1,5 @@
 site_name: python-mkdocs-pip
 nav:
   - Home: index.md
+  - Guide: guide.md
+  - Features: features.md
