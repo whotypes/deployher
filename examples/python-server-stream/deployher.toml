@@ -1,0 +1,8 @@
+# Optional: merged at build time when project settings still use Deployher defaults.
+# Dashboard values override these once you change them away from defaults.
+
+[deployher]
+preview_mode = "server"
+runtime_image_mode = "dockerfile"
+skip_host_strategy_build = true
+runtime_container_port = 3000
