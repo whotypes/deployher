@@ -11,6 +11,8 @@ export type SidebarProjectSummary = {
   id: string;
   name: string;
   deploymentStatus: SidebarProjectDeploymentStatus | null;
+  siteIconUrl: string | null;
+  siteOgImageUrl: string | null;
 };
 
 export type SidebarFeaturedDeployment = {
