@@ -127,6 +127,34 @@
       "when": 1774960900543,
       "tag": "0017_gigantic_firedrake",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1774964500000,
+      "tag": "0018_smooth_marten",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1775050000000,
+      "tag": "0019_project_observability",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1775140000000,
+      "tag": "0020_runtime_image_pull_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1775200000000,
+      "tag": "0021_project_site_metadata",
+      "breakpoints": true
     }
   ]
 }
