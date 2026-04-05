@@ -1,7 +1,7 @@
 export const LAYOUT_DISPLAY_PREF_KEYS = {
-  contentWidth: "pdploy-content-width",
-  density: "pdploy-density",
-  ambient: "pdploy-ambient"
+  contentWidth: "deployher-content-width",
+  density: "deployher-density",
+  ambient: "deployher-ambient"
 } as const;
 
 export type LayoutDisplayPrefKey = keyof typeof LAYOUT_DISPLAY_PREF_KEYS;

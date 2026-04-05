@@ -1,7 +1,7 @@
 export const USER_UI_PREF_KEYS = {
-  createMode: "pdploy-project-create-mode",
-  openAfterCreate: "pdploy-open-after-create",
-  preferredBranch: "pdploy-preferred-branch"
+  createMode: "deployher-project-create-mode",
+  openAfterCreate: "deployher-open-after-create",
+  preferredBranch: "deployher-preferred-branch"
 } as const;
 
 export type CreateModePref = "import" | "manual";
