@@ -93,7 +93,7 @@ export const projects = pgTable("projects", {
   serverPreviewTarget: text("server_preview_target")
     .notNull()
     .default("isolated-runner")
-    .$type<"isolated-runner" | "trusted-local-docker">(),
+    .$type<"isolated-runner">(),
   runtimeImageMode: text("runtime_image_mode")
     .notNull()
     .default("auto")
@@ -106,7 +106,11 @@ export const projects = pgTable("projects", {
   buildCommand: text("build_command"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  currentDeploymentId: uuid("current_deployment_id")
+  currentDeploymentId: uuid("current_deployment_id"),
+  siteIconUrl: text("site_icon_url"),
+  siteOgImageUrl: text("site_og_image_url"),
+  siteMetaFetchedAt: timestamp("site_meta_fetched_at", { withTimezone: true }),
+  siteMetaError: text("site_meta_error")
 });
 
 /** Tenant isolation: API checks project ownership before reading/writing rows (no DB-level RLS in this app). */
@@ -151,6 +155,7 @@ export const deployments = pgTable("deployments", {
   status: text("status").notNull().default("queued").$type<"queued" | "building" | "success" | "failed">(),
   buildLogKey: text("build_log_key"),
   runtimeImageRef: text("runtime_image_ref"),
+  runtimeImagePullRef: text("runtime_image_pull_ref"),
   runtimeImageArtifactKey: text("runtime_image_artifact_key"),
   runtimeConfig: jsonb("runtime_config").$type<{
     workingDir?: string;
@@ -169,9 +174,7 @@ export const deployments = pgTable("deployments", {
     detail?: string;
   } | null>(),
   buildPreviewMode: text("build_preview_mode").$type<"auto" | "static" | "server" | null>(),
-  buildServerPreviewTarget: text("build_server_preview_target").$type<
-    "isolated-runner" | "trusted-local-docker" | null
-  >(),
+  buildServerPreviewTarget: text("build_server_preview_target").$type<"isolated-runner" | null>(),
   previewManifestKey: text("preview_manifest_key"),
   previewUrl: text("preview_url"),
   workerId: text("worker_id"),
@@ -196,4 +199,75 @@ export const deploymentEvents = pgTable(
   (table) => [
     index("deployment_events_deployment_id_created_at_idx").on(table.deploymentId, table.createdAt)
   ]
+);
+
+export const previewTrafficEvents = pgTable(
+  "preview_traffic_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    deploymentId: uuid("deployment_id")
+      .notNull()
+      .references(() => deployments.id, { onDelete: "cascade" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+    clientIp: text("client_ip").notNull(),
+    method: text("method").notNull(),
+    statusCode: integer("status_code").notNull(),
+    pathBucket: text("path_bucket")
+  },
+  (table) => [
+    index("preview_traffic_events_project_id_occurred_at_idx").on(table.projectId, table.occurredAt)
+  ]
+);
+
+export const projectAlertDestinations = pgTable(
+  "project_alert_destinations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    webhookUrl: text("webhook_url").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [index("project_alert_destinations_project_id_idx").on(table.projectId)]
+);
+
+export const projectAlertRules = pgTable(
+  "project_alert_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    destinationId: uuid("destination_id")
+      .notNull()
+      .references(() => projectAlertDestinations.id, { onDelete: "cascade" }),
+    ruleType: text("rule_type")
+      .notNull()
+      .$type<"consecutive_failures" | "queue_stall">(),
+    threshold: integer("threshold").notNull(),
+    cooldownSeconds: integer("cooldown_seconds").notNull().default(3600),
+    enabled: boolean("enabled").notNull().default(true),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [index("project_alert_rules_project_id_idx").on(table.projectId)]
+);
+
+export const projectAlertDeliveries = pgTable(
+  "project_alert_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => projectAlertRules.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    httpStatus: integer("http_status"),
+    errorMessage: text("error_message")
+  },
+  (table) => [index("project_alert_deliveries_rule_id_idx").on(table.ruleId)]
 );

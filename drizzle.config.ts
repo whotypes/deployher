@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./src/env/bootstrap";
 import { defineConfig } from "drizzle-kit";
 
 const bunEnv = typeof Bun !== "undefined" ? Bun.env : undefined;

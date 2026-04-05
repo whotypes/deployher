@@ -1,3 +1,4 @@
+import "./src/env/bootstrap";
 import { db } from "./src/db/db";
 import * as schema from "./src/db/schema";
 import { generateShortId } from "./src/utils/shortId";
