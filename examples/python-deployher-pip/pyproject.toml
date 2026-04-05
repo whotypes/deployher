@@ -1,8 +1,8 @@
 [project]
-name = "python-pdploy-pip"
+name = "python-deployher-pip"
 version = "1.0.0"
 requires-python = ">=3.11"
 
-[tool.pdploy]
+[tool.deployher]
 buildCommand = ["python", "scripts/build.py"]
 outputDir = "dist"
