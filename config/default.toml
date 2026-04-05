@@ -1,0 +1,55 @@
+# Deployher app configuration (committed defaults).
+# Orchestration: in-network URLs, replica wiring, and image tags belong in docker-compose.yml.
+# Override secrets or this host in config/local.toml (gitignored) or environment variables (env wins).
+
+DATABASE_URL = "postgresql://app:app@localhost:5432/placeholder"
+APP_ENV = "development"
+HOSTNAME = "0.0.0.0"
+PORT = 3001
+DEV_DOMAIN = "localhost"
+PROD_DOMAIN = "localhost"
+DEV_PROTOCOL = "http"
+PROD_PROTOCOL = "https"
+REDIS_URL = "redis://localhost:6379"
+S3_ENDPOINT = "http://127.0.0.1:3900"
+S3_REGION = "garage"
+BUILD_WORKDIR = "/tmp/deployher-builds"
+BUILD_WORKERS = 0
+RUNNER_PREVIEW_ENABLED = false
+RUNNER_URL = ""
+RUNNER_SHARED_SECRET = ""
+RUNNER_DOCKER_NETWORK = ""
+BUILD_ACCOUNT_MAX_CONCURRENT = 4
+BUILD_ACCOUNT_SLOT_TTL_SECONDS = 21600
+BUILD_REPO_CREDENTIAL_TTL_SECONDS = 3600
+BUILD_RECLAIM_IDLE_MS = 5000
+BUILD_PENDING_HEARTBEAT_MS = 30000
+BUILD_CONTAINER_MEMORY = "1g"
+BUILD_CONTAINER_CPUS = "0.5"
+# optional registry host for builder images (nexus, ecr). empty = local deployher-* tags + docker hub python.
+BUILD_IMAGE_REGISTRY = ""
+RUNTIME_STATIC_BASE_IMAGE = "nginx:alpine"
+BUILD_COMMAND_INACTIVITY_TIMEOUT_MS = 30000
+PREVIEW_RUNTIME_PUSH_INACTIVITY_TIMEOUT_MS = 300000
+DOCKER_SOCKET_PATH = "/var/run/docker.sock"
+NEXUS_REGISTRY = "localhost:8082"
+NEXUS_USER = "admin"
+NEXUS_PASSWORD = "changeme123!"
+S3_BUCKET = ""
+S3_ACCESS_KEY_ID = ""
+S3_SECRET_ACCESS_KEY = ""
+BETTER_AUTH_URL = "http://localhost:3001"
+BETTER_AUTH_SECRET = ""
+GITHUB_CLIENT_ID = ""
+GITHUB_CLIENT_SECRET = ""
+SKIP_CLIENT_BUILD = false
+PREVIEW_ASSET_BASE_URL = ""
+PREVIEW_TTL_MS = 1800000
+PREVIEW_MEMORY_BYTES = 1073741824
+PREVIEW_NANO_CPUS = 1
+# Preview runtime images: pushed to Docker registry (Nexus docker-hosted by default). Empty PREVIEW_RUNTIME_REGISTRY falls back to NEXUS_REGISTRY.
+PREVIEW_RUNTIME_REGISTRY = ""
+PREVIEW_RUNTIME_DOCKER_REPO = "docker-hosted"
+PREVIEW_RUNTIME_IMAGE_NAME = "deployher-preview-runtime"
+PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS = 900000
+PREVIEW_RUNNER_IMAGE_MAX_AGE_MS = 604800000
