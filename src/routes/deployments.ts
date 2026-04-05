@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import Docker from "dockerode";
+import { publishBuildCancel } from "../buildCancelChannel";
 import { type RequestWithParamsAndSession } from "../auth/session";
 import { db } from "../db/db";
 import {
@@ -9,6 +9,7 @@ import {
   type DeploymentStreamEvent
 } from "../deploymentEvents";
 import * as schema from "../db/schema";
+import { config } from "../config";
 import { badRequest, json, notFound, parseJson } from "../http/helpers";
 import { getGitHubAccessToken } from "../lib/githubAccess";
 import { enqueueDeployment } from "../queue";
@@ -16,11 +17,8 @@ import { getRedisSubscriber, isRedisConfigured } from "../redis";
 import { storeRepoCredential } from "../repoCredentials";
 import { getText, getTextFromOffset, isStorageConfigured } from "../storage";
 import { generateShortId } from "../utils/shortId";
-
-const DOCKER_SOCKET_PATH =
-  (process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock").trim() || "/var/run/docker.sock";
-const dockerClient = new Docker({ socketPath: DOCKER_SOCKET_PATH });
-const DOCKER_DEPLOYMENT_LABEL_KEY = "io.pdploy.deployment";
+import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
+import { formatRunnerRuntimeLogError } from "./runtimeLogFormatting";
 
 const getProjectForUser = async (projectId: string, userId: string) => {
   const [project] = await db
@@ -32,8 +30,6 @@ const getProjectForUser = async (projectId: string, userId: string) => {
 };
 
 const MAX_DEPLOYMENT_ENV_FILE_BYTES = 64 * 1024;
-
-const sanitizeDockerLabelValue = (value: string): string => value.replace(/[^A-Za-z0-9_.-]/g, "_");
 
 export const listDeployments = async (req: RequestWithParamsAndSession) => {
   const projectId = req.params["id"];
@@ -123,6 +119,7 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
           .update(schema.deployments)
           .set({ status: "failed", finishedAt: new Date() })
           .where(eq(schema.deployments.id, deployment.id));
+        void onDeploymentTerminalStatus(project.id, "failed");
         return json(
           { error: "GitHub authentication expired. Please re-link GitHub before deploying." },
           { status: 401 }
@@ -140,6 +137,7 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
       .update(schema.deployments)
       .set({ status: "failed", finishedAt: new Date() })
       .where(eq(schema.deployments.id, deployment.id));
+    void onDeploymentTerminalStatus(project.id, "failed");
     return json({ error: "Failed to queue deployment" }, { status: 503 });
   }
 
@@ -211,26 +209,9 @@ export const cancelDeployment = async (req: RequestWithParamsAndSession) => {
   await publishDeploymentEvent(deployment.id, { type: "status", status: "failed" });
   await publishDeploymentEvent(deployment.id, { type: "done", status: "failed" });
 
-  try {
-    const containers = await dockerClient.listContainers({
-      all: true,
-      filters: {
-        label: [`${DOCKER_DEPLOYMENT_LABEL_KEY}=${sanitizeDockerLabelValue(deployment.id)}`]
-      }
-    });
-    await Promise.all(
-      containers.map(async (containerInfo) => {
-        if (!containerInfo.Id) return;
-        try {
-          await dockerClient.getContainer(containerInfo.Id).remove({ force: true });
-        } catch (error) {
-          console.error("Failed to remove build container during cancellation:", error);
-        }
-      })
-    );
-  } catch (error) {
-    console.error("Failed to list build containers during cancellation:", error);
-  }
+  await publishBuildCancel(deployment.id);
+
+  void onDeploymentTerminalStatus(deployment.projectId, "failed");
 
   return json({ ok: true, status: "failed", cancelled: true });
 };
@@ -485,6 +466,242 @@ export const streamDeploymentLog = async (req: RequestWithParamsAndSession) => {
         subscriber.unsubscribe().catch(() => {});
         subscriber.close();
         subscriber = null;
+      }
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive"
+    }
+  });
+};
+
+const runtimeLogsUnavailable = () => notFound("Runtime logs not available");
+
+const loadDeploymentForRuntimeLogs = async (
+  deploymentId: string,
+  userId: string
+): Promise<
+  | { ok: false; response: Response }
+  | { ok: true; deployment: typeof schema.deployments.$inferSelect }
+> => {
+  if (!config.runner.previewEnabled || !config.runner.url?.trim()) {
+    return { ok: false, response: runtimeLogsUnavailable() };
+  }
+
+  const [deployment] = await db
+    .select()
+    .from(schema.deployments)
+    .where(eq(schema.deployments.id, deploymentId))
+    .limit(1);
+
+  if (!deployment) {
+    return { ok: false, response: notFound("Deployment not found") };
+  }
+
+  const project = await getProjectForUser(deployment.projectId, userId);
+  if (!project) {
+    return { ok: false, response: notFound("Deployment not found") };
+  }
+
+  if (deployment.serveStrategy !== "server") {
+    return { ok: false, response: runtimeLogsUnavailable() };
+  }
+
+  return { ok: true, deployment };
+};
+
+const runnerBaseUrl = (): string => {
+  const base = config.runner.url?.trim() ?? "";
+  return base.endsWith("/") ? base.slice(0, -1) : base;
+};
+
+export const getDeploymentRuntimeLog = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Deployment not found");
+  }
+
+  const gate = await loadDeploymentForRuntimeLogs(id, req.session.user.id);
+  if (!gate.ok) {
+    return gate.response;
+  }
+
+  const reqUrl = new URL(req.url);
+  const tail = reqUrl.searchParams.get("tail");
+  const upstreamUrl = new URL(
+    `internal/runtime-logs/${encodeURIComponent(id)}`,
+    `${runnerBaseUrl()}/`
+  );
+  upstreamUrl.searchParams.set("follow", "0");
+  if (tail?.trim()) {
+    upstreamUrl.searchParams.set("tail", tail.trim());
+  }
+
+  const headers = new Headers();
+  if (config.runner.sharedSecret) {
+    headers.set("x-deployher-runner-secret", config.runner.sharedSecret);
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl.toString(), { headers });
+  } catch {
+    return new Response(
+      "Could not connect to preview runner. Check RUNNER_URL and that the runner is reachable.\n",
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store"
+        }
+      }
+    );
+  }
+
+  if (!upstream.ok) {
+    const msg = await formatRunnerRuntimeLogError(upstream);
+    return new Response(msg, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store"
+      }
+    });
+  }
+
+  const text = await upstream.text();
+  return new Response(text, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store"
+    }
+  });
+};
+
+export const streamDeploymentRuntimeLog = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Deployment not found");
+  }
+
+  const gate = await loadDeploymentForRuntimeLogs(id, req.session.user.id);
+  if (!gate.ok) {
+    return gate.response;
+  }
+
+  const reqUrl = new URL(req.url);
+  const tail = reqUrl.searchParams.get("tail");
+  const upstreamUrl = new URL(
+    `internal/runtime-logs/${encodeURIComponent(id)}`,
+    `${runnerBaseUrl()}/`
+  );
+  upstreamUrl.searchParams.set("follow", "1");
+  if (tail?.trim()) {
+    upstreamUrl.searchParams.set("tail", tail.trim());
+  }
+
+  const encoder = new TextEncoder();
+  const sendEvent = (data: DeploymentStreamEvent) =>
+    encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+  const sendKeepalive = () => encoder.encode(`: keepalive\n\n`);
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      let closed = false;
+      const closeStream = () => {
+        if (closed) return;
+        closed = true;
+        controller.close();
+      };
+
+      const ac = new AbortController();
+      const onAbort = () => {
+        ac.abort();
+      };
+      req.signal.addEventListener("abort", onAbort);
+
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+      const cleanup = () => {
+        req.signal.removeEventListener("abort", onAbort);
+        if (heartbeat !== null) {
+          clearInterval(heartbeat);
+          heartbeat = null;
+        }
+      };
+
+      const headers = new Headers();
+      if (config.runner.sharedSecret) {
+        headers.set("x-deployher-runner-secret", config.runner.sharedSecret);
+      }
+
+      let upstream: Response;
+      try {
+        upstream = await fetch(upstreamUrl.toString(), { headers, signal: ac.signal });
+      } catch {
+        controller.enqueue(
+          sendEvent({
+            type: "log",
+            content:
+              "Could not connect to preview runner. Check RUNNER_URL and that the runner is reachable.\n"
+          })
+        );
+        cleanup();
+        closeStream();
+        return;
+      }
+
+      if (!upstream.ok) {
+        const msg = await formatRunnerRuntimeLogError(upstream);
+        controller.enqueue(sendEvent({ type: "log", content: msg }));
+        cleanup();
+        closeStream();
+        return;
+      }
+
+      const reader = upstream.body?.getReader();
+      if (!reader) {
+        controller.enqueue(sendEvent({ type: "error", content: "No log stream from runner" }));
+        cleanup();
+        closeStream();
+        return;
+      }
+
+      heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(sendKeepalive());
+        } catch {
+          ac.abort();
+        }
+      }, 10_000);
+
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          if (value?.length) {
+            const content = decoder.decode(value, { stream: true });
+            if (content) {
+              controller.enqueue(sendEvent({ type: "log", content }));
+            }
+          }
+        }
+        const rest = decoder.decode();
+        if (rest) {
+          controller.enqueue(sendEvent({ type: "log", content: rest }));
+        }
+      } catch {
+        /* aborted or read error */
+      } finally {
+        ac.abort();
+        cleanup();
+        closeStream();
       }
     }
   });
