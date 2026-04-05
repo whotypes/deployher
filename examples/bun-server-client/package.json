@@ -1,0 +1,16 @@
+{
+  "name": "bun-server-client",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "bun@1.3.5",
+  "dependencies": {
+    "left-pad": "1.3.0"
+  },
+  "deployher": {
+    "serveStrategy": "server",
+    "runtimePort": 3000
+  },
+  "scripts": {
+    "start": "bun run src/index.ts"
+  }
+}
