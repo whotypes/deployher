@@ -14,7 +14,7 @@ export const getCsrfToken = (): string | null => {
     .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
     ?.content?.trim();
   if (metaToken) return metaToken;
-  const cookieToken = readCookie("pdploy_csrf")?.trim();
+  const cookieToken = readCookie("deployher_csrf")?.trim();
   return cookieToken || null;
 };
 

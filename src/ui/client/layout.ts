@@ -10,7 +10,7 @@ import {
   writeLayoutDisplayPref
 } from "@/lib/layoutDisplayPrefs";
 
-const STORAGE_KEY = "pdploy-sidebar-collapsed";
+const STORAGE_KEY = "deployher-sidebar-collapsed";
 const SIDEBAR_STATE_COOKIE = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 
@@ -29,13 +29,13 @@ const writeSidebarCookie = (expanded: boolean): void => {
 
 document.addEventListener("DOMContentLoaded", () => {
   const body = document.body;
-  const shell = document.getElementById("pdploy-shell");
-  const sidebar = document.getElementById("pdploy-sidebar");
-  const backdrop = document.getElementById("pdploy-sidebar-backdrop");
-  const openBtn = document.getElementById("pdploy-sidebar-open-mobile");
-  const closeBtn = document.getElementById("pdploy-sidebar-close-mobile");
-  const desktopToggle = document.getElementById("pdploy-sidebar-toggle-desktop");
-  const sidebarRail = document.getElementById("pdploy-sidebar-rail");
+  const shell = document.getElementById("deployher-shell");
+  const sidebar = document.getElementById("deployher-sidebar");
+  const backdrop = document.getElementById("deployher-sidebar-backdrop");
+  const openBtn = document.getElementById("deployher-sidebar-open-mobile");
+  const closeBtn = document.getElementById("deployher-sidebar-close-mobile");
+  const desktopToggle = document.getElementById("deployher-sidebar-toggle-desktop");
+  const sidebarRail = document.getElementById("deployher-sidebar-rail");
   const prefButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-layout-pref][data-value]"));
 
   const syncPrefButtons = () => {
