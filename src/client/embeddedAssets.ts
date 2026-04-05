@@ -1,7 +1,8 @@
+import path from "path";
 import { guessContentType } from "../utils/contentType";
 
 const HASHED_ASSET_PATTERN = /-[a-f0-9]{8,}\./i;
-const CLIENT_ASSET_EXTENSIONS = [".js", ".css", ".map"] as const;
+const CLIENT_ASSET_EXTENSIONS = [".js", ".css", ".map", ".woff2"] as const;
 
 const hasClientAssetExtension = (name: string): boolean =>
   CLIENT_ASSET_EXTENSIONS.some((ext) => name.endsWith(ext));
@@ -37,7 +38,20 @@ export const getEmbeddedClientAsset = (
   if (!normalizedPath || normalizedPath.includes("..") || normalizedPath.includes("\0")) {
     return null;
   }
-  const blob = getEmbeddedAssetMap().get(normalizedPath);
-  if (!blob) return null;
-  return { blob, contentType: guessContentType(normalizedPath) };
+  const map = getEmbeddedAssetMap();
+  const direct = map.get(normalizedPath);
+  if (direct) {
+    return { blob: direct, contentType: guessContentType(normalizedPath) };
+  }
+  const base = path.basename(normalizedPath);
+  const byBase = map.get(base);
+  if (byBase) {
+    return { blob: byBase, contentType: guessContentType(normalizedPath) };
+  }
+  for (const [embedName, blob] of map) {
+    if (embedName === normalizedPath || embedName.endsWith(`/${normalizedPath}`)) {
+      return { blob, contentType: guessContentType(normalizedPath) };
+    }
+  }
+  return null;
 };

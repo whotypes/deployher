@@ -1,6 +1,6 @@
 import { getDevBaseUrl, getProdBaseUrl } from "../config";
 
-const CSRF_COOKIE_NAME = "pdploy_csrf";
+const CSRF_COOKIE_NAME = "deployher_csrf";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 type CookieOptions = {

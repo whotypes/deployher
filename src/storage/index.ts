@@ -52,7 +52,7 @@ export async function checkStorageConnectivity(): Promise<{ ok: boolean; message
     if (msg.includes("ConnectionRefused") || msg.includes("ECONNREFUSED") || code === "ConnectionRefused") {
       return {
         ok: false,
-        message: `S3 endpoint (${config.s3.endpoint}) is not reachable. From the repo root, run: ./infra/dev.sh start`
+        message: `S3 endpoint (${config.s3.endpoint}) is not reachable. From the repo root, run: deployher start`
       };
     }
     return { ok: false, message: msg || "S3 connectivity check failed" };

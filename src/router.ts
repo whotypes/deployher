@@ -21,6 +21,8 @@ import * as deployments from "./routes/deployments";
 import * as github from "./routes/github";
 import * as pages from "./routes/pages";
 import * as projects from "./routes/projects";
+import * as projectObservability from "./routes/projectObservability";
+import * as runnerInternal from "./routes/runnerInternal";
 import { auth } from "../auth";
 import { guessContentType } from "./utils/contentType";
 import { attachCsrfCookie, ensureCsrfToken, validateMutationRequest } from "./security/csrf";
@@ -70,6 +72,7 @@ const matchRoute = (
 
 const publicRoutes: PublicRoute[] = [
   { pattern: "/", methods: { GET: pages.landingPage } },
+  { pattern: "/why", methods: { GET: pages.whyPage } },
   { pattern: "/login", methods: { GET: pages.loginPage } },
   { pattern: "/health", methods: { GET: pages.health } },
   { pattern: "/preview/*", methods: { GET: servePreview } }
@@ -79,6 +82,7 @@ const protectedRoutes: ProtectedRoute[] = [
   { pattern: "/home", methods: { GET: pages.dashboardPage } },
   { pattern: "/dashboard", methods: { GET: pages.dashboardPage } },
   { pattern: "/projects", methods: { GET: pages.projectsPage, POST: projects.createProject } },
+  { pattern: "/projects/new", methods: { GET: pages.newProjectPage } },
   {
     pattern: "/projects/:id",
     methods: {
@@ -107,6 +111,10 @@ const protectedRoutes: ProtectedRoute[] = [
       POST: deployments.createDeployment
     }
   },
+  {
+    pattern: "/projects/:id/observability",
+    methods: { GET: pages.projectObservabilityPage }
+  },
   { pattern: "/admin", operatorOnly: true, methods: { GET: pages.adminExamplesPage } },
   {
     pattern: "/deployments/:id",
@@ -124,10 +132,21 @@ const protectedRoutes: ProtectedRoute[] = [
     pattern: "/deployments/:id/log/stream",
     methods: { GET: deployments.streamDeploymentLog }
   },
+  {
+    pattern: "/deployments/:id/runtime-log/stream",
+    methods: { GET: deployments.streamDeploymentRuntimeLog }
+  },
+  {
+    pattern: "/deployments/:id/runtime-log",
+    methods: { GET: deployments.getDeploymentRuntimeLog }
+  },
   { pattern: "/account", methods: { GET: account.accountPage } },
   { pattern: "/account/delete", methods: { POST: account.deleteAccount } },
   { pattern: "/api/github/repos", methods: { GET: github.listRepos } },
   { pattern: "/api/github/branches", methods: { GET: github.listBranches } },
+  { pattern: "/api/github/repo-hints", methods: { GET: github.repoHints } },
+  { pattern: "/api/github/repo-locs", methods: { GET: github.repoLocs } },
+  { pattern: "/api/github/repo-file", methods: { GET: github.repoFile } },
   { pattern: "/api/projects", methods: { GET: projects.listProjects, POST: projects.createProject } },
   {
     pattern: "/api/projects/:id",
@@ -158,6 +177,47 @@ const protectedRoutes: ProtectedRoute[] = [
       DELETE: projects.deleteProjectEnv
     }
   },
+  {
+    pattern: "/api/projects/:id/observability/metrics",
+    methods: { GET: projectObservability.getObservabilityMetrics }
+  },
+  {
+    pattern: "/api/projects/:id/observability/traffic",
+    methods: { GET: projectObservability.getObservabilityTraffic }
+  },
+  {
+    pattern: "/api/projects/:id/observability/alerts/destinations/:destId",
+    methods: { DELETE: projectObservability.deleteAlertDestination }
+  },
+  {
+    pattern: "/api/projects/:id/observability/alerts/destinations",
+    methods: {
+      GET: projectObservability.listAlertDestinations,
+      POST: projectObservability.createAlertDestination
+    }
+  },
+  {
+    pattern: "/api/projects/:id/observability/alerts/rules/:ruleId",
+    methods: {
+      PATCH: projectObservability.patchAlertRule,
+      DELETE: projectObservability.deleteAlertRule
+    }
+  },
+  {
+    pattern: "/api/projects/:id/observability/alerts/rules",
+    methods: {
+      GET: projectObservability.listAlertRules,
+      POST: projectObservability.createAlertRule
+    }
+  },
+  {
+    pattern: "/api/projects/:id/observability/alerts/test",
+    methods: { POST: projectObservability.postObservabilityTestWebhook }
+  },
+  {
+    pattern: "/api/projects/:id/site-metadata/refresh",
+    methods: { POST: projects.postRefreshProjectSiteMetadata }
+  },
   { pattern: "/api/admin/examples", operatorOnly: true, methods: { GET: admin.listExamples } },
   {
     pattern: "/api/admin/examples/:name/deploy",
@@ -170,6 +230,14 @@ const protectedRoutes: ProtectedRoute[] = [
   {
     pattern: "/api/deployments/:id/log",
     methods: { GET: deployments.getDeploymentLog }
+  },
+  {
+    pattern: "/api/deployments/:id/runtime-log/stream",
+    methods: { GET: deployments.streamDeploymentRuntimeLog }
+  },
+  {
+    pattern: "/api/deployments/:id/runtime-log",
+    methods: { GET: deployments.getDeploymentRuntimeLog }
   }
 ];
 
@@ -205,6 +273,10 @@ export const router = async (req: Request): Promise<Response> => {
     });
   }
 
+  if (pathname === "/internal/trigger-preview-rehydrate" && method === "POST") {
+    return runnerInternal.postTriggerPreviewRehydrate(req);
+  }
+
   if (pathname.startsWith("/api/auth")) {
     if (method !== "GET" && method !== "POST") {
       return json({ error: "Method Not Allowed" }, { status: 405 });
@@ -215,12 +287,12 @@ export const router = async (req: Request): Promise<Response> => {
   if (pathname.startsWith("/d/")) {
     const pathParts = pathname.slice(3).split("/");
     const pathId = pathParts[0] ?? "";
-    const assetPath = pathParts.slice(1).join("/") || "index.html";
+    const rawPath = pathParts.slice(1).join("/");
     if (SHORT_ID_REGEX.test(pathId)) {
-      return servePathBasedPreview(req, { id: pathId, isShortId: true }, assetPath);
+      return servePathBasedPreview(req, { id: pathId, isShortId: true }, rawPath);
     }
     if (UUID_REGEX.test(pathId)) {
-      return servePathBasedPreview(req, { id: pathId, isShortId: false }, assetPath);
+      return servePathBasedPreview(req, { id: pathId, isShortId: false }, rawPath);
     }
   }
 

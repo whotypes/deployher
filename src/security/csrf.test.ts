@@ -3,10 +3,18 @@ import { describe, expect, it, mock } from "bun:test";
 mock.module("../config", () => ({
   config: {
     devDomain: "localhost",
-    prodDomain: "pdploy.example.com",
+    prodDomain: "deployher.example.com",
     devProtocol: "http",
     prodProtocol: "https",
     port: 3001,
+    build: {
+      workers: 2,
+      accountMaxConcurrent: 1,
+      accountSlotTtlSeconds: 21600,
+      repoCredentialTtlSeconds: 3600,
+      reclaimIdleMs: 5000,
+      pendingHeartbeatMs: 30000
+    },
     preview: {
       assetBaseUrl: undefined
     },
@@ -19,7 +27,7 @@ mock.module("../config", () => ({
     }
   },
   getDevBaseUrl: () => "http://localhost:3001",
-  getProdBaseUrl: () => "https://pdploy.example.com",
+  getProdBaseUrl: () => "https://deployher.example.com",
   buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`
 }));
 
@@ -34,7 +42,7 @@ describe("csrf validation", () => {
     const request = new Request("http://localhost:3001/projects/123", {
       method: "POST",
       headers: {
-        cookie: `pdploy_csrf=${token}`,
+        cookie: `deployher_csrf=${token}`,
         origin: "http://localhost:3001",
         "sec-fetch-site": "same-origin",
         "x-csrf-token": token
@@ -50,7 +58,7 @@ describe("csrf validation", () => {
     const request = new Request("http://localhost:3001/projects/123", {
       method: "DELETE",
       headers: {
-        cookie: `pdploy_csrf=${token}`,
+        cookie: `deployher_csrf=${token}`,
         origin: "https://evil.example.com",
         "sec-fetch-site": "cross-site",
         "x-csrf-token": token
@@ -68,7 +76,7 @@ describe("csrf validation", () => {
     const request = new Request("http://localhost:3001/projects/123", {
       method: "PATCH",
       headers: {
-        cookie: "pdploy_csrf=expected-token",
+        cookie: "deployher_csrf=expected-token",
         origin: "http://localhost:3001",
         "sec-fetch-site": "same-origin",
         "x-csrf-token": "wrong-token"
@@ -83,16 +91,16 @@ describe("csrf validation", () => {
   });
 
   it("issues a reusable csrf cookie when the request has none", () => {
-    const request = new Request("https://pdploy.example.com/projects/123", {
+    const request = new Request("https://deployher.example.com/projects/123", {
       headers: {
-        origin: "https://pdploy.example.com"
+        origin: "https://deployher.example.com"
       }
     });
 
     const csrf = ensureCsrfToken(request);
     expect(csrf.token.length).toBeGreaterThan(0);
     expect(csrf.shouldSetCookie).toBe(true);
-    expect(csrf.cookieValue).toContain("pdploy_csrf=");
+    expect(csrf.cookieValue).toContain("deployher_csrf=");
     expect(csrf.cookieValue).toContain("Secure");
   });
 });

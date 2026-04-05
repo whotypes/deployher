@@ -1,3 +1,4 @@
+import "../env/bootstrap";
 import path from "path";
 import postcss from "postcss";
 import tailwindcss from "@tailwindcss/postcss";
@@ -8,14 +9,18 @@ export const clientOutDir = path.join(root, "dist", "client");
 const clientEntrypoints = [
   path.join(root, "src", "ui", "client", "sidebar-hydrate.tsx"),
   path.join(root, "src", "ui", "client", "layout.ts"),
+  path.join(root, "src", "ui", "client", "project-switcher-mount.tsx"),
   path.join(root, "src", "ui", "client", "layout-prefs-menu.tsx"),
-  path.join(root, "src", "ui", "client", "projects-page.tsx"),
-  path.join(root, "src", "ui", "client", "deployment-detail-page.ts"),
-  path.join(root, "src", "ui", "client", "project-detail-page.ts"),
-  path.join(root, "src", "ui", "client", "project-settings-page.ts"),
-  path.join(root, "src", "ui", "client", "account-page.ts"),
-  path.join(root, "src", "ui", "client", "admin-examples-page.ts"),
-  path.join(root, "src", "ui", "client", "health-page.ts")
+  path.join(root, "src", "ui", "client", "new-project-page.tsx"),
+  path.join(root, "src", "ui", "client", "deployment-detail-page.tsx"),
+  path.join(root, "src", "ui", "client", "project-detail-page.tsx"),
+  path.join(root, "src", "ui", "client", "project-settings-page.tsx"),
+  path.join(root, "src", "ui", "client", "account-page.tsx"),
+  path.join(root, "src", "ui", "client", "admin-examples-page.tsx"),
+  path.join(root, "src", "ui", "client", "health-page.tsx"),
+  path.join(root, "src", "ui", "client", "project-observability-page.tsx"),
+  path.join(root, "src", "ui", "client", "dashboard-page.tsx"),
+  path.join(root, "src", "ui", "client", "landing-page.tsx")
 ];
 
 const appCssPath = path.join(root, "src", "ui", "client", "globals.css");
@@ -31,7 +36,7 @@ const parseBoolean = (value: string | undefined): boolean => {
 
 const shouldSkipClientBuild = (force: boolean): boolean => {
   if (force) return false;
-  return parseBoolean(Bun.env.SKIP_CLIENT_BUILD);
+  return parseBoolean(process.env.SKIP_CLIENT_BUILD ?? Bun.env.SKIP_CLIENT_BUILD);
 };
 
 const compileCss = async (): Promise<void> => {
