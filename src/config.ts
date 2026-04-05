@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./env/bootstrap";
 
 const rawEnv: Record<string, string | undefined> = { ...process.env, ...Bun.env };
 
@@ -80,9 +80,7 @@ export const config = {
   },
   runner: {
     url: normalizeUrl(rawEnv.RUNNER_URL),
-    trustedLocalDocker: parseBoolean(rawEnv.TRUSTED_LOCAL_DOCKER, false),
     previewEnabled: parseBoolean(rawEnv.RUNNER_PREVIEW_ENABLED, false),
-    network: normalizeUrl(rawEnv.RUNNER_PREVIEW_NETWORK),
     sharedSecret: normalizeUrl(rawEnv.RUNNER_SHARED_SECRET)
   },
   s3: {
@@ -91,6 +89,19 @@ export const config = {
     bucket: (rawEnv.S3_BUCKET ?? rawEnv.AWS_BUCKET ?? "").trim() || undefined,
     accessKeyId: (rawEnv.S3_ACCESS_KEY_ID ?? rawEnv.AWS_ACCESS_KEY_ID ?? "").trim() || undefined,
     secretAccessKey: (rawEnv.S3_SECRET_ACCESS_KEY ?? rawEnv.AWS_SECRET_ACCESS_KEY ?? "").trim() || undefined
+  },
+  observability: {
+    trustProxy: parseBoolean(rawEnv.OBSERVABILITY_TRUST_PROXY, false),
+    previewTrafficSampleRate: Math.min(
+      1,
+      Math.max(0, Number.parseFloat(rawEnv.PREVIEW_TRAFFIC_SAMPLE_RATE ?? "0.02") || 0.02)
+    ),
+    queueStallCheckIntervalMs: Math.max(30_000, parseInteger(rawEnv.QUEUE_STALL_CHECK_INTERVAL_MS, 60_000))
+  },
+  siteMetadata: {
+    fetchOrigin: normalizeUrl(rawEnv.SITE_META_FETCH_ORIGIN),
+    fetchTimeoutMs: Math.min(30_000, Math.max(3_000, parseInteger(rawEnv.SITE_META_FETCH_TIMEOUT_MS, 10_000))),
+    maxHtmlBytes: Math.min(2 * 1024 * 1024, Math.max(64_000, parseInteger(rawEnv.SITE_META_MAX_HTML_BYTES, 786_432)))
   }
 };
 
