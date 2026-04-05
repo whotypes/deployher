@@ -5,9 +5,10 @@ type BuildLogTerminalProps = {
   logPath: string;
   children: ReactNode;
   className?: string;
+  streamSlot?: ReactNode;
 };
 
-export const BuildLogTerminal = ({ logPath, children, className }: BuildLogTerminalProps) => {
+export const BuildLogTerminal = ({ logPath, children, className, streamSlot }: BuildLogTerminalProps) => {
   return (
     <div
       className={cn(
@@ -42,7 +43,9 @@ export const BuildLogTerminal = ({ logPath, children, className }: BuildLogTermi
           <div
             id="log-stream-state"
             className="flex min-h-5 max-w-[45%] shrink-0 items-center justify-end gap-2 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground sm:max-w-none"
-          />
+          >
+            {streamSlot}
+          </div>
         </div>
         <div className="relative min-h-0 flex-1">
           {children}
