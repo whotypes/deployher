@@ -4,7 +4,8 @@ infra/meta
 infra/data
 infra/.garage.env
 .env
-.pdploy-venv
-.pdploy-venv-*
+config/local.toml
+.deployher-venv
+.deployher-venv-*
 logs/
 .cursor/

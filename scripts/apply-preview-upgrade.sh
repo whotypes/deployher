@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Requires Bun on host (migrate + build:client). For migrations only without Bun: ./infra/dev.sh migrate (Docker).
+# Requires Bun on host (migrate + build:client). For migrations only without Bun: deployher migrate (Docker).
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
