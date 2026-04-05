@@ -1,10 +1,7 @@
 import { renderToReadableStream } from "react-dom/server";
 import type { LayoutUser, SidebarProjectSummary } from "./Layout";
 import { Layout } from "./Layout";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 
 export type AccountPageData = {
   pathname: string;
@@ -27,7 +24,7 @@ const providerLabel = (providerId: string): string => {
 
 const AccountPage = ({ data }: { data: AccountPageData }) => (
   <Layout
-    title="Account · pdploy"
+    title="Account · Deployher"
     pathname={data.pathname}
     user={data.user}
     scriptSrc="/assets/account-page.js"
@@ -39,10 +36,16 @@ const AccountPage = ({ data }: { data: AccountPageData }) => (
       type="application/json"
       id="account-page-bootstrap"
       dangerouslySetInnerHTML={{
-        __html: JSON.stringify({ hasRepoAccess: data.hasRepoAccess })
+        __html: JSON.stringify({ hasRepoAccess: data.hasRepoAccess }).replace(/</g, "\\u003c")
       }}
     />
-    <h1 className="text-2xl font-semibold mb-6">Account</h1>
+    <div className="mb-8">
+      <p className="eyebrow-label mb-2">You</p>
+      <h1 className="font-serif text-3xl font-semibold tracking-tight md:text-4xl">Account</h1>
+      <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+        Profile, linked providers, and how the UI is laid out for you.
+      </p>
+    </div>
 
     <div className="max-w-xl space-y-4">
       <Card className="border-border/80 bg-muted/15">
@@ -201,58 +204,8 @@ const AccountPage = ({ data }: { data: AccountPageData }) => (
           <CardTitle className="text-base">Workspace preferences</CardTitle>
           <CardDescription>Stored in this browser only.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex items-center justify-between gap-3">
-            <label htmlFor="pref-open-after-create" className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-              Open project after create
-            </label>
-            <input
-              id="pref-open-after-create"
-              type="checkbox"
-              className="size-4 shrink-0 rounded border border-input bg-background text-primary shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Open project after create"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="pref-preferred-branch" className="text-sm font-medium leading-none">
-              Preferred branch for new projects
-            </label>
-            <Input
-              id="pref-preferred-branch"
-              type="text"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="main"
-              aria-label="Preferred branch for new projects"
-            />
-            <p className="text-xs text-muted-foreground">When you import from GitHub, this branch is selected if it exists.</p>
-          </div>
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-medium">Default “new project” tab</legend>
-            <p className="text-xs text-muted-foreground">Which tab opens first in the new project dialog.</p>
-            <div className="flex flex-col gap-2.5">
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-normal">
-                <input
-                  id="pref-create-mode-import"
-                  type="radio"
-                  name="pdploy-default-create-mode"
-                  value="import"
-                  className="size-4 shrink-0 border border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                />
-                Import from GitHub
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-normal">
-                <input
-                  id="pref-create-mode-manual"
-                  type="radio"
-                  name="pdploy-default-create-mode"
-                  value="manual"
-                  className="size-4 shrink-0 border border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                />
-                Manual URL
-              </label>
-            </div>
-          </fieldset>
+        <CardContent>
+          <div id="account-workspace-root" />
         </CardContent>
       </Card>
 
@@ -260,17 +213,8 @@ const AccountPage = ({ data }: { data: AccountPageData }) => (
         <CardHeader>
           <CardTitle className="text-base text-destructive">Danger zone</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Permanently delete your account and all associated data.
-          </p>
-          <Separator />
-          <form id="delete-account-form" method="post" action="/account/delete">
-            <input type="hidden" name="_csrf" value={data.csrfToken} />
-            <Button type="submit" variant="destructive" aria-label="Delete account permanently">
-              Delete account
-            </Button>
-          </form>
+        <CardContent>
+          <div id="account-delete-root" />
         </CardContent>
       </Card>
     </div>

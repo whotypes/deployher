@@ -2,11 +2,12 @@ import { ExternalLink, FileTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { renderToReadableStream } from "react-dom/server";
 import type { LayoutUser, SidebarProjectSummary } from "./Layout";
 import { Layout } from "./Layout";
+import { ProjectSiteGlyph } from "./client/ProjectSiteGlyph";
 
 type FrameworkHint = "auto" | "nextjs" | "node" | "python" | "static";
 
@@ -19,7 +20,7 @@ export type ProjectListCurrentDeployment = {
   serveStrategy: string;
   previewResolution: { code: string; detail?: string } | null;
   buildPreviewMode: "auto" | "static" | "server" | null;
-  buildServerPreviewTarget: "isolated-runner" | "trusted-local-docker" | null;
+  buildServerPreviewTarget: "isolated-runner" | null;
   createdAt: string;
   finishedAt: string | null;
 };
@@ -33,7 +34,7 @@ type Project = {
   projectRootDir: string;
   frameworkHint: FrameworkHint;
   previewMode: "auto" | "static" | "server";
-  serverPreviewTarget: "isolated-runner" | "trusted-local-docker";
+  serverPreviewTarget: "isolated-runner";
   runtimeImageMode: "auto" | "platform" | "dockerfile";
   dockerfilePath: string | null;
   dockerBuildTarget: string | null;
@@ -43,6 +44,7 @@ type Project = {
   updatedAt: string;
   currentDeploymentId: string | null;
   currentDeployment: ProjectListCurrentDeployment | null;
+  siteIconUrl: string | null;
 };
 
 export type ProjectsPageData = {
@@ -182,32 +184,25 @@ const ProjectsStatusBar = ({ projects }: { projects: Project[] }) => {
   const segments = segmentDefs.filter((s) => s.count > 0);
 
   return (
-    <div className="mb-6 space-y-3">
-      <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <p>
-          <span className="text-muted-foreground">Projects </span>
-          <span className="font-semibold tabular-nums text-foreground">{n}</span>
-        </p>
-        <p>
-          <span className="text-muted-foreground">Live </span>
-          <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-            {counts.success}
-          </span>
-        </p>
-        <p>
-          <span className="text-muted-foreground">Need attention </span>
-          <span className="font-semibold tabular-nums text-destructive">{counts.failed}</span>
-        </p>
-        <p>
-          <span className="text-muted-foreground">In flight </span>
-          <span className="font-semibold tabular-nums text-amber-600 dark:text-amber-400">
-            {counts.building + counts.queued}
-          </span>
-        </p>
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          <span className="tabular-nums text-foreground">{n}</span> projects
+        </span>
+        <span>
+          <span className="tabular-nums text-emerald-600 dark:text-emerald-400">{counts.success}</span> live
+        </span>
+        <span>
+          <span className="tabular-nums text-destructive">{counts.failed}</span> failed
+        </span>
+        <span>
+          <span className="tabular-nums text-amber-600 dark:text-amber-400">{counts.building + counts.queued}</span>{" "}
+          in flight
+        </span>
       </div>
       {n > 0 ? (
         <div
-          className="flex h-2 w-full overflow-hidden rounded-full bg-muted/60"
+          className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
           role="img"
           aria-label={`Deployment status mix: ${segments.map((s) => `${s.label} ${s.count}`).join(", ")}`}
         >
@@ -225,237 +220,219 @@ const ProjectsStatusBar = ({ projects }: { projects: Project[] }) => {
   );
 };
 
+const GitHubToolbarBadge = ({ github }: { github: ProjectsPageData["github"] }) => {
+  if (!github.linked) {
+    return (
+      <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+        <a href="/account">GitHub · connect</a>
+      </Button>
+    );
+  }
+  if (!github.hasRepoAccess) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-8 border-amber-500/40 text-xs text-amber-700 dark:text-amber-400"
+        asChild
+      >
+        <a href="/account">GitHub · limited access</a>
+      </Button>
+    );
+  }
+  return (
+    <span className="inline-flex h-8 items-center rounded-md border border-border/60 px-2.5 text-xs text-muted-foreground">
+      GitHub
+    </span>
+  );
+};
+
+const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
+  const dep = project.currentDeployment;
+  const hint = dep ? failureHint(dep) : null;
+  const duration = dep && dep.finishedAt ? formatBuildDuration(dep.createdAt, dep.finishedAt) : null;
+  const updatedLabel = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(project.updatedAt));
+
+  return (
+    <Card
+      className={cn(
+        "dashboard-surface relative border-border/80 shadow-none transition-colors hover:border-border",
+        "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background"
+      )}
+    >
+      <CardContent className="relative p-4">
+        <a
+          href={`/projects/${project.id}`}
+          className="absolute inset-0 z-0 rounded-lg outline-none"
+          aria-label={`Open project ${project.name}`}
+        />
+        <div className="relative z-10 space-y-3 pointer-events-none">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <ProjectSiteGlyph name={project.name} siteIconUrl={project.siteIconUrl} />
+              <span className="truncate text-base font-semibold text-foreground">{project.name}</span>
+            </div>
+            <a
+              href={project.repoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="pointer-events-auto mt-0.5 block truncate font-mono text-xs text-muted-foreground no-underline hover:text-foreground hover:underline"
+            >
+              {project.repoUrl.replace("https://github.com/", "")}
+            </a>
+          </div>
+          <time className="shrink-0 text-right text-[0.65rem] text-muted-foreground tabular-nums" dateTime={project.updatedAt}>
+            {updatedLabel}
+          </time>
+        </div>
+
+        <div className="flex flex-wrap gap-1">
+          <Badge variant="outline" className="font-mono text-[0.65rem]">
+            {project.branch}
+          </Badge>
+          <Badge variant="secondary" className="text-[0.65rem] font-normal">
+            {frameworkHintLabel(project.frameworkHint)}
+          </Badge>
+          {project.projectRootDir !== "." ? (
+            <Badge variant="outline" className="font-mono text-[0.65rem]">
+              {project.projectRootDir}
+            </Badge>
+          ) : null}
+        </div>
+
+        <Separator className="bg-border/60" />
+
+        {dep ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <a href={deploymentDetailHref(dep.id)} className="pointer-events-auto no-underline">
+                <Badge variant={statusVariant(dep.status)} className="gap-1 text-xs">
+                  {statusLabel(dep.status)}
+                </Badge>
+              </a>
+              <a
+                href={deploymentDetailHref(dep.id)}
+                className="pointer-events-auto font-mono text-xs text-muted-foreground no-underline hover:text-foreground hover:underline"
+              >
+                {dep.shortId}
+              </a>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {deploymentBuildTypeSummary(dep)}
+              {duration ? ` · ${duration}` : null}
+            </p>
+            <p className="text-[0.7rem] text-muted-foreground">
+              Started{" "}
+              {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+                new Date(dep.createdAt)
+              )}
+              {dep.finishedAt ? (
+                <>
+                  {" "}
+                  · Finished{" "}
+                  {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+                    new Date(dep.finishedAt)
+                  )}
+                </>
+              ) : dep.status === "building" || dep.status === "queued" ? (
+                <span className="text-amber-600/90 dark:text-amber-400/90"> · Still running</span>
+              ) : null}
+            </p>
+            {dep.status === "failed" && hint ? (
+              <p className="line-clamp-2 text-xs leading-snug text-destructive/90" title={hint}>
+                {truncateText(hint, 280)}
+              </p>
+            ) : null}
+            {dep.previewResolution?.code && dep.status !== "failed" ? (
+              <p
+                className="truncate text-[0.7rem] text-muted-foreground"
+                title={dep.previewResolution.detail ?? dep.previewResolution.code}
+              >
+                {dep.previewResolution.detail ?? dep.previewResolution.code}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <Badge variant="secondary" className="w-fit text-xs">
+            No deploys
+          </Badge>
+        )}
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {dep && dep.status === "failed" ? (
+            <Button variant="destructive" size="sm" className="pointer-events-auto h-8 gap-1.5" asChild>
+              <a href={deploymentLogsHref(dep.id)}>
+                <FileTerminal className="size-3.5" aria-hidden />
+                Logs
+              </a>
+            </Button>
+          ) : null}
+          {dep && dep.status === "success" && dep.previewUrl ? (
+            <Button size="sm" className="pointer-events-auto h-8 gap-1.5" asChild>
+              <a href={dep.previewUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-3.5" aria-hidden />
+                Preview
+              </a>
+            </Button>
+          ) : null}
+          {dep &&
+          (dep.status === "building" ||
+            dep.status === "queued" ||
+            (dep.status === "success" && !dep.previewUrl)) ? (
+            <Button variant="outline" size="sm" className="pointer-events-auto h-8" asChild>
+              <a href={deploymentDetailHref(dep.id)}>Deployment</a>
+            </Button>
+          ) : null}
+        </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
   <Layout
-    title="Projects · pdploy"
+    title="Projects · Deployher"
     pathname={data.pathname}
-    scriptSrc="/assets/projects-page.js"
     user={data.user ?? null}
     csrfToken={data.csrfToken}
     sidebarProjects={data.sidebarProjects}
     breadcrumbs={[{ label: "Projects" }]}
   >
-    <script
-      type="application/json"
-      id="projects-page-bootstrap"
-      dangerouslySetInnerHTML={{
-        __html: JSON.stringify({
-          hasRepoAccess: data.github.hasRepoAccess,
-          githubLinked: data.github.linked
-        })
-      }}
-    />
-    <div
-      id="notification"
-      aria-live="polite"
-      className="top-17 fixed right-4 z-50 hidden rounded-md px-4 py-3 text-sm font-medium shadow-lg"
-    />
-
-    <div className="mb-2">
-      <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-      <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-        Latest deployment per project, quick links to logs and previews, and what went wrong when a build
-        fails.
-      </p>
-    </div>
-
-    <ProjectsStatusBar projects={data.projects} />
-
-    <div className="flex flex-col gap-8">
-      <div className="min-w-0 flex-1">
-        <Card>
-          <CardContent className="p-0">
-            {data.projects.length === 0 ? (
-              <p className="p-6 text-sm text-muted-foreground">
-                No projects yet.{" "}
-                <a href="#new" className="font-medium text-foreground">
-                  Create one
-                </a>
-                .
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="min-w-[9rem]">Project</TableHead>
-                    <TableHead className="hidden min-w-[7rem] lg:table-cell">Branch &amp; stack</TableHead>
-                    <TableHead className="min-w-[10rem]">Current deploy</TableHead>
-                    <TableHead className="hidden min-w-[12rem] xl:table-cell">Details</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                    <TableHead className="hidden text-right sm:table-cell">Updated</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.projects.map((project) => {
-                    const dep = project.currentDeployment;
-                    const hint = dep ? failureHint(dep) : null;
-                    const duration =
-                      dep && dep.finishedAt ? formatBuildDuration(dep.createdAt, dep.finishedAt) : null;
-
-                    return (
-                      <TableRow key={project.id}>
-                        <TableCell className="min-w-0 align-top">
-                          <div className="flex min-w-0 flex-col gap-1">
-                            <a
-                              href={`/projects/${project.id}`}
-                              className="min-w-0 truncate font-medium no-underline hover:underline"
-                            >
-                              {project.name}
-                            </a>
-                            <a
-                              href={project.repoUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block min-w-0 truncate text-xs text-muted-foreground no-underline hover:underline"
-                            >
-                              {project.repoUrl.replace("https://github.com/", "")}
-                            </a>
-                            <div className="flex flex-wrap gap-1 lg:hidden">
-                              <Badge variant="outline" className="font-mono text-[0.65rem]">
-                                {project.branch}
-                              </Badge>
-                              <Badge variant="secondary" className="text-[0.65rem] font-normal">
-                                {frameworkHintLabel(project.frameworkHint)}
-                              </Badge>
-                              {project.projectRootDir !== "." ? (
-                                <Badge variant="outline" className="font-mono text-[0.65rem]">
-                                  {project.projectRootDir}
-                                </Badge>
-                              ) : null}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden align-top lg:table-cell">
-                          <div className="flex flex-col gap-1.5">
-                            <Badge variant="outline" className="w-fit font-mono text-[0.7rem]">
-                              {project.branch}
-                            </Badge>
-                            <div className="flex flex-wrap gap-1">
-                              <Badge variant="secondary" className="text-[0.65rem] font-normal">
-                                {frameworkHintLabel(project.frameworkHint)}
-                              </Badge>
-                              {project.projectRootDir !== "." ? (
-                                <Badge variant="outline" className="font-mono text-[0.65rem]">
-                                  {project.projectRootDir}
-                                </Badge>
-                              ) : null}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="min-w-0 align-top">
-                          {dep ? (
-                            <div className="flex min-w-0 flex-col gap-1.5">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <a href={deploymentDetailHref(dep.id)} className="no-underline">
-                                  <Badge variant={statusVariant(dep.status)} className="gap-1">
-                                    {statusLabel(dep.status)}
-                                  </Badge>
-                                </a>
-                                <a
-                                  href={deploymentDetailHref(dep.id)}
-                                  className="font-mono text-[0.7rem] text-muted-foreground no-underline hover:text-foreground hover:underline"
-                                >
-                                  {dep.shortId}
-                                </a>
-                              </div>
-                              <p className="text-[0.7rem] leading-snug text-muted-foreground">
-                                {deploymentBuildTypeSummary(dep)}
-                                {duration ? ` · ${duration}` : null}
-                              </p>
-                              {dep.status === "failed" && hint ? (
-                                <p
-                                  className="line-clamp-2 text-[0.75rem] leading-snug text-destructive/90"
-                                  title={hint}
-                                >
-                                  {truncateText(hint, 220)}
-                                </p>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <Badge variant="secondary">No deploys</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="hidden max-w-[16rem] align-top xl:table-cell">
-                          {dep ? (
-                            <ul className="space-y-1 text-[0.7rem] text-muted-foreground">
-                              <li>
-                                <span className="text-foreground/80">Started </span>
-                                {new Intl.DateTimeFormat(undefined, {
-                                  dateStyle: "medium",
-                                  timeStyle: "short"
-                                }).format(new Date(dep.createdAt))}
-                              </li>
-                              {dep.finishedAt ? (
-                                <li>
-                                  <span className="text-foreground/80">Finished </span>
-                                  {new Intl.DateTimeFormat(undefined, {
-                                    dateStyle: "medium",
-                                    timeStyle: "short"
-                                  }).format(new Date(dep.finishedAt))}
-                                </li>
-                              ) : dep.status === "building" || dep.status === "queued" ? (
-                                <li className="text-amber-600/90 dark:text-amber-400/90">Still running</li>
-                              ) : null}
-                              {dep.previewResolution?.code && dep.status !== "failed" ? (
-                                <li className="truncate" title={dep.previewResolution.detail ?? dep.previewResolution.code}>
-                                  {dep.previewResolution.detail ?? dep.previewResolution.code}
-                                </li>
-                              ) : null}
-                            </ul>
-                          ) : (
-                            <span className="text-[0.7rem] text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <div className="flex flex-col items-end gap-2">
-                            {dep && dep.status === "failed" ? (
-                              <Button variant="destructive" size="sm" className="h-8 gap-1.5" asChild>
-                                <a href={deploymentLogsHref(dep.id)}>
-                                  <FileTerminal className="size-3.5" aria-hidden />
-                                  Open logs
-                                </a>
-                              </Button>
-                            ) : null}
-                            {dep && dep.status === "success" && dep.previewUrl ? (
-                              <Button size="sm" className="h-8 gap-1.5" asChild>
-                                <a href={dep.previewUrl} target="_blank" rel="noopener noreferrer">
-                                  <ExternalLink className="size-3.5" aria-hidden />
-                                  Preview
-                                </a>
-                              </Button>
-                            ) : null}
-                            {dep &&
-                            (dep.status === "building" ||
-                              dep.status === "queued" ||
-                              (dep.status === "success" && !dep.previewUrl)) ? (
-                              <Button variant="outline" size="sm" className="h-8" asChild>
-                                <a href={deploymentDetailHref(dep.id)}>Deployment</a>
-                              </Button>
-                            ) : null}
-                            {!dep ? (
-                              <Button variant="outline" size="sm" className="h-8" asChild>
-                                <a href={`/projects/${project.id}`}>Open</a>
-                              </Button>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden align-top text-right text-sm text-muted-foreground sm:table-cell">
-                          {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-                            new Date(project.updatedAt)
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+    <div className="mb-6 space-y-4 rounded-lg border border-border/70 bg-card/20 p-4 md:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Projects</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <GitHubToolbarBadge github={data.github} />
+          <Button size="sm" asChild>
+            <a href="/projects/new">Add project</a>
+          </Button>
+        </div>
       </div>
-
-      <div id="projects-client-root" className="hidden" aria-hidden="true" />
+      <ProjectsStatusBar projects={data.projects} />
     </div>
+
+    {data.projects.length === 0 ? (
+      <Card className="dashboard-surface border-border/80 shadow-none">
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          No projects yet.{" "}
+          <a href="/projects/new" className="font-medium text-foreground no-underline hover:underline">
+            Add one
+          </a>
+          .
+        </CardContent>
+      </Card>
+    ) : (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {data.projects.map((project) => (
+          <ProjectWorkspaceCard key={project.id} project={project} />
+        ))}
+      </div>
+    )}
   </Layout>
 );
 
