@@ -1,0 +1,255 @@
+import * as React from "react";
+import { Button } from "@/components/ui/button";
+import { fetchWithCsrf } from "./fetchWithCsrf";
+import { showPageToast } from "./pageNotifications";
+import { RefreshCw } from "lucide-react";
+
+export type ProjectDetailSiteMetaBootstrap = {
+  siteIconUrl: string | null;
+  siteOgImageUrl: string | null;
+  siteMetaFetchedAt: string | null;
+  siteMetaError: string | null;
+};
+
+export type ProjectDeploymentRowBootstrap = {
+  id: string;
+  shortId: string;
+  status: string;
+  serveStrategy: "static" | "server";
+  buildPreviewMode: "auto" | "static" | "server" | null;
+  previewUrl: string | null;
+  createdAt: string;
+};
+
+export type ProjectDetailBootstrap = {
+  projectId: string;
+  repoUrl: string;
+  branch: string;
+  projectRootDir: string;
+  currentPreviewUrl: string | null;
+  /** true if this project has at least one deployment that finished successfully */
+  hasSuccessfulDeployment: boolean;
+  siteMeta: ProjectDetailSiteMetaBootstrap | null;
+  deployments?: ProjectDeploymentRowBootstrap[];
+  currentDeploymentId?: string | null;
+};
+
+type SiteMetadataRefreshOk = {
+  ok: true;
+  siteIconUrl: string | null;
+  siteOgImageUrl: string | null;
+  siteMetaFetchedAt: string;
+};
+
+type ApiErrorBody = { error?: string };
+
+const notify = (message: string, variant: "success" | "error"): void => {
+  const notification = document.getElementById("notification");
+  if (!notification) return;
+  showPageToast(notification, message, variant);
+};
+
+export const ProjectDetailSetCurrentRoot = ({
+  projectId
+}: {
+  projectId: string;
+}): React.ReactElement | null => {
+  const [pendingDeploymentId, setPendingDeploymentId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const onDocClick = (ev: MouseEvent): void => {
+      const target = ev.target;
+      if (!(target instanceof Element)) return;
+      const el = target.closest("[data-set-current-deployment]");
+      if (!el) return;
+      const depId = el.getAttribute("data-set-current-deployment")?.trim();
+      if (!depId) return;
+      ev.preventDefault();
+      void (async () => {
+        setPendingDeploymentId(depId);
+        try {
+          const response = await fetchWithCsrf(`/api/projects/${projectId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ currentDeploymentId: depId })
+          });
+          const payload = (await response.json().catch(() => ({}))) as { error?: string };
+          if (!response.ok) {
+            throw new Error(payload.error ?? "Failed to update current deployment");
+          }
+          notify("This deployment is now the project current.", "success");
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 400);
+        } catch (err) {
+          notify(err instanceof Error ? err.message : "Failed to set current deployment", "error");
+        } finally {
+          setPendingDeploymentId(null);
+        }
+      })();
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [projectId]);
+
+  React.useEffect(() => {
+    document.querySelectorAll<HTMLElement>("[data-set-current-deployment]").forEach((node) => {
+      if (node instanceof HTMLButtonElement) {
+        node.disabled = pendingDeploymentId !== null;
+      } else {
+        node.toggleAttribute("data-pending-set-current", pendingDeploymentId !== null);
+        node.setAttribute("aria-disabled", pendingDeploymentId !== null ? "true" : "false");
+        node.classList.toggle("pointer-events-none", pendingDeploymentId !== null);
+        node.classList.toggle("opacity-50", pendingDeploymentId !== null);
+      }
+    });
+  }, [pendingDeploymentId]);
+
+  return null;
+};
+
+export const ProjectDetailHeroSitePreview = ({
+  projectId,
+  previewUrl,
+  initial
+}: {
+  projectId: string;
+  previewUrl: string;
+  initial: ProjectDetailSiteMetaBootstrap;
+}): React.ReactElement => {
+  const [siteIconUrl, setSiteIconUrl] = React.useState<string | null>(initial.siteIconUrl);
+  const [siteOgImageUrl, setSiteOgImageUrl] = React.useState<string | null>(initial.siteOgImageUrl);
+  const [siteMetaFetchedAt, setSiteMetaFetchedAt] = React.useState<string | null>(initial.siteMetaFetchedAt);
+  const [siteMetaError, setSiteMetaError] = React.useState<string | null>(initial.siteMetaError);
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const runRefresh = React.useCallback(async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      const response = await fetchWithCsrf(`/api/projects/${projectId}/site-metadata/refresh`, {
+        method: "POST"
+      });
+      const raw = (await response.json().catch(() => ({}))) as SiteMetadataRefreshOk | ApiErrorBody;
+      if (!response.ok) {
+        const message = "error" in raw && typeof raw.error === "string" ? raw.error : "Refresh failed";
+        setSiteMetaError(message);
+        return;
+      }
+      if ("ok" in raw && raw.ok === true) {
+        setSiteIconUrl(raw.siteIconUrl ?? null);
+        setSiteOgImageUrl(raw.siteOgImageUrl ?? null);
+        setSiteMetaFetchedAt(raw.siteMetaFetchedAt ?? null);
+        setSiteMetaError(null);
+      }
+    } catch {
+      setSiteMetaError("Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [projectId]);
+
+  React.useEffect(() => {
+    void runRefresh();
+  }, [runRefresh]);
+
+  return (
+    <div className="relative size-full min-w-0">
+      <a
+        href={previewUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Open live preview"
+        className="group relative flex size-full overflow-hidden rounded-lg border border-border/80 bg-muted/25 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+      >
+        {siteOgImageUrl ? (
+          <img
+            src={siteOgImageUrl}
+            alt=""
+            className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <div className="flex size-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
+            {refreshing ? "Fetching preview image…" : "No Open Graph image yet"}
+          </div>
+        )}
+      </a>
+      {siteIconUrl ? (
+        <img
+          src={siteIconUrl}
+          alt=""
+          width={36}
+          height={36}
+          className="absolute left-3 top-3 z-10 size-9 rounded-md border border-border bg-background object-cover shadow-sm"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : null}
+      <Button
+        type="button"
+        variant="secondary"
+        size="icon"
+        disabled={refreshing}
+        onClick={() => void runRefresh()}
+        className="absolute right-2 top-2 z-20 size-9 border border-border/80 bg-background/90 shadow-sm backdrop-blur-sm"
+        aria-label={refreshing ? "Refreshing preview metadata" : "Refresh preview image from live site"}
+        title="Refresh preview image"
+      >
+        <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden />
+      </Button>
+      {siteMetaError ? (
+        <p className="mt-2 text-xs text-destructive" role="status">
+          {siteMetaError}
+        </p>
+      ) : null}
+      {siteMetaFetchedAt && !siteMetaError ? (
+        <p className="mt-1.5 text-[0.65rem] text-muted-foreground tabular-nums">
+          Updated {new Date(siteMetaFetchedAt).toLocaleString()}
+        </p>
+      ) : null}
+    </div>
+  );
+};
+
+export const ProjectDetailDeployTrigger = ({
+  projectId,
+  label,
+  className
+}: {
+  projectId: string;
+  label: string;
+  className?: string;
+}): React.ReactElement => {
+  const [pending, setPending] = React.useState(false);
+
+  const handleDeploy = async (): Promise<void> => {
+    if (!projectId || pending) return;
+    setPending(true);
+    try {
+      const response = await fetchWithCsrf(`/projects/${projectId}/deployments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const data = (await response.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to create deployment");
+      }
+      notify("Deployment started!", "success");
+      window.setTimeout(() => {
+        window.location.href = `/deployments/${data.id ?? ""}`;
+      }, 500);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Failed to create deployment", "error");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Button type="button" disabled={pending} className={className} onClick={() => void handleDeploy()}>
+      {label}
+    </Button>
+  );
+};
