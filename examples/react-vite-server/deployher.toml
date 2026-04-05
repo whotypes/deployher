@@ -1,0 +1,6 @@
+# Server preview: after `vite build`, the runner starts `npm run preview` (vite preview).
+# vite.config.ts maps preview.port to process.env.PORT (Deployher sets PORT to runtime_container_port).
+
+[deployher]
+preview_mode = "server"
+runtime_container_port = 3000
