@@ -4,7 +4,7 @@ import type { BuildStrategy } from "../types";
 
 type PyprojectToml = {
   tool?: {
-    pdploy?: {
+    deployher?: {
       buildCommand?: unknown;
       outputDir?: unknown;
     };
@@ -36,19 +36,20 @@ const formatCommandFailure = (
 const resolveBuildConfigFromPyproject = (
   pyproject: PyprojectToml | null
 ): { buildCommand: string[]; outputDir: string } | null => {
-  const rawBuildCommand = pyproject?.tool?.pdploy?.buildCommand;
-  const rawOutputDir = pyproject?.tool?.pdploy?.outputDir;
+  const section = pyproject?.tool?.deployher;
+  const rawBuildCommand = section?.buildCommand;
+  const rawOutputDir = section?.outputDir;
 
   if (!Array.isArray(rawBuildCommand) || rawBuildCommand.length === 0) {
     return null;
   }
 
   if (!rawBuildCommand.every((item) => typeof item === "string" && item.trim().length > 0)) {
-    throw new Error("[tool.pdploy].buildCommand in pyproject.toml must be a non-empty string array");
+    throw new Error("[tool.deployher].buildCommand in pyproject.toml must be a non-empty string array");
   }
 
   if (typeof rawOutputDir !== "string" || rawOutputDir.trim().length === 0) {
-    throw new Error("[tool.pdploy].outputDir in pyproject.toml must be a non-empty string");
+    throw new Error("[tool.deployher].outputDir in pyproject.toml must be a non-empty string");
   }
 
   return {
@@ -60,8 +61,19 @@ const resolveBuildConfigFromPyproject = (
 export const pythonBuildStrategy: BuildStrategy = {
   id: "python",
   async detect(repoDir, runtime) {
-    return (await runtime.exists(path.join(repoDir, "pyproject.toml"))) ||
-      (await runtime.exists(path.join(repoDir, "requirements.txt")));
+    const hasPyproject = await runtime.exists(path.join(repoDir, "pyproject.toml"));
+    const hasRequirements = await runtime.exists(path.join(repoDir, "requirements.txt"));
+    if (!hasPyproject && !hasRequirements) {
+      return false;
+    }
+
+    const hasMkdocs = await runtime.exists(path.join(repoDir, "mkdocs.yml"));
+    const hasDockerfile = await runtime.exists(path.join(repoDir, "Dockerfile"));
+    if (hasRequirements && hasDockerfile && !hasPyproject && !hasMkdocs) {
+      return false;
+    }
+
+    return true;
   },
   async build(repoDir, ctx, runtime) {
     if (ctx.installCommandOverride?.length || ctx.buildCommandOverride?.length) {
@@ -88,7 +100,7 @@ export const pythonBuildStrategy: BuildStrategy = {
     let venvDirRelative: string | null = null;
 
     if (manager.name === "pip") {
-      venvDirRelative = `.pdploy-venv-${ctx.deploymentId}`;
+      venvDirRelative = `.deployher-venv-${ctx.deploymentId}`;
       const venvBinDirRelative = path.posix.join(venvDirRelative, "bin");
       const venvPythonRelative = path.posix.join(venvBinDirRelative, "python");
       const venvPython =
@@ -160,13 +172,13 @@ export const pythonBuildStrategy: BuildStrategy = {
             ? [buildPythonCommand, ...rawCmd.slice(1)]
             : rawCmd;
         outputDir = config.outputDir;
-        ctx.log("Using [tool.pdploy] buildCommand/outputDir from pyproject.toml");
+        ctx.log("Using [tool.deployher] buildCommand/outputDir from pyproject.toml");
       }
     }
 
     if (!buildCommand || !outputDir) {
       throw new Error(
-        "Python project build config not found. Add mkdocs.yml or configure [tool.pdploy].buildCommand and [tool.pdploy].outputDir in pyproject.toml"
+        "Python project build config not found. Add mkdocs.yml or configure [tool.deployher].buildCommand and [tool.deployher].outputDir in pyproject.toml"
       );
     }
 
@@ -183,7 +195,7 @@ export const pythonBuildStrategy: BuildStrategy = {
     const resolvedOutputDir = path.resolve(repoDir, outputDir);
     const repoRoot = path.resolve(repoDir);
     if (resolvedOutputDir !== repoRoot && !resolvedOutputDir.startsWith(`${repoRoot}${path.sep}`)) {
-      throw new Error("[tool.pdploy].outputDir must stay within the repository root");
+      throw new Error("[tool.deployher].outputDir must stay within the repository root");
     }
     if (!(await runtime.isDirectory(resolvedOutputDir))) {
       throw new Error(`Build output directory not found: ${outputDir}`);

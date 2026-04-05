@@ -2,7 +2,7 @@ export type BuildStrategyId = "node" | "python" | "static";
 export type DeploymentBuildStrategy = BuildStrategyId | "unknown";
 export type ServeStrategy = "static" | "server";
 export type PreviewMode = "auto" | "static" | "server";
-export type ServerPreviewTarget = "isolated-runner" | "trusted-local-docker";
+export type ServerPreviewTarget = "isolated-runner";
 export type FrameworkHint = "auto" | "nextjs" | "node" | "python" | "static";
 export type RuntimeImageMode = "auto" | "platform" | "dockerfile";
 export type PreviewResolutionCode =
@@ -21,6 +21,7 @@ export type RuntimeConfig = {
   port: number;
   command: string[];
   framework?: "nextjs" | "node";
+  env?: Record<string, string>;
 };
 
 export type BuildResult = {

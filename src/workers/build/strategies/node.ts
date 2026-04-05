@@ -26,7 +26,7 @@ const formatCommandFailure = (
   return sections.join("\n\n");
 };
 
-type NodePdployConfig = {
+type NodeDeployherConfig = {
   serveStrategy?: unknown;
   runtimeCommand?: unknown;
   runtimePort?: unknown;
@@ -37,7 +37,7 @@ type NodePackageJson = {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
-  pdploy?: NodePdployConfig;
+  deployher?: NodeDeployherConfig;
 };
 
 const detectStaticOutputDir = async (
@@ -53,7 +53,7 @@ const detectStaticOutputDir = async (
 };
 
 const resolveExplicitConfig = (
-  rawConfig: NodePdployConfig | undefined
+  rawConfig: NodeDeployherConfig | undefined
 ): {
   serveStrategy?: "static" | "server";
   runtimeCommand?: string[];
@@ -122,7 +122,7 @@ const validateStaticOutputDir = async (
     resolvedOutputDir !== resolvedRepoDir &&
     !resolvedOutputDir.startsWith(`${resolvedRepoDir}${path.sep}`)
   ) {
-    throw new Error("package.json#pdploy.staticOutputDir must stay inside the repository root");
+    throw new Error("package.json#deployher.staticOutputDir must stay inside the repository root");
   }
   if (!(await isDirectory(resolvedOutputDir))) {
     throw new Error(`Configured static output directory not found: ${outputDir}`);
@@ -135,7 +135,7 @@ const buildNextRuntimeConfig = (): RuntimeConfig => ({
   port: DEFAULT_SERVER_PORT,
   framework: "nextjs",
   command: [
-    "node_modules/.bin/next",
+    "node_modules/next/dist/bin/next",
     "start",
     "-p",
     String(DEFAULT_SERVER_PORT),
@@ -161,10 +161,10 @@ export const nodeBuildStrategy: BuildStrategy = {
     if (!pkg) {
       throw new Error("package.json is unreadable");
     }
-    const pdployConfig = resolveExplicitConfig(pkg.pdploy);
-    if (pdployConfig.serveStrategy && pdployConfig.serveStrategy !== ctx.previewMode) {
+    const deployherConfig = resolveExplicitConfig(pkg.deployher);
+    if (deployherConfig.serveStrategy && deployherConfig.serveStrategy !== ctx.previewMode) {
       ctx.log(
-        `Project Preview type (${ctx.previewMode}) overrides package.json#pdploy.serveStrategy (${pdployConfig.serveStrategy}).`
+        `Project Preview type (${ctx.previewMode}) overrides package.json#deployher.serveStrategy (${deployherConfig.serveStrategy}).`
       );
     }
 
@@ -230,12 +230,12 @@ export const nodeBuildStrategy: BuildStrategy = {
     }
 
     const hintedStaticOutputDir =
-      pdployConfig.staticOutputDir
-        ? await validateStaticOutputDir(repoDir, pdployConfig.staticOutputDir, runtime.isDirectory)
+      deployherConfig.staticOutputDir
+        ? await validateStaticOutputDir(repoDir, deployherConfig.staticOutputDir, runtime.isDirectory)
         : null;
     if (hintedStaticOutputDir && !(await runtime.exists(path.join(hintedStaticOutputDir, "index.html")))) {
       throw new Error(
-        `Configured static output directory does not contain a root index.html: ${pdployConfig.staticOutputDir}`
+        `Configured static output directory does not contain a root index.html: ${deployherConfig.staticOutputDir}`
       );
     }
 
@@ -256,21 +256,24 @@ export const nodeBuildStrategy: BuildStrategy = {
     );
     const nextServerDetected =
       nextAppSignals && (await runtime.isDirectory(path.join(repoDir, ".next")));
-    const explicitServerRuntime = pdployConfig.runtimeCommand?.length
+    const explicitServerRuntime = deployherConfig.runtimeCommand?.length
       ? {
           workingDir: ".",
-          port: pdployConfig.runtimePort ?? DEFAULT_SERVER_PORT,
-          command: pdployConfig.runtimeCommand,
+          port: deployherConfig.runtimePort ?? DEFAULT_SERVER_PORT,
+          command: deployherConfig.runtimeCommand,
           framework: "node" as const
         }
       : null;
+    const inferServerFromNodeFrameworkHint =
+      ctx.frameworkHint === "node" &&
+      (ctx.previewMode === "server" || staticOutputDir == null);
     const serverRuntime = nextServerDetected
       ? buildNextRuntimeConfig()
       : explicitServerRuntime ?? (
-          pdployConfig.serveStrategy === "server" || ctx.frameworkHint === "node"
+          deployherConfig.serveStrategy === "server" || inferServerFromNodeFrameworkHint
             ? {
                 workingDir: ".",
-                port: pdployConfig.runtimePort ?? DEFAULT_SERVER_PORT,
+                port: deployherConfig.runtimePort ?? DEFAULT_SERVER_PORT,
                 command: defaultRuntimeCommand(manager.name),
                 framework: "node" as const
               }
@@ -323,7 +326,7 @@ export const nodeBuildStrategy: BuildStrategy = {
         previewResolution: serverResolution(
           nextServerDetected
             ? "Next.js server build detected from `.next` output."
-            : "Server runtime inferred from pdploy runtime configuration."
+            : "Server runtime inferred from Deployher runtime configuration."
         )
       };
     }
@@ -331,7 +334,7 @@ export const nodeBuildStrategy: BuildStrategy = {
     if (staticOutputDir) {
       if (nextAppSignals) {
         throw new Error(
-          "This repository looks like a Next.js app, but pdploy only found static output in the selected project root. Check the project root directory or set an explicit framework/runtime configuration before redeploying."
+          "This repository looks like a Next.js app, but Deployher only found static output in the selected project root. Check the project root directory or set an explicit framework/runtime configuration before redeploying."
         );
       }
       return {

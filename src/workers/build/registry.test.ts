@@ -60,7 +60,7 @@ const createBuildCtx = (deploymentId: string) => ({
 const createRepo = async (
   files: Record<string, string>
 ): Promise<{ dir: string; cleanup: () => Promise<void> }> => {
-  const dir = await mkdtemp(path.join(tmpdir(), "pdploy-build-test-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "deployher-build-test-"));
   for (const [relativePath, content] of Object.entries(files)) {
     const fullPath = path.join(dir, relativePath);
     await mkdir(path.dirname(fullPath), { recursive: true });
@@ -137,6 +137,20 @@ describe("build strategy detection", () => {
     const repo = await createRepo({
       "bg.jpg": "asset",
       "nested/about.html": "<html></html>"
+    });
+
+    try {
+      const strategy = await detectBuildStrategy(repo.dir, runtime);
+      expect(strategy).toBeNull();
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("does not detect python for requirements.txt + Dockerfile without pyproject or mkdocs", async () => {
+    const repo = await createRepo({
+      "requirements.txt": "starlette\n",
+      "Dockerfile": "FROM python:3.12-slim\n"
     });
 
     try {
@@ -273,12 +287,12 @@ describe("detectNodePackageManager", () => {
 describe("node build strategy", () => {
   const runtime = createRuntime();
 
-  it("uses explicit static pdploy config when provided", async () => {
+  it("uses explicit static deployher config when provided", async () => {
     const repo = await createRepo({
       "package.json": JSON.stringify({
         name: "app",
         scripts: { build: "echo build" },
-        pdploy: { serveStrategy: "static", staticOutputDir: "web-dist" }
+        deployher: { serveStrategy: "static", staticOutputDir: "web-dist" }
       }),
       "package-lock.json": "{}",
       "web-dist/index.html": "<html></html>"
@@ -319,7 +333,7 @@ describe("node build strategy", () => {
       expect(result.serveStrategy).toBe("server");
       expect(result.runtimeConfig?.framework).toBe("nextjs");
       expect(result.runtimeConfig?.command).toEqual([
-        "node_modules/.bin/next",
+        "node_modules/next/dist/bin/next",
         "start",
         "-p",
         "3000",
@@ -368,7 +382,7 @@ describe("node build strategy", () => {
       await expect(
         nodeBuildStrategy.build(repo.dir, createBuildCtx("dep-node-next-missing-dot-next"), runtime)
       ).rejects.toThrow(
-        "This repository looks like a Next.js app, but pdploy only found static output in the selected project root. Check the project root directory or set an explicit framework/runtime configuration before redeploying."
+        "This repository looks like a Next.js app, but Deployher only found static output in the selected project root. Check the project root directory or set an explicit framework/runtime configuration before redeploying."
       );
     } finally {
       await repo.cleanup();
@@ -401,7 +415,7 @@ describe("node build strategy", () => {
     }
   });
 
-  it("requires explicit pdploy config for ambiguous node repos", async () => {
+  it("requires explicit deployher config for ambiguous node repos", async () => {
     const repo = await createRepo({
       "package.json": JSON.stringify({
         name: "ambiguous-app",
@@ -420,6 +434,31 @@ describe("node build strategy", () => {
       ).rejects.toThrow(
         "Node build completed but could not be classified. No supported server runtime or deployable static root index.html was found. Set Preview type to Static or Server only if your build actually produces that output."
       );
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("prefers static output in auto mode when framework hint is node but dist/ has index.html", async () => {
+    const repo = await createRepo({
+      "package.json": JSON.stringify({
+        name: "astro-like",
+        scripts: { build: "astro build" },
+        dependencies: { astro: "^5.15.0" }
+      }),
+      "package-lock.json": "{}",
+      "dist/index.html": "<html>static</html>"
+    });
+
+    try {
+      const result = await nodeBuildStrategy.build(
+        repo.dir,
+        { ...createBuildCtx("dep-node-hint-with-dist"), frameworkHint: "node" },
+        runtime
+      );
+
+      expect(result.serveStrategy).toBe("static");
+      expect(result.previewResolution.code).toBe("static_index_html");
     } finally {
       await repo.cleanup();
     }
@@ -470,7 +509,7 @@ describe("node build strategy", () => {
       "apps/web/package.json": JSON.stringify({
         name: "web",
         scripts: { build: "npm run build" },
-        pdploy: { serveStrategy: "server", runtimeCommand: ["node", "server.js"] }
+        deployher: { serveStrategy: "server", runtimeCommand: ["node", "server.js"] }
       })
     });
 
