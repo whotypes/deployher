@@ -1,14 +1,14 @@
 import { hydrateRoot } from "react-dom/client";
-import { PdploySidebar, type PdploySidebarProps } from "@/ui/PdploySidebar";
+import { DeployherSidebar, type DeployherSidebarProps } from "@/ui/DeployherSidebar";
 
-const rootEl = document.getElementById("pdploy-sidebar-hydrate-root");
-const script = document.getElementById("pdploy-sidebar-props");
+const rootEl = document.getElementById("deployher-sidebar-hydrate-root");
+const script = document.getElementById("deployher-sidebar-props");
 
 if (rootEl && script?.textContent) {
   try {
-    const props = JSON.parse(script.textContent) as PdploySidebarProps;
-    hydrateRoot(rootEl, <PdploySidebar {...props} />);
+    const props = JSON.parse(script.textContent) as DeployherSidebarProps;
+    hydrateRoot(rootEl, <DeployherSidebar {...props} />);
   } catch {
-    console.error("pdploy: sidebar hydrate failed (invalid props json)");
+    console.error("deployher: sidebar hydrate failed (invalid props json)");
   }
 }

@@ -26,7 +26,39 @@ import type {
   SidebarProjectSummary
 } from "@/ui/layoutUser";
 
-export type PdploySidebarProps = {
+const SidebarProjectGlyph = ({
+  name,
+  siteIconUrl
+}: {
+  name: string;
+  siteIconUrl: string | null;
+}): ReactElement => {
+  const [failed, setFailed] = useState(false);
+  const letter = name.trim()[0]?.toUpperCase() ?? "?";
+  const showImg = Boolean(siteIconUrl) && !failed;
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+      {showImg ? (
+        <img
+          src={siteIconUrl ?? ""}
+          alt=""
+          className="size-5 object-cover"
+          width={20}
+          height={20}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="flex size-5 items-center justify-center rounded-sm bg-sidebar-accent/50 text-[10px] font-semibold text-sidebar-foreground/90">
+          {letter}
+        </span>
+      )}
+    </span>
+  );
+};
+
+export type DeployherSidebarProps = {
   pathname: string;
   user?: LayoutUser | null;
   sidebarProjects?: SidebarProjectSummary[];
@@ -88,7 +120,7 @@ const navIsActive = (pathname: string, item: NavLink): boolean => {
 
 const subscribeShellCollapsed = (onChange: () => void) => {
   if (typeof document === "undefined") return () => {};
-  const shell = document.getElementById("pdploy-shell");
+  const shell = document.getElementById("deployher-shell");
   if (!shell) return () => {};
   onChange();
   const observer = new MutationObserver(onChange);
@@ -98,7 +130,7 @@ const subscribeShellCollapsed = (onChange: () => void) => {
 
 const getShellCollapsed = (): boolean => {
   if (typeof document === "undefined") return false;
-  return document.getElementById("pdploy-shell")?.classList.contains("sidebar-collapsed") ?? false;
+  return document.getElementById("deployher-shell")?.classList.contains("sidebar-collapsed") ?? false;
 };
 
 const getServerCollapsed = () => false;
@@ -153,7 +185,7 @@ const SidebarProjectStatusDot = ({ status }: { status: SidebarProjectDeploymentS
 );
 
 const SidebarGroupLabel = ({ children }: { children: string }) => (
-  <p className="pdploy-sidebar-label shrink-0 px-2 pb-1 pt-3 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 transition-[margin,opacity] duration-200 group-[.sidebar-collapsed]/shell:pointer-events-none group-[.sidebar-collapsed]/shell:-mt-6 group-[.sidebar-collapsed]/shell:opacity-0">
+  <p className="deployher-sidebar-label shrink-0 px-2 pb-1 pt-3 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 transition-[margin,opacity] duration-200 group-[.sidebar-collapsed]/shell:pointer-events-none group-[.sidebar-collapsed]/shell:-mt-6 group-[.sidebar-collapsed]/shell:opacity-0">
     {children}
   </p>
 );
@@ -178,12 +210,12 @@ const SidebarLink = ({
           data-active={active ? "true" : "false"}
           data-slot="sidebar-menu-button"
           className={cn(
-            "pdploy-sidebar-link peer/menu-button flex items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground no-underline hover:no-underline group-[.sidebar-collapsed]/shell:size-8 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:p-2 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
+            "deployher-sidebar-link peer/menu-button flex items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground no-underline hover:no-underline group-[.sidebar-collapsed]/shell:size-8 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:p-2 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
             muted && !active ? "text-sidebar-foreground/80" : "text-sidebar-foreground"
           )}
         >
           {Icon ? <Icon className="shrink-0" aria-hidden /> : <span className="size-4 shrink-0" aria-hidden />}
-          <span className="pdploy-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">{item.label}</span>
+          <span className="deployher-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">{item.label}</span>
         </a>
       </CollapsedSidebarTooltip>
     </li>
@@ -225,12 +257,12 @@ const WorkspaceProjectsRow = ({
               data-active={projectsActive ? "true" : "false"}
               data-slot="sidebar-menu-button"
               className={cn(
-                "pdploy-sidebar-link peer/menu-button flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground no-underline hover:no-underline data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
+                "deployher-sidebar-link peer/menu-button flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground no-underline hover:no-underline data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
                 projectsActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground"
               )}
             >
               {ProjectsIcon ? <ProjectsIcon className="shrink-0" aria-hidden /> : null}
-              <span className="pdploy-sidebar-label truncate">{projectsNav.label}</span>
+              <span className="deployher-sidebar-label truncate">{projectsNav.label}</span>
             </a>
           </CollapsedSidebarTooltip>
           <CollapsibleTrigger
@@ -266,7 +298,10 @@ const WorkspaceProjectsRow = ({
                       : "text-sidebar-foreground/90"
                   )}
                 >
-                  <span className="min-w-0 truncate">{p.name}</span>
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <SidebarProjectGlyph name={p.name} siteIconUrl={p.siteIconUrl} />
+                    <span className="min-w-0 truncate">{p.name}</span>
+                  </span>
                   <SidebarProjectStatusDot status={p.deploymentStatus} />
                 </a>
               );
@@ -406,18 +441,27 @@ const SidebarProjectCard = ({
   sidebarContext
 }: {
   pathname: string;
-  sidebarContext: NonNullable<PdploySidebarProps["sidebarContext"]>;
+  sidebarContext: NonNullable<DeployherSidebarProps["sidebarContext"]>;
 }) => {
   const project = sidebarContext.project;
   if (!project) return null;
 
-  const settingsMatch = (p: string, section: "general" | "env" | "danger") => {
+  const settingsMatch = (
+    p: string,
+    section: "general" | "env" | "danger" | "observability"
+  ) => {
     if (section === "general") return p === `/projects/${project.id}/settings`;
     if (section === "env") return p === `/projects/${project.id}/settings/env`;
+    if (section === "observability") return p === `/projects/${project.id}/observability`;
     return p === `/projects/${project.id}/settings/danger`;
   };
 
-  const subLinks: { href: string; label: string; section: "general" | "env" | "danger" }[] = [
+  const subLinks: {
+    href: string;
+    label: string;
+    section: "general" | "env" | "danger" | "observability";
+  }[] = [
+    { href: `/projects/${project.id}/observability`, label: "Observability", section: "observability" },
     { href: `/projects/${project.id}/settings`, label: "General Settings", section: "general" },
     { href: `/projects/${project.id}/settings/env`, label: "Environment Variables", section: "env" },
     { href: `/projects/${project.id}/settings/danger`, label: "Danger Zone", section: "danger" }
@@ -427,7 +471,7 @@ const SidebarProjectCard = ({
 
   return (
     <div className="rounded-lg border border-sidebar-border/90 bg-sidebar-accent/25 p-2 shadow-sm ring-1 ring-sidebar-border/40 group-[.sidebar-collapsed]/shell:border-0 group-[.sidebar-collapsed]/shell:bg-transparent group-[.sidebar-collapsed]/shell:p-0 group-[.sidebar-collapsed]/shell:shadow-none group-[.sidebar-collapsed]/shell:ring-0">
-      <p className="pdploy-sidebar-label mb-2 px-0.5 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 group-[.sidebar-collapsed]/shell:sr-only">
+      <p className="deployher-sidebar-label mb-2 px-0.5 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 group-[.sidebar-collapsed]/shell:sr-only">
         Current project
       </p>
       <div className="space-y-2 group-[.sidebar-collapsed]/shell:space-y-1">
@@ -442,7 +486,7 @@ const SidebarProjectCard = ({
             className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-sm font-semibold text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:p-2"
           >
             <FolderKanban className="size-4 shrink-0 group-[.sidebar-collapsed]/shell:size-5" aria-hidden />
-            <span className="pdploy-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">{project.name}</span>
+            <span className="deployher-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">{project.name}</span>
           </a>
         </CollapsedSidebarTooltip>
 
@@ -465,6 +509,7 @@ const SidebarProjectCard = ({
                   )}
                 >
                   {s.section === "general" ? <Settings2 className="shrink-0" aria-hidden /> : null}
+                  {s.section === "observability" ? <Activity className="shrink-0" aria-hidden /> : null}
                   <span className="truncate">{s.label}</span>
                 </a>
               );
@@ -509,33 +554,35 @@ const SidebarProjectCard = ({
 const buildAdminGroups = (pathname: string, user: LayoutUser | null | undefined): NavGroup[] =>
   user?.role === "operator" ? [{ label: "Operations", items: adminNav }] : [];
 
-export const PdploySidebar = ({ pathname, user, sidebarProjects = [], sidebarContext }: PdploySidebarProps) => {
+export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebarContext }: DeployherSidebarProps) => {
   const adminGroups = buildAdminGroups(pathname, user);
 
   return (
     <TooltipProvider delayDuration={200}>
       <aside
-        id="pdploy-sidebar"
+        id="deployher-sidebar"
         data-mobile-open="false"
         data-slot="sidebar"
         className="fixed inset-y-0 left-0 z-40 flex h-svh w-(--sidebar-width) -translate-x-full flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-none transition-[transform,width] duration-200 ease-linear data-[mobile-open=true]:translate-x-0 md:z-30 md:translate-x-0 group-[.sidebar-collapsed]/shell:w-(--sidebar-width-icon)"
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-3 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:px-2">
-          <CollapsedSidebarTooltip label="pdploy">
+          <CollapsedSidebarTooltip label="Deployher">
             <a
               href="/dashboard"
-              className="pdploy-sidebar-brand flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold text-sidebar-foreground no-underline hover:no-underline hover:bg-sidebar-accent group-[.sidebar-collapsed]/shell:flex-none group-[.sidebar-collapsed]/shell:justify-center"
-              aria-label="pdploy home"
+              className="deployher-sidebar-brand flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold text-sidebar-foreground no-underline hover:no-underline hover:bg-sidebar-accent group-[.sidebar-collapsed]/shell:flex-none group-[.sidebar-collapsed]/shell:justify-center"
+              aria-label="Deployher home"
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground text-xs font-bold">
-                p
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary via-primary to-color-mix(in_oklab,var(--chart-2)_55%,var(--primary)) text-sm font-bold text-primary-foreground shadow-[0_0_24px_-4px_color-mix(in_oklab,var(--primary)_70%,transparent)] ring-1 ring-primary/40">
+                d
               </span>
-              <span className="pdploy-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">pdploy</span>
+              <span className="deployher-sidebar-label truncate font-serif text-base font-semibold tracking-tight group-[.sidebar-collapsed]/shell:sr-only">
+                Deployher
+              </span>
             </a>
           </CollapsedSidebarTooltip>
           <button
             type="button"
-            id="pdploy-sidebar-close-mobile"
+            id="deployher-sidebar-close-mobile"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent focus-visible:ring-2 md:hidden"
             aria-label="Close sidebar"
           >
@@ -543,7 +590,7 @@ export const PdploySidebar = ({ pathname, user, sidebarProjects = [], sidebarCon
           </button>
         </div>
 
-        <div className="pdploy-sidebar-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2" data-slot="sidebar-content">
+        <div className="deployher-sidebar-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2" data-slot="sidebar-content">
           <SidebarWorkspace pathname={pathname} sidebarProjects={sidebarProjects} />
           {sidebarContext ? <SidebarProjectCard pathname={pathname} sidebarContext={sidebarContext} /> : null}
           {adminGroups.map((group) => (
@@ -557,7 +604,7 @@ export const PdploySidebar = ({ pathname, user, sidebarProjects = [], sidebarCon
               <CollapsedSidebarTooltip label={user.name ?? user.email}>
                 <a
                   href="/account"
-                  className="pdploy-sidebar-link mb-1 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground/90 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center"
+                  className="deployher-sidebar-link mb-1 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground/90 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center"
                   aria-label="Account"
                 >
                   {user.image ? (
@@ -567,7 +614,7 @@ export const PdploySidebar = ({ pathname, user, sidebarProjects = [], sidebarCon
                       {(user.name ?? user.email).charAt(0).toUpperCase()}
                     </span>
                   )}
-                  <span className="pdploy-sidebar-label min-w-0 truncate group-[.sidebar-collapsed]/shell:sr-only">
+                  <span className="deployher-sidebar-label min-w-0 truncate group-[.sidebar-collapsed]/shell:sr-only">
                     {user.name ?? user.email}
                   </span>
                 </a>
@@ -580,7 +627,7 @@ export const PdploySidebar = ({ pathname, user, sidebarProjects = [], sidebarCon
                     aria-label="Sign out"
                   >
                     <LogOut className="size-4 shrink-0" aria-hidden />
-                    <span className="pdploy-sidebar-label group-[.sidebar-collapsed]/shell:sr-only">Sign out</span>
+                    <span className="deployher-sidebar-label group-[.sidebar-collapsed]/shell:sr-only">Sign out</span>
                   </button>
                 </CollapsedSidebarTooltip>
               </form>
@@ -597,7 +644,7 @@ export const PdploySidebar = ({ pathname, user, sidebarProjects = [], sidebarCon
 
         <button
           type="button"
-          id="pdploy-sidebar-rail"
+          id="deployher-sidebar-rail"
           tabIndex={-1}
           title="Toggle sidebar"
           aria-label="Toggle sidebar"
