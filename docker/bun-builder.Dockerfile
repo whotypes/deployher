@@ -4,6 +4,8 @@ FROM ${NEXUS_REGISTRY}/oven/bun:1
 RUN apt-get update -qq \
   && apt-get install -y --no-install-recommends \
     build-essential \
+    nodejs \
+    npm \
     pkg-config \
     python3 \
     libcairo2-dev \
@@ -13,4 +15,6 @@ RUN apt-get update -qq \
     librsvg2-dev \
   && rm -rf /var/lib/apt/lists/* \
   && ln -sf /usr/bin/python3 /usr/local/bin/python \
-  && ln -sf /usr/bin/python3 /usr/local/bin/python3
+  && ln -sf /usr/bin/python3 /usr/local/bin/python3 \
+  && npm install -g npm@10.9.2 \
+  && npm install -g pnpm@10 yarn@1

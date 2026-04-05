@@ -38,6 +38,7 @@ ENV NODE_ENV=production
 ENV APP_ENV=production
 
 COPY --from=deps /usr/src/app/node_modules ./node_modules
+COPY config ./config
 COPY src ./src
 COPY drizzle ./drizzle
 COPY examples ./examples
