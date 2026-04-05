@@ -8,7 +8,7 @@
 
 # Setup and development
 
-Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) runs in Docker. **`./infra/dev.sh` does not require Bun on the host** (migrate/seed run inside **`oven/bun`** via Docker). You can also run the app **fully in Docker** or **on the host with hot reload** ([Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host), Bun required on the host). This doc covers both.
+Deployher is a Bun-based deployment platform ([deployher.com](https://deployher.com)). Infra (Postgres, Redis, [garage] S3) runs in Docker. **`deployher` does not require Bun on the host** for migrate/seed (they run inside **`oven/bun`** via Docker). From the repo root run the CLI with **`bun run deployher <command>`** or **`bun cli/index.ts <command>`** (implementation in [`cli/`](../cli/)). After **`bun run build:cli`**, **`./dist/deployher-cli <command>`** is a standalone binary (no Bun at runtime). Put **`deployher`** on `PATH` via **`bun link --global`** (Bun runs `cli/index.ts`) or **`bun run cli:link`** after a compile (symlink **`dist/deployher-cli`** → **`~/.local/bin/deployher`**). You can also run the app **fully in Docker** or **on the host with hot reload** ([Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host), Bun required on the host). This doc covers both.
 
 ## Table of contents
 
@@ -16,7 +16,7 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 - [One-time bootstrap](#one-time-bootstrap)
 - [Workflow A: Full stack in Docker (no Bun)](#workflow-a-full-stack-in-docker-no-bun)
 - [Workflow B: Infra in Docker, app and worker on host](#workflow-b-infra-in-docker-app-and-worker-on-host)
-- [Infra script reference](#infra-script-reference)
+- [Deployher CLI reference](#deployher-cli-reference)
 - [Environment variables](#environment-variables)
 - [Ports](#ports)
 - [Health endpoint](#health-endpoint)
@@ -38,7 +38,7 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 | Disk | Full stack + Nexus + image builds | Leave plenty of free space on the Docker data disk (rough guide: **≥30–40 GB** for a comfortable dev VM). |
 
 > [!NOTE]
-> **`./infra/dev.sh`** runs migrate/seed inside **`oven/bun`** via Docker — **no Bun on the host.** Override image with **`BUN_IMAGE`** if needed. After bootstrap, you can use **`docker compose up -d --build`** for day-to-day full-stack-in-Docker ([Workflow A](#workflow-a-full-stack-in-docker-no-bun)).
+> **`deployher`** runs migrate/seed inside **`oven/bun`** via Docker — **no Bun on the host.** Override image with **`BUN_IMAGE`** if needed. After bootstrap, you can use **`docker compose up -d --build`** for day-to-day full-stack-in-Docker ([Workflow A](#workflow-a-full-stack-in-docker-no-bun)).
 
 > [!NOTE]
 > The app image is slim and does not run build jobs. Build toolchains (Docker CLI, Node/Python package managers, uv, Poetry, `unzip`) live in the dedicated `deployment-worker` image, which talks to the host Docker daemon through `/var/run/docker.sock`.
@@ -50,13 +50,18 @@ Pdploy is a Bun-based deployment platform. Infra (Postgres, Redis, [garage] S3) 
 
 From the repository root.
 
-1. Copy env and edit as needed:
+1. **Configuration layers** (orchestration vs app config):
+
+- **Orchestration** — [`docker-compose.yml`](../docker-compose.yml) wires services (images, networks, in-container URLs like `postgres:5432` / `http://garage:3900`). You normally do not duplicate those in app config files.
+- **App config** — committed defaults live in [`config/default.toml`](../config/default.toml). Optional overrides: copy [`config/local.example.toml`](../config/local.example.toml) to **`config/local.toml`** (gitignored). **Environment variables and `.env` override** TOML when set (non-empty).
+- **Slim `.env`** — copy [`.env.example`](../.env.example) to `.env` for **Docker Compose `${VAR}` substitutions** and **secrets** (GitHub OAuth, auth secret, S3 keys, Nexus password). Most tunables stay in `config/default.toml`, not in a hundred-line env file. Regenerate the compose-var list anytime: `bun run config:write-dotenv`.
 
 ```bash
 cp .env.example .env
+# optional: cp config/local.example.toml config/local.toml
 ```
 
-2. Fill **required** values in `.env` before the app can start:
+2. Fill **required** values (in `.env` and/or `config/local.toml`) before the app can start:
 
 - **`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`**: from [GitHub OAuth Apps][github-oauth]. **Required** — the app throws on startup if they are missing.
 - **`BETTER_AUTH_SECRET`**: e.g. `openssl rand -base64 32`. Strongly recommended in dev and required in production. Changing it invalidates existing sessions.
@@ -65,7 +70,9 @@ cp .env.example .env
 3. Start the stack and bootstrap [garage] (creates S3 bucket and key, writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
 
 ```bash
-./infra/dev.sh start
+bun run deployher start
+# or after: bun run build:cli
+# ./dist/deployher-cli start
 ```
 
 It starts Postgres, Redis, Garage, Nexus, runs migrations and seed **in Docker** (`oven/bun` by default), syncs build images to Nexus when configured, then builds and starts the app and deployment-worker. **No Bun on the host** — only Docker.
@@ -87,7 +94,7 @@ The app derives the auth base URL from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT` 
 
 Good for: CI, testing the containerized path, or **running Compose without Bun on the host** after the repo is already bootstrapped.
 
-**First-time setup:** run [One-time bootstrap](#one-time-bootstrap) (`./infra/dev.sh start`). That provisions Garage S3 keys in `.env`, Nexus, migrations, and seed (via **`oven/bun` in Docker**). **Seed** (`seed.ts`) runs via that script, not automatically on every `docker compose up`.
+**First-time setup:** run [One-time bootstrap](#one-time-bootstrap) (`deployher start`). That provisions Garage S3 keys in `.env`, Nexus, migrations, and seed (via **`oven/bun` in Docker**). **Seed** (`seed.ts`) runs via that command, not automatically on every `docker compose up`.
 
 **After bootstrap**, you can bring the stack up with Compose alone:
 
@@ -95,9 +102,9 @@ Good for: CI, testing the containerized path, or **running Compose without Bun o
 docker compose up -d --build
 ```
 
-This also builds dedicated Node and Bun build images (`pdploy-node-build-image:latest` and `pdploy-bun-build-image:latest`) used by deployment workers for Node repos. The Bun image includes Python and common native build dependencies so packages like `canvas` can compile reliably.
+This also builds dedicated Node and Bun build images (`deployher-node-build-image:latest` and `deployher-bun-build-image:latest`) used by deployment workers for Node repos. The Bun image includes Python and common native build dependencies so packages like `canvas` can compile reliably.
 
-**Migrations:** the app container runs `migrate.ts` on startup when `RUN_MIGRATIONS=1`. **Seeding** is not re-run by Compose; use `./infra/dev.sh seed` (Dockerized Bun) or **`bun run seed`** on the host if you use [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) and need demo data again.
+**Migrations:** the app container runs `migrate.ts` on startup when `RUN_MIGRATIONS=1`. **Seeding** is not re-run by Compose; use **`deployher seed`** (Dockerized Bun) or **`bun run seed`** on the host if you use [Workflow B](#workflow-b-infra-in-docker-app-and-worker-on-host) and need demo data again.
 
 2. App URL: `http://localhost:3000` (or `http://<vm-ip>:3000` from another machine; see [Troubleshooting](#troubleshooting))
 
@@ -150,8 +157,8 @@ bun run seed
 Without Bun on the host, use Docker (same as bootstrap) while infra is up:
 
 ```bash
-./infra/dev.sh migrate
-./infra/dev.sh seed
+deployher migrate
+deployher seed
 ```
 
 3. Start the app with hot reload:
@@ -173,13 +180,13 @@ bun run start:worker
 7. Stop infra:
 
 ```bash
-./infra/dev.sh stop
+deployher stop
 ```
 
 8. Full teardown (remove volumes, re-bootstrap infra):
 
 ```bash
-./infra/dev.sh reset
+deployher reset
 ```
 
 `reset` runs migrate and seed inside Docker. Then start the host app and worker again:
@@ -191,49 +198,63 @@ bun run dev
 bun run start:worker
 ```
 
-If you use host Bun and prefer explicit migrate/seed after reset, you can still run `bun run migrate` and `bun run seed`, or `./infra/dev.sh migrate` / `./infra/dev.sh seed`.
+If you use host Bun and prefer explicit migrate/seed after reset, you can still run `bun run migrate` and `bun run seed`, or `deployher migrate` / `deployher seed`.
 
 > [!TIP]
 > For day-to-day dev, keep infra running and use either Docker (`app` + `deployment-worker`) or host processes (`bun run dev` + `bun run start:worker`) consistently for a session.
 
-## Infra script reference
+## Deployher CLI reference
 
-All from repository root. `dc` in the script points at `docker-compose.yml` in the repo.
+All commands run from the repository root and use `docker-compose.yml`. Prefer **`bun run deployher <command>`** or **`./dist/deployher-cli <command>`** after **`bun run build:cli`** (implementation lives in **`cli/`**).
+
+In the command table, **`deployher`** means **`bun run deployher`**, **`./dist/deployher-cli`**, or a **`deployher`** command on your `PATH` (`bun link --global`, **`bun run cli:link`**, or a global install).
 
 | Command | Description |
 |---------|-------------|
-| `./infra/dev.sh start` | Start Postgres, Redis, Garage, Nexus; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; run **`migrate.ts`** and **`seed.ts`** inside **`oven/bun`** (Docker); sync Nexus images when `NEXUS_*` are set; build and start app and deployment-worker; verify Docker access from deployment-worker. **No Bun on the host.** |
-| `./infra/dev.sh stop` | Stop all compose services (including app and deployment-worker). |
-| `./infra/dev.sh reset` | `docker compose down -v`, clear Garage data and secrets, then full `start` again (migrate + seed in Docker, then app + workers). |
-| `./infra/dev.sh migrate` | Ensure stack is up, then run `migrate.ts` in Docker (`oven/bun`). |
-| `./infra/dev.sh seed` | Ensure stack is up, then run `seed.ts` in Docker (`oven/bun`). |
-| `./infra/dev.sh logs` | `docker compose logs -f`. |
+| `deployher start` | Start Postgres, Redis, Garage, Nexus; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; run **`migrate.ts`** and **`seed.ts`** inside **`oven/bun`** (Docker); sync Nexus images when `NEXUS_*` are set; build and start app and deployment-worker; verify Docker access from deployment-worker. **No Bun on the host.** |
+| `deployher stop` | Stop all compose services (including app and deployment-worker). |
+| `deployher reset` | `docker compose down -v`, clear Garage data and secrets, then full `start` again (migrate + seed in Docker, then app + workers). Confirm unless `--yes` / `CI=1`. |
+| `deployher migrate` | Ensure stack is up, then run `migrate.ts` in Docker (`oven/bun`). |
+| `deployher grant-operator <githubLogin>` | Ensure core infra is up, run `migrate.ts` (unless `--skip-migrate`), then set `users.role` to `operator` for whoever signed in with that GitHub account (resolves login via the GitHub API, matches `accounts.account_id`). The user must have completed GitHub sign-in at least once. Optional **`GITHUB_TOKEN`** in `.env` raises GitHub API rate limits. |
+| `deployher seed` | Ensure stack is up, then run `seed.ts` in Docker (`oven/bun`). |
+| `deployher logs [services...]` | `docker compose logs -f` (optional service names). |
+| `deployher nexus sync` | Repush base + builder images to Nexus (requires `NEXUS_*` in `.env`). |
+| `deployher status` | `docker compose ps` for this project. |
+| `deployher doctor` | Check Docker, Compose, compose file, and `.env` presence. |
+
+Global flags (before the subcommand): **`--verbose`**, **`--quiet`**, **`--no-color`**, **`--yes`**.
 
 > [!CAUTION]
-> `./infra/dev.sh reset` destroys Postgres and Garage data. Use when you want a clean slate, not for routine restarts.
+> `deployher reset` destroys Postgres and Garage data. Use when you want a clean slate, not for routine restarts.
 
 ## Environment variables
+
+Load order: **`.env`** is read first (dotenv does not replace variables already set by the shell or Docker). **`config/default.toml`** and **`config/local.toml`** then fill keys that are still unset or empty. Anything already in the process environment—including values from Compose `environment:` blocks—wins. The table below describes effective settings; see **`config/default.toml`** for the full default set.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `APP_ENV` | Yes | `development` or `production` |
 | `HOSTNAME` | Yes | Bind address (e.g. `0.0.0.0`) |
-| `PORT` | No | Code default `3000`. For host Bun dev, `.env.example` sets `3001`; Docker/container examples keep `3000`. |
+| `PORT` | No | Default `3001` in `config/default.toml` for host dev; Docker Compose sets `3000` in the app container. |
 | `DATABASE_URL` | Yes | Postgres connection string. Use `localhost:5432` when app runs on host; use `postgres:5432` inside app container. |
 | `REDIS_URL` | Yes | Redis URL. Use `localhost:6379` on host; `redis:6379` in container. If unset or unreachable, deployment-worker cannot process deployments. |
 | `S3_ENDPOINT` | Yes | Garage/S3 endpoint. Use `http://127.0.0.1:3900` on host; `http://garage:3900` in container. |
-| `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes for storage | Injected by `./infra/dev.sh start` or set manually. Aliases: `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. |
+| `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes for storage | Injected by `deployher start` or set manually. Aliases: `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. |
 | `S3_REGION`, `AWS_REGION` | No | Default `garage`. |
 | `BETTER_AUTH_URL` | Optional | App base URL if your Better Auth config expects it. Auth client URL is derived from `DEV_*`/`PROD_*` and `PORT` in development (and `PROD_*` in production). |
 | `BETTER_AUTH_SECRET` | **Strongly recommended** (required in prod) | Secret for session/signing (e.g. `openssl rand -base64 32`). Set in dev to avoid flaky auth; changing it signs everyone out. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | **Yes (app startup)** | OAuth app credentials; **required** or the app exits on boot. Callback URL must match your app URL + `/api/auth/callback/github`. |
-| `DEV_DOMAIN`, `PROD_DOMAIN`, `DEV_PROTOCOL`, `PROD_PROTOCOL` | No | Used for auth callback URL and preview URLs. Defaults in `.env.example`. Subdomain previews match `Host` against `<id>.<DEV_DOMAIN>` or `<id>.<PROD_DOMAIN>`. |
-| `BUILD_WORKERS` | No | Legacy in-process worker count for app-thread workers. Keep `0` when using the standalone `deployment-worker` service. |
-| `NEXUS_REGISTRY`, `NEXUS_USER`, `NEXUS_PASSWORD` | **All three required** for Nexus image sync | If any is empty, `./infra/dev.sh` skips pushing base images to the local registry, but Dockerfiles may still default to `localhost:8082`, causing confusing build failures. Set `NEXUS_PASSWORD` to **≥8 characters** for Nexus admin bootstrap. On Linux you may need Docker [`insecure-registries`](https://docs.docker.com/engine/daemon/insecure-registries/) for `localhost:8082` if pulls use HTTP. |
+| `DEV_DOMAIN`, `PROD_DOMAIN`, `DEV_PROTOCOL`, `PROD_PROTOCOL` | No | Used for auth callback URL and preview URLs. Defaults in `config/default.toml`. Subdomain previews match `Host` against `<id>.<DEV_DOMAIN>` or `<id>.<PROD_DOMAIN>`. |
+| `BUILD_WORKERS` | No | In-process worker count for app-thread workers. Keep `0` when using the standalone `deployment-worker` service. |
+| `BUILD_COMMAND_INACTIVITY_TIMEOUT_MS` | No | Generic no-output timeout for build/install/runtime-image commands that stream logs regularly. Default `30000`. |
+| `PREVIEW_RUNTIME_PUSH_INACTIVITY_TIMEOUT_MS` | No | No-output timeout specifically for preview runtime `docker push` / digest resolution steps. Default `300000` so large registry pushes are not killed after a quiet 30s window. |
+| `NEXUS_REGISTRY`, `NEXUS_USER`, `NEXUS_PASSWORD` | **All three required** for Nexus image sync | If any is empty, `deployher start` skips pushing base images to the local registry, but Dockerfiles may still default to `localhost:8082`, causing confusing build failures. Set `NEXUS_PASSWORD` to **≥8 characters** for Nexus admin bootstrap. On Linux you may need Docker [`insecure-registries`](https://docs.docker.com/engine/daemon/insecure-registries/) for `localhost:8082` if pulls use HTTP. These credentials are also **required for pushing and pulling preview runtime images** (`PREVIEW_RUNTIME_REGISTRY` defaults to `NEXUS_REGISTRY` when unset). |
+| `PREVIEW_RUNTIME_REGISTRY`, `PREVIEW_RUNTIME_DOCKER_REPO`, `PREVIEW_RUNTIME_IMAGE_NAME` | No (defaults) | Target Docker registry for preview runtime images. Empty registry falls back to **`NEXUS_REGISTRY`**. **`PREVIEW_RUNTIME_DOCKER_DAEMON_REGISTRY`** (Compose) defaults to **`127.0.0.1:8082`**: `docker push` / `docker pull` run in the **Docker daemon**, which uses **host DNS** and cannot resolve Compose-only names like **`nexus`**. Use **`host.docker.internal:8082`** on Docker Desktop if loopback from the daemon fails. |
+| `PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS`, `PREVIEW_RUNNER_IMAGE_MAX_AGE_MS` | No | Preview-runner periodic cleanup of unused preview images (default 15m interval, 7d max age). |
 | `RUNTIME_STATIC_BASE_IMAGE` | No | Base image for standardized OCI runtime artifact generation from static build output. Default `nginx:alpine`. |
 | `SKIP_CLIENT_BUILD` | No | Set to `1` in Docker/prod so the app uses prebuilt client assets. |
 | `RUN_MIGRATIONS` | No | Set to `1` to run migrations on app startup (default in Docker). |
-| `BUN_IMAGE` | No | Image for `./infra/dev.sh` migrate/seed and Nexus EULA helpers (default `oven/bun:1.3.5`). Set for air-gapped mirrors or version pinning. |
+| `BUN_IMAGE` | No | Image for `deployher` migrate/seed and Nexus EULA helpers (default `oven/bun:1.3.5`). Set for air-gapped mirrors or version pinning. |
 
 ## Ports
 
@@ -258,6 +279,33 @@ Deployments can be viewed in two ways:
 
 `/preview/<deploymentId>` redirects to the subdomain preview URL. Build logs and deployment detail pages link to the subdomain URL using `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT`.
 
+### Site icon and Open Graph (dashboard)
+
+After a successful deployment, the build worker fetches the live preview HTML and stores **favicon / touch icon** and **`og:image`** URLs on the project for the sidebar and project switcher. You can re-run the fetch from **Project settings → General → Refresh from live preview**.
+
+If the **deployment worker** runs in Docker but the app is only reachable at a host URL (for example `http://<shortId>.localhost:3000` from your browser), the worker container may not resolve that host. Set **`SITE_META_FETCH_ORIGIN`** to an origin the worker can open (for example **`http://host.docker.internal:3000`**, or your internal gateway). The fetch still sends the **`Host`** header from the public preview URL so name-based routing works. Optional tunables: **`SITE_META_FETCH_TIMEOUT_MS`**, **`SITE_META_MAX_HTML_BYTES`**.
+
+### Server previews (isolated preview runner)
+
+For `serve_strategy=server`, the app proxies to **`RUNNER_URL`** at path **`/preview/<deploymentUuid>/…`**. The **`preview-runner`** service **`docker pull`s** the image referenced by **`runtime_image_pull_ref`** (digest under **`PREVIEW_RUNTIME_*`** + Nexus), or **legacy** **`runtime_image_artifact_key`** via S3 + `docker load`. Containers run with memory/CPU limits on **`RUNNER_DOCKER_NETWORK`** (Compose uses **`deployher_default`**).
+
+The app adds headers the runner consumes:
+
+| Header | Purpose |
+|--------|---------|
+| `x-deployher-runtime-image-pull-ref` | Registry image ref with digest (`host/repo/image@sha256:…`) |
+| `x-deployher-runtime-image-key` | Legacy: S3 object key for `runtime-image.tar` |
+| `x-deployher-runtime-config` | JSON: `port`, `command`, `workingDir`, etc. |
+| `x-deployher-runner-secret` | Optional; must match `RUNNER_SHARED_SECRET` on the runner |
+
+**Runtime logs:** the runner also serves **`GET /internal/runtime-logs/<deploymentUuid>`** with **`follow=1`** for a live body stream or **`follow=0`** for a snapshot (optional **`tail`**, default 500 lines). Use the same **`x-deployher-runner-secret`** when `RUNNER_SHARED_SECRET` is set. The app exposes **`/deployments/:id/runtime-log`** and **`/deployments/:id/runtime-log/stream`** (session cookie) for successful **server** deployments when **`RUNNER_PREVIEW_ENABLED`** and **`RUNNER_URL`** are set. Logs are **live only**: Docker holds them while the preview container exists; after TTL expiry (**`PREVIEW_TTL_MS`**) or when the container is removed, there is no retained history in the app.
+
+Workers need **`NEXUS_USER` / `NEXUS_PASSWORD`** and registry reachability to **push**; the runner needs the same to **pull**. Compose sets **`PREVIEW_RUNTIME_REGISTRY`** from **`PREVIEW_RUNTIME_DOCKER_DAEMON_REGISTRY`** (default **`127.0.0.1:8082`**) so the **daemon** can reach Nexus’s published port. The runner uses **`REDIS_URL`** for **`deployher:preview:prewarm`** fan-out and **`PREVIEW_RUNNER_IMAGE_*`** for image GC.
+
+Set **`RUNNER_PREVIEW_ENABLED=1`** and **`RUNNER_URL`** on the app (Compose defaults: `http://preview-runner:8787`). Run **`bun run start:preview-runner`** on the host when the app/worker run outside Compose but previews should still use Docker.
+
+Build cancellation: the app publishes **`deployher:build-cancel`** on Redis; workers subscribe and remove containers labeled **`io.deployher.deployment=<deploymentId>`**.
+
 ## Example deployment repos
 
 Sample repositories for local development are in `examples/`:
@@ -265,11 +313,13 @@ Sample repositories for local development are in `examples/`:
 - `examples/node-npm-static`
 - `examples/node-pnpm-static`
 - `examples/node-bun-static`
+- `examples/bun-server-api`
+- `examples/bun-server-client`
 - `examples/node-yarn-static`
 - `examples/python-mkdocs-pip`
-- `examples/python-pdploy-pip`
+- `examples/python-deployher-pip`
 
-Use one of these as a starting point, push it to GitHub, then create a pdploy project pointing at that repo.
+Use one of these as a starting point, push it to GitHub, then create a Deployher project pointing at that repo.
 
 ## Build pipeline and workers
 
@@ -277,13 +327,13 @@ Deployments are queued in Redis and processed by a standalone worker process (`s
 
 Each worker process: dequeues a job, clones the repo from GitHub (zipball), detects build strategy (Node or Python), installs dependencies via the relevant package manager, runs build, locates output artifacts, uploads them to S3 under the deployment's `artifactPrefix`, and updates deployment status and preview URL. Logs are streamed to Redis pub/sub and persisted to S3; the UI streams from the same channel.
 
-In addition to existing static artifact uploads, the worker builds and uploads a container image tarball (`runtime-image.tar`, Docker save format) at `<artifactPrefix>/runtime-image.tar`. This keeps current static preview behavior intact while standardizing deployment outputs for future long-running server workflows.
+The worker builds a preview runtime image and **pushes** it to the configured Docker registry (see **`PREVIEW_RUNTIME_*`**), then stores **`runtime_image_pull_ref`** on the deployment. Older rows may still reference **`runtime_image_artifact_key`** (S3 tarball) until redeployed.
 
 ## Database and migrations
 
 Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `accounts`, `verification`) plus `projects` and `deployments`. Migrations live in `drizzle/`. Apply them by:
 
-- **`./infra/dev.sh migrate`** — runs `migrate.ts` inside **`oven/bun`** via Docker (no Bun on the host; needs Docker + stack up).
+- **`deployher migrate`** — runs `migrate.ts` inside **`oven/bun`** via Docker (no Bun on the host; needs Docker + stack up).
 - **`bun run migrate`** / **`bun migrate.ts`** — when you have Bun on the host and `DATABASE_URL` in `.env`.
 - **App container** — `migrate.ts` on startup when `RUN_MIGRATIONS=1`.
 
@@ -294,9 +344,15 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 
 | Script | Description |
 |--------|-------------|
+| `bun run deployher <cmd>` | Run the **deployher** CLI via Bun (`start`, `migrate`, `doctor`, …). |
+| `bun run build:cli` | Compile the infra CLI to **`dist/deployher-cli`** (standalone; no Bun needed to execute it). Does not overwrite **`dist/deployher`** from **`build:exe`**. |
+| `bun run cli:link` | Symlink **`dist/deployher-cli`** → **`~/.local/bin/deployher`**. If **`~/.local/bin`** is missing from `PATH`, asks before appending an export to **`~/.zshrc`**. Non-interactive: **`bun run cli:link -- --yes`** (append) or **`CLI_LINK_NO_ZSHRC=1`** (symlink only). |
+| `./dist/deployher-cli <cmd>` | Run the compiled infra CLI (after **`build:cli`**). |
+| `bun run test` | Run CLI unit tests (`bun test cli`). |
 | `bun run dev` | Start app with hot reload (`bun --hot src/index.ts`). |
 | `bun run start` | Start app without hot reload. |
 | `bun run start:worker` | Start the standalone build worker process. |
+| `bun run start:preview-runner` | Start the isolated preview runner (Docker socket + S3 env required). |
 | `bun run migrate` | Run `migrate.ts` (apply migrations). |
 | `bun run seed` | Run `seed.ts` (insert demo project/deployment). Optional; skip in production. |
 | `bun run build:client` | Build client assets into `dist/client`. |
@@ -306,13 +362,13 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 | `bun run db:studio` | Open Drizzle Studio. |
 | `bun run garage` | Run `docker exec -ti garage /garage` to use the Garage CLI inside the container. |
 
-**Infra (Docker only, no Bun on host):** `./infra/dev.sh migrate` and `./infra/dev.sh seed` run `migrate.ts` / `seed.ts` in **`oven/bun`** with the repo bind-mounted. Override image with **`BUN_IMAGE`**. See [Infra script reference](#infra-script-reference).
+**Infra (Docker only, no Bun on host):** `deployher migrate`, `deployher seed`, and `deployher grant-operator` run scripts in **`oven/bun`** with the repo bind-mounted (same pattern as migrate). Override image with **`BUN_IMAGE`**. See [Deployher CLI reference](#deployher-cli-reference).
 
 ## Troubleshooting
 
 ### Postgres: “failed to start in time”
 
-On a slow disk or first-time DB init, Postgres can take longer than the wait loop in `infra/dev.sh`. Check `docker logs postgres`. Wait until you see the database ready, then run `./infra/dev.sh start` again or `./infra/dev.sh migrate` once the DB is up.
+On a slow disk or first-time DB init, Postgres can take longer than the wait loop in `deployher`. Check `docker logs postgres`. Wait until you see the database ready, then run `deployher start` again or `deployher migrate` once the DB is up.
 
 ### Missing `.env`
 
@@ -320,7 +376,7 @@ Copy **`cp .env.example .env`** before bootstrap. A missing or empty `.env` caus
 
 ### Nexus / `localhost:8082` build errors
 
-Set **`NEXUS_REGISTRY`**, **`NEXUS_USER`**, and **`NEXUS_PASSWORD`** in `.env`. If any is empty, the script skips syncing images to Nexus while builds still reference `localhost:8082`. On Linux, if Docker tries **HTTPS** against an **HTTP** registry, add `"insecure-registries": ["localhost:8082"]` to `/etc/docker/daemon.json` and restart Docker.
+Set **`NEXUS_REGISTRY`**, **`NEXUS_USER`**, and **`NEXUS_PASSWORD`** in `.env`. If any is empty, **`deployher start`** skips syncing images to Nexus while builds still reference `localhost:8082`. On Linux, if Docker tries **HTTPS** against an **HTTP** registry, add `"insecure-registries": ["localhost:8082"]` to `/etc/docker/daemon.json` and restart Docker.
 
 ### No space left on device (during `docker build`)
 

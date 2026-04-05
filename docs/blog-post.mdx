@@ -8,7 +8,7 @@ featured: true
 
 There's this scene in every programmer's life where you wake up one day, look at your `$50/mo` Vercel bill for a hobby project, and think—hold on. What am I even paying for? A CDN? A build queue? An S3 bucket with a nice UI?
 
-That's where Pdploy started. Not from some grand vision of disrupting the PaaS industry. Just from a Sunday morning brain worm that wouldn't go away.
+That's where Deployher started. Not from some grand vision of disrupting the PaaS industry. Just from a Sunday morning brain worm that wouldn't go away.
 
 ## The enshittification of everything
 
@@ -50,7 +50,7 @@ Strip away the marketing and a PaaS like Vercel or Netlify is really just a hand
 
 That's it. That's the whole product. Everything else—the dashboard, the GitHub integration, the environment variables, the log viewer—is just UI sugar on top of these core primitives.
 
-Pdploy implements all seven. On a single VPS. With a single runtime. In about 4,000 lines of TypeScript.
+Deployher implements all seven. On a single VPS. With a single runtime. In about 4,000 lines of TypeScript.
 
 ## The stack: choosing violence (Bun)
 
@@ -69,7 +69,7 @@ Bun 1.3 was the tipping point. Before that release, using Bun for anything serio
 - **`Bun.spawn()`** for subprocess management
 - **`Bun.which()`** for finding executables on PATH
 
-The thing that really sold me was the S3 client. Pdploy stores every build artifact in S3-compatible storage. In a Node.js world, that means installing `@aws-sdk/client-s3`, wrestling with the 47 packages it drags in, and dealing with the SDK's baroque API. In Bun:
+The thing that really sold me was the S3 client. Deployher stores every build artifact in S3-compatible storage. In a Node.js world, that means installing `@aws-sdk/client-s3`, wrestling with the 47 packages it drags in, and dealing with the SDK's baroque API. In Bun:
 
 ```typescript
 import { S3Client } from "bun";
@@ -103,10 +103,10 @@ const client = new Bun.RedisClient(config.redis.url);
 await client.send("XADD", [streamKey, "*", "deploymentId", id]);
 ```
 
-No `ioredis`. No `redis` package. No connection pooling library. Just raw Redis commands over a fast connection. And critically for Pdploy, it supports `EVAL` for Lua scripts, which powers the entire concurrency control system (more on that later).
+No `ioredis`. No `redis` package. No connection pooling library. Just raw Redis commands over a fast connection. And critically for Deployher, it supports `EVAL` for Lua scripts, which powers the entire concurrency control system (more on that later).
 
 <Rabbit>
-I actually benchmarked Bun's Redis client against ioredis early on. For the `XADD`/`XREADGROUP` workload Pdploy uses, Bun was roughly 2-3x faster in throughput. Not that it matters at Pdploy's scale—but it's nice to know you're not leaving performance on the table.
+I actually benchmarked Bun's Redis client against ioredis early on. For the `XADD`/`XREADGROUP` workload Deployher uses, Bun was roughly 2-3x faster in throughput. Not that it matters at Deployher's scale—but it's nice to know you're not leaving performance on the table.
 </Rabbit>
 
 The `package.json` is refreshingly clean. The total dependency list:
@@ -176,7 +176,7 @@ start().catch((error) => {
 });
 ```
 
-On boot, Pdploy runs `Bun.build()` to bundle the client-side React assets (CSS, JS) into `/dist/client`. Then it starts the HTTP server. Then it background-checks S3 connectivity. That's the whole lifecycle.
+On boot, Deployher runs `Bun.build()` to bundle the client-side React assets (CSS, JS) into `/dist/client`. Then it starts the HTTP server. Then it background-checks S3 connectivity. That's the whole lifecycle.
 
 The `appContext.ts` module holds global singletons—the `Bun.Server` reference and the boot timestamp—so other parts of the codebase (like the health endpoint) can read server state without circular imports.
 
@@ -239,7 +239,7 @@ So a project named "My Cool App" gets `my-cool-app.localhost:3000` in dev and `m
 
 No Express. No Hono. No Elysia. Just a 238-line hand-rolled router in `src/router.ts`.
 
-I know what you're thinking. Why? Aren't there like 47 perfectly good routing libraries for Bun? Yes. But here's the thing—Pdploy's routing has a requirement that most libraries handle poorly: **subdomain extraction**. Every deployment gets a unique subdomain (`abc123def4.localhost:3000`), and the router needs to detect whether an incoming request is hitting the main app or a deployment preview *before* doing any path matching.
+I know what you're thinking. Why? Aren't there like 47 perfectly good routing libraries for Bun? Yes. But here's the thing—Deployher's routing has a requirement that most libraries handle poorly: **subdomain extraction**. Every deployment gets a unique subdomain (`abc123def4.localhost:3000`), and the router needs to detect whether an incoming request is hitting the main app or a deployment preview *before* doing any path matching.
 
 ```typescript
 export const router = async (req: Request): Promise<Response> => {
@@ -516,7 +516,7 @@ export async function reclaimDeployment(
 }
 ```
 
-But the really clever part is the **account-level concurrency control**. Without it, one user could flood the queue with 50 deployments and starve everyone else. Pdploy uses a pair of Lua scripts to atomically manage per-account build slots:
+But the really clever part is the **account-level concurrency control**. Without it, one user could flood the queue with 50 deployments and starve everyone else. Deployher uses a pair of Lua scripts to atomically manage per-account build slots:
 
 ```lua
 -- ACQUIRE_ACCOUNT_SLOT_LUA
@@ -578,7 +578,7 @@ deployment-worker:
     replicas: ${BUILD_WORKERS:-4}
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
-    - /tmp/pdploy-builds:/tmp/pdploy-builds
+    - /tmp/deployher-builds:/tmp/deployher-builds
 ```
 
 That Docker socket mount is the key architectural decision. Build workers don't execute `npm install` on the host. They create **ephemeral Docker containers** for every build command via the `dockerode` library. This gives you:
@@ -606,14 +606,14 @@ heartbeatInterval = setInterval(() => {
 }, BUILD_PENDING_HEARTBEAT_MS);
 ```
 
-**3. Container cleanup.** Before starting, the worker prunes any stale build containers from previous runs. Every container Pdploy creates gets labeled with `io.pdploy.build=true` and `io.pdploy.deployment={id}`, so cleanup is a simple Docker API filter:
+**3. Container cleanup.** Before starting, the worker prunes any stale build containers from previous runs. Every container Deployher creates gets labeled with `io.deployher.build=true` and `io.deployher.deployment={id}`, so cleanup is a simple Docker API filter:
 
 ```typescript
 const pruneBuildContainers = async (options = {}) => {
   const containers = await dockerClient.listContainers({
     all: true,
     filters: {
-      label: ["io.pdploy.build=true"],
+      label: ["io.deployher.build=true"],
       status: ["exited", "dead"]
     }
   });
@@ -674,8 +674,8 @@ const runDockerCommand = async (cmd, options) => {
     WorkingDir: "/workspace",
     Env: toDockerEnv(options.env),
     Labels: {
-      "io.pdploy.build": "true",
-      "io.pdploy.deployment": options.deploymentId
+      "io.deployher.build": "true",
+      "io.deployher.deployment": options.deploymentId
     },
     HostConfig: {
       Binds: [`${options.cwd}:/workspace`],
@@ -697,9 +697,9 @@ const runDockerCommand = async (cmd, options) => {
 };
 ```
 
-The image selection is automatic: `bun` commands get `pdploy-bun-build-image:latest`, Python commands get `python:3.12-bookworm`, everything else gets `node:22-bookworm` or `pdploy-node-build-image:latest` when configured. The Bun builder image layers Python and common native build libraries on top of Bun so packages like `canvas` can compile during `bun install`. Images are pulled on demand and cached in a `Map` so the same image isn't pulled twice across concurrent builds.
+The image selection is automatic: `bun` commands get `deployher-bun-build-image:latest`, Python commands get `python:3.12-bookworm`, everything else gets `node:22-bookworm` or `deployher-node-build-image:latest` when configured. The Bun builder image layers Python and common native build libraries on top of Bun so packages like `canvas` can compile during `bun install`. Images are pulled on demand and cached in a `Map` so the same image isn't pulled twice across concurrent builds.
 
-The bind mount (`options.cwd:/workspace`) is why the worker and the Docker daemon need to share a filesystem path. In Docker Compose, both `/tmp/pdploy-builds` on the host and inside the worker container point to the same physical directory.
+The bind mount (`options.cwd:/workspace`) is why the worker and the Docker daemon need to share a filesystem path. In Docker Compose, both `/tmp/deployher-builds` on the host and inside the worker container point to the same physical directory.
 
 **8. Artifact collection.** After the build succeeds, the worker walks the output directory and uploads every file to S3:
 
@@ -780,7 +780,7 @@ I didn't want to use AWS S3. The whole point of this project is self-hosting. Bu
 
 Enter Garage. It's a Rust-based, self-hostable, S3-compatible object store built by the Deuxfleurs collective. Single binary. 1GB RAM minimum. Uses SQLite for metadata and flat files for data. It's basically what you'd build if you wanted "S3 but on a single server."
 
-In Pdploy's `docker-compose.yml`, Garage runs as a single container:
+In Deployher's `docker-compose.yml`, Garage runs as a single container:
 
 ```yaml
 garage:
@@ -831,9 +831,9 @@ export async function getTextFromOffset(
 
 Presigned URLs are supported too, for cases where you want to give a client direct S3 access without proxying through the app server.
 
-### Garage bootstrap: the infra script
+### Garage bootstrap: the deployher CLI
 
-The `infra/dev.sh` script is a bash orchestrator for bootstrapping the storage layer and app stack. **It does not require Bun on the host** — migrate/seed run inside **`oven/bun`** via `docker run` (override with **`BUN_IMAGE`**). Running `./infra/dev.sh start` will:
+The **`deployher`** CLI (under `cli/`) bootstraps the storage layer and app stack. **It does not require Bun on the host** for migrate/seed — those run inside **`oven/bun`** via `docker run` (override with **`BUN_IMAGE`**). You can run it with **`bun run deployher start`** or, after **`bun run build:cli`**, **`./dist/deployher-cli start`**. **`deployher start`** will:
 
 1. **Generate Garage secrets** — RPC secret (64-hex), admin token, metrics token → writes `.garage.env`
 2. **Start infrastructure** — `docker compose up -d garage postgres redis nexus` (and related services)
@@ -848,7 +848,7 @@ The `infra/dev.sh` script is a bash orchestrator for bootstrapping the storage l
 11. **Start app services** — builds and starts `app`, `deployment-worker`, `node-build-image`, `bun-build-image`
 12. **Verify Docker access** — confirms the deployment-worker can talk to the Docker daemon
 
-The script also supports a Nexus container registry for environments where you want to cache Docker images locally:
+**`deployher`** also supports a Nexus container registry for environments where you want to cache Docker images locally (conceptually similar to):
 
 ```bash
 ensure_nexus_images() {
@@ -868,7 +868,7 @@ ensure_nexus_images() {
 
 This is mainly useful on Hetzner where bandwidth is cheap but image pull latency adds up when you're running multiple builds.
 
-After mirroring the upstream bases, the script also builds and pushes `pdploy-node-build-image:latest` and `pdploy-bun-build-image:latest` so workers can use the same preconfigured build images in local and remote environments.
+After mirroring the upstream bases, **`deployher start`** also builds and pushes `deployher-node-build-image:latest` and `deployher-bun-build-image:latest` so workers can use the same preconfigured build images in local and remote environments.
 
 ## The preview system: subdomains and paths
 
@@ -1021,9 +1021,9 @@ The `deployment-worker` container is heavier. Its Dockerfile (`docker/build-work
 
 It needs all of this because it shells out to these tools both directly and inside containers. The worker itself runs Bun, but it orchestrates builds across multiple runtimes.
 
-The `node-build-image` service is an init container—it builds a pre-configured Node.js image with common tools installed, tags it as `pdploy-node-build-image:latest`, prints "node builder image ready," and exits. The deployment workers reference this image for Node.js builds instead of pulling `node:22-bookworm` fresh every time.
+The `node-build-image` service is an init container—it builds a pre-configured Node.js image with common tools installed, tags it as `deployher-node-build-image:latest`, prints "node builder image ready," and exits. The deployment workers reference this image for Node.js builds instead of pulling `node:22-bookworm` fresh every time.
 
-The `bun-build-image` service does the same for Bun-based projects. It produces `pdploy-bun-build-image:latest`, which includes Python plus the Cairo and Pango development libraries commonly needed by native Bun dependencies such as `canvas`.
+The `bun-build-image` service does the same for Bun-based projects. It produces `deployher-bun-build-image:latest`, which includes Python plus the Cairo and Pango development libraries commonly needed by native Bun dependencies such as `canvas`.
 
 ### Health checks and dependencies
 
@@ -1066,7 +1066,7 @@ For a single-server deployment, the setup is:
 1. Provision a Hetzner VPS with Docker pre-installed
 2. Clone the repo
 3. Configure `.env` with your domain, GitHub OAuth credentials, and any custom settings
-4. Run `./infra/dev.sh start`
+4. Run **`deployher start`** (from a machine with Bun, or use a compiled **`deployher-cli`** binary)
 5. Point your wildcard DNS (`*.yourdomain.com`) to the VPS IP
 6. Put a reverse proxy (Caddy/nginx) in front for TLS termination
 
@@ -1082,7 +1082,7 @@ The whole "build user code in isolated containers" thing sounds scary. In practi
 3. Bind-mount the build directory into each ephemeral container
 4. Clean up containers after they exit
 
-The only gotcha is the shared filesystem. When the worker creates a temp directory at `/tmp/pdploy-builds/build-abc123`, the Docker daemon needs to see that same path. In Compose, you just volume-mount `/tmp/pdploy-builds` into both the worker and the host.
+The only gotcha is the shared filesystem. When the worker creates a temp directory at `/tmp/deployher-builds/build-abc123`, the Docker daemon needs to see that same path. In Compose, you just volume-mount `/tmp/deployher-builds` into both the worker and the host.
 
 ### Redis Streams > BullMQ for simple queues
 
@@ -1102,7 +1102,7 @@ If you have fewer than 50 routes and one non-standard requirement (like subdomai
 
 ## What's next
 
-Pdploy is functional but not finished. The roadmap includes:
+Deployher is functional but not finished. The roadmap includes:
 
 - **Server-side deployments**: Right now only static sites get full preview serving. The `serveStrategy: "server"` path exists in the schema but returns a 501. The runtime image generation already works—it's just the "run the container and proxy to it" part that's missing.
 - **Automatic HTTPS**: Caddy integration for automatic TLS on preview URLs.
@@ -1117,7 +1117,7 @@ Here's what a deployment platform actually is: a build queue, an S3 bucket, and 
 
 Vercel wraps that in a beautiful UI, a global CDN, and edge functions. Netlify wraps it in a different beautiful UI, identity management, and forms. They're good products. But the core? The thing you're paying $20/month for? It's maybe 4,000 lines of TypeScript and a Docker Compose file.
 
-Pdploy runs on a $5 VPS. It handles Node and Python projects. It has GitHub OAuth, per-project env vars, real-time build logs, subdomain-based previews, and container-isolated builds. It's not Vercel. It's not trying to be. It's the deployment platform you build when you realize that "just upload my static files somewhere" shouldn't cost $50/month.
+Deployher runs on a $5 VPS. It handles Node and Python projects. It has GitHub OAuth, per-project env vars, real-time build logs, subdomain-based previews, and container-isolated builds. It's not Vercel. It's not trying to be. It's the deployment platform you build when you realize that "just upload my static files somewhere" shouldn't cost $50/month.
 
 And honestly? Building it taught me more about how the web works than years of *using* platforms ever did. When you have to implement the zipball download, the build container, the artifact upload, the preview serving, and the subdomain routing yourself—you start to understand why PaaS exists, and also why it doesn't have to cost what it costs.
 
