@@ -13,9 +13,9 @@
 [better-auth]: https://www.better-auth.com/
 [github-oauth]: https://github.com/settings/developers
 
-# Pdploy
+# Deployher
 
-Pdploy is a self-hosted deployment platform for web applications. It uses [bun], [drizzle], [postgres], [redis], [garage], and [docker]. On pdploy, you can connect GitHub repos, trigger builds, and serve web applications via subdomain or path.
+Deployher ([deployher.com](https://deployher.com)) is a self-hosted deployment platform for web applications. It uses [bun], [drizzle], [postgres], [redis], [garage], and [docker]. With Deployher, you can connect GitHub repos, trigger builds, and serve web applications via subdomain or path.
 
 ## How
 
@@ -23,15 +23,16 @@ Deployments are processed by a dedicated deployment worker service (`deployment-
 The worker talks to the host Docker daemon through `dockerode` over `/var/run/docker.sock`.
 The queue uses Redis Streams consumer groups, so multiple worker replicas can process deployments concurrently.
 
-> [!WARNING]
-> The socket-mounted worker path is a trusted-local development model. Keep `TRUSTED_LOCAL_DOCKER=1` for your own machine or an explicitly trusted lab. For untrusted tenants, put previews behind an isolated runner/supervisor and leave `RUNNER_PREVIEW_ENABLED=0` until that runner is available.
+> [!NOTE]
+> Only the **deployment worker** and **preview-runner** mount the Docker socket. The app never talks to Docker; build cancellation is signaled over Redis and workers remove labeled build containers.
 
 The Compose stack includes:
 
 - `app`: HTTP API/web server
+- `preview-runner`: loads `runtime-image.tar` from S3, runs bounded preview containers, proxies `RUNNER_URL` `/preview/<deploymentId>/…`
 - `deployment-worker`: Redis consumer that runs builds via Docker
-- `pdploy-node-build-image:latest`: Node build image with `pnpm` pre-activated via Corepack
-- `pdploy-bun-build-image:latest`: Bun build image with Python and native build deps for packages like `canvas`
+- `deployher-node-build-image:latest`: Node build image with `pnpm` pre-activated via Corepack
+- `deployher-bun-build-image:latest`: Bun build image with Python and native build deps for packages like `canvas`
 
 Scale workers:
 
@@ -46,8 +47,8 @@ Each deployment emits a container image tarball (`runtime-image.tar`, Docker sav
 ## Quick start
 
 1. Install [Docker][docker-get] (and [Docker Compose][compose-install] if not bundled).
-2. Clone, **`cp .env.example .env`**, and fill **GitHub OAuth**, **`BETTER_AUTH_SECRET`**, and **Nexus** (`NEXUS_*`) — see **[docs/SETUP.md](docs/SETUP.md)**.
-3. Run **`./infra/dev.sh start`** once (bootstrap: infra, migrations + seed via **`oven/bun` in Docker**, app + workers). **No Bun on the host** — only Docker.
+2. Clone, **`cp .env.example .env`**, and fill **GitHub OAuth**, **`BETTER_AUTH_SECRET`**, and **Nexus** (`NEXUS_*`). Defaults and most tunables live in **`config/default.toml`**; optional overrides in **`config/local.toml`** — see **[docs/SETUP.md](docs/SETUP.md)**.
+3. Run **`bun run deployher start`** once (bootstrap: infra, migrations + seed via **`oven/bun` in Docker**, app + workers). That needs [Bun][bun-install] for the CLI process. For a **standalone** infra CLI with no Bun at runtime, run **`bun run build:cli`** then **`./dist/deployher-cli start`**. Put **`deployher`** on `PATH` with **`bun link --global`** (runs [`cli/`](cli/) via Bun) or **`bun run cli:link`** after a compile (symlinks **`dist/deployher-cli`** to **`~/.local/bin/deployher`**).
 4. After that, choose how you run day-to-day:
 
 **Full stack in Docker only (no Bun on the host for day-to-day):**
@@ -56,7 +57,7 @@ Each deployment emits a container image tarball (`runtime-image.tar`, Docker sav
 docker compose up -d --build
 ```
 
-App: `http://localhost:3000`. Migrations run in the app container; **seed** is not re-run by Compose — use `./infra/dev.sh seed` (Docker) or `bun run seed` on the host when using hot-reload dev below.
+App: `http://localhost:3000`. Migrations run in the app container; **seed** is not re-run by Compose — use **`deployher seed`** (Docker) or `bun run seed` on the host when using hot-reload dev below.
 
 **Infra in Docker, app + worker on the host (hot reload, requires Bun):**
 
@@ -66,11 +67,12 @@ docker compose stop app deployment-worker
 bun run dev
 # terminal 2
 bun run start:worker
+# terminal 3 (server previews): bun run start:preview-runner — needs Docker + same S3 env as the app; set RUNNER_DOCKER_NETWORK to your compose default network (e.g. deployher_default) if the runner runs in a container
 ```
 
 Docker app: `http://localhost:3000`. Host Bun dev: `http://localhost:3001`. If OrbStack or another service already owns `3000`, `docker compose stop app deployment-worker` only frees the Compose app ports; it does not stop unrelated listeners already bound on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows, env reference, and troubleshooting: **[docs/SETUP.md](docs/SETUP.md)**.
 
-Static preview assets are redirected to object storage or a configured CDN base URL when possible. Server previews remain feature-gated behind `RUNNER_PREVIEW_ENABLED=1` plus a configured `RUNNER_URL`.
+Static preview assets are redirected to object storage or a configured CDN base URL when possible. Server previews require `RUNNER_PREVIEW_ENABLED=1`, `RUNNER_URL` pointing at the preview-runner (or compatible) service, and matching S3 credentials on the runner. Optional `RUNNER_SHARED_SECRET` is sent as `x-deployher-runner-secret`.
 
 ## Example projects
 
@@ -79,9 +81,11 @@ Ready-to-use sample repos live in `/examples`:
 - `examples/node-npm-static`
 - `examples/node-pnpm-static`
 - `examples/node-bun-static`
+- `examples/bun-server-api`
+- `examples/bun-server-client`
 - `examples/node-yarn-static`
 - `examples/python-mkdocs-pip`
-- `examples/python-pdploy-pip`
+- `examples/python-deployher-pip`
 
 See `examples/README.md` for usage.
 
@@ -110,7 +114,8 @@ See `examples/README.md` for usage.
 | `src/db/` | Drizzle schema and DB client |
 | `auth.ts` | Better Auth config |
 | `drizzle/` | Migrations |
-| `infra/dev.sh` | Dev infra: Postgres, Redis, Garage, Nexus; migrate/seed via **`oven/bun` in Docker**; app + workers |
+| [`cli/`](cli/) | Dev infra: Postgres, Redis, Garage, Nexus; migrate/seed via **`oven/bun` in Docker**; app + workers. Run with **`bun run deployher`**, **`./dist/deployher-cli`** after **`bun run build:cli`**, or **`deployher`** on `PATH`. |
+| `config/default.toml` | Committed app defaults (Compose handles in-network service wiring separately) |
 | `docker-compose.yml` | App, deployment-worker, builder images, Postgres, Redis, Garage, Nexus |
 | `Dockerfile` | Multi-stage build for the app image |
 | `docker/build-worker.Dockerfile` | Docker image for the standalone deployment worker |
@@ -125,7 +130,7 @@ Bun can compile the server into one binary. Client assets must be built first an
 bun run build:exe
 ```
 
-Output: `dist/pdploy`
+Output: `dist/deployher`
 
 **Linux (e.g. for a server):**
 
@@ -137,14 +142,16 @@ bun run build:exe:linux-arm64
 **Run the binary:**
 
 ```bash
-chmod +x dist/pdploy
-SKIP_CLIENT_BUILD=1 ./dist/pdploy
+chmod +x dist/deployher
+SKIP_CLIENT_BUILD=1 ./dist/deployher
 ```
+
+**Infra-only CLI (Compose / migrate / seed helpers, no full app bundle):** **`bun run build:cli`** writes **`dist/deployher-cli`** (separate from **`build:exe`**, which produces **`dist/deployher`** for the full server). Use **`bun run cli:link`** to symlink **`dist/deployher-cli`** into **`~/.local/bin/deployher`**; it **prompts** before editing **`~/.zshrc`** to add **`PATH`**. **`bun run cli:link -- --yes`** skips the prompt (e.g. CI); **`CLI_LINK_NO_ZSHRC=1`** only creates the symlink.
 
 > [!NOTE]
 > Build workers run via `bun run start:worker` (or the `deployment-worker` Compose service). `src/workers/buildWorker.ts` contains the shared worker loop used by that entrypoint.
 
 ## Documentation
 
-- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, **`./infra/dev.sh`** (migrate/seed via **`oven/bun` in Docker**, no Bun on host), both dev workflows, env vars, ports, infra script reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **troubleshooting**.
+- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, **`deployher`** CLI (migrate/seed via **`oven/bun` in Docker**, no Bun on host), both dev workflows, env vars, ports, CLI reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **troubleshooting**.
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Monorepo workspace/app roots, runtime image modes, Dockerfile-first server deploys, Nexus-aware Docker build args, and security notes.
