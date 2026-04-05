@@ -1,5 +1,7 @@
+import "../env/bootstrap";
 import { ensureDeploymentQueue } from "../queue";
 import { isRedisConfigured } from "../redis";
+import { runBuildCancelSubscriber } from "./buildCancelSubscriber";
 import { runLoop } from "./buildWorker";
 
 const startBuildWorker = async () => {
@@ -13,7 +15,7 @@ const startBuildWorker = async () => {
     console.error("Failed to initialize Redis deployment stream:", error);
   }
 
-  await runLoop();
+  await Promise.all([runBuildCancelSubscriber(), runLoop()]);
 };
 
 startBuildWorker().catch((error) => {
