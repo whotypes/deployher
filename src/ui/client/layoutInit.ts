@@ -1,8 +1,3 @@
-/**
- * Browser-only script for global layout (sidebar, signout). Uses DOM APIs.
- * Loaded via <script src="/assets/layout.js" type="module"> on every page.
- */
-
 import {
   applyLayoutDisplayPrefsToDocument,
   type LayoutDisplayPrefKey,
@@ -27,8 +22,7 @@ const writeSidebarCookie = (expanded: boolean): void => {
   document.cookie = `${SIDEBAR_STATE_COOKIE}=${expanded}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax`;
 };
 
-document.addEventListener("DOMContentLoaded", () => {
-  const body = document.body;
+export const initLayout = (): void => {
   const shell = document.getElementById("deployher-shell");
   const sidebar = document.getElementById("deployher-sidebar");
   const backdrop = document.getElementById("deployher-sidebar-backdrop");
@@ -36,7 +30,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const closeBtn = document.getElementById("deployher-sidebar-close-mobile");
   const desktopToggle = document.getElementById("deployher-sidebar-toggle-desktop");
   const sidebarRail = document.getElementById("deployher-sidebar-rail");
-  const prefButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-layout-pref][data-value]"));
+  const prefButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[data-layout-pref][data-value]")
+  );
 
   const syncPrefButtons = () => {
     prefButtons.forEach((button) => {
@@ -142,4 +138,4 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
-});
+};

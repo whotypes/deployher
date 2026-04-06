@@ -1,5 +1,7 @@
 import * as React from "react";
 import { Settings2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -25,6 +27,7 @@ const setPref = (key: LayoutDisplayPrefKey, value: string) => {
 };
 
 export const LayoutPrefsMenu = () => {
+  const { t, i18n } = useTranslation();
   const [contentWidth, setContentWidth] = React.useState(() => readLayoutDisplayPref("contentWidth"));
   const [density, setDensity] = React.useState(() => readLayoutDisplayPref("density"));
   const [ambient, setAmbient] = React.useState(() => readLayoutDisplayPref("ambient"));
@@ -48,22 +51,22 @@ export const LayoutPrefsMenu = () => {
           variant="outline"
           size="icon"
           className={cn("size-9 shrink-0 border-border/70 bg-background/60 shadow-none")}
-          aria-label="Workspace display settings"
+          aria-label={t("layoutPrefs.triggerAria")}
         >
           <Settings2 className="size-4" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" sideOffset={8} collisionPadding={12}>
         <DropdownMenuLabel className="font-normal">
-          <span className="block text-xs font-semibold text-foreground">Display</span>
+          <span className="block text-xs font-semibold text-foreground">{t("layoutPrefs.display")}</span>
           <span className="block pt-0.5 text-[0.7rem] font-normal leading-snug text-muted-foreground">
-            Local to this browser. More options on your account page.
+            {t("layoutPrefs.displayHint")}
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
         <p className="px-2 pb-1 pt-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
-          Content width
+          {t("layoutPrefs.contentWidth")}
         </p>
         <DropdownMenuRadioGroup
           value={contentWidth}
@@ -72,14 +75,14 @@ export const LayoutPrefsMenu = () => {
             setPref("contentWidth", value);
           }}
         >
-          <DropdownMenuRadioItem value="contained">Focused</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="wide">Wide</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="contained">{t("layoutPrefs.focused")}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="wide">{t("layoutPrefs.wide")}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
 
         <p className="px-2 pb-1 pt-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
-          Density
+          {t("layoutPrefs.density")}
         </p>
         <DropdownMenuRadioGroup
           value={density}
@@ -88,14 +91,14 @@ export const LayoutPrefsMenu = () => {
             setPref("density", value);
           }}
         >
-          <DropdownMenuRadioItem value="comfortable">Comfortable</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="compact">Compact</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="comfortable">{t("layoutPrefs.comfortable")}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="compact">{t("layoutPrefs.compact")}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
 
         <p className="px-2 pb-1 pt-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
-          Ambient surface
+          {t("layoutPrefs.ambientSurface")}
         </p>
         <DropdownMenuRadioGroup
           value={ambient}
@@ -104,15 +107,30 @@ export const LayoutPrefsMenu = () => {
             setPref("ambient", value);
           }}
         >
-          <DropdownMenuRadioItem value="rich">Alive</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="muted">Muted</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="rich">{t("layoutPrefs.alive")}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="muted">{t("layoutPrefs.muted")}</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+
+        <p className="px-2 pb-1 pt-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("layoutPrefs.language")}
+        </p>
+        <DropdownMenuRadioGroup
+          value={i18n.language.startsWith("fr") ? "fr" : "en"}
+          onValueChange={(lng) => {
+            void i18n.changeLanguage(lng);
+          }}
+        >
+          <DropdownMenuRadioItem value="en">{t("layoutPrefs.english")}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="fr">{t("layoutPrefs.french")}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <a href="/account#display" className="cursor-pointer">
-            Open account settings…
-          </a>
+          <Link to="/account#display" className="cursor-pointer">
+            {t("layoutPrefs.openAccount")}
+          </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
