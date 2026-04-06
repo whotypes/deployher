@@ -940,7 +940,7 @@
   },
   "repoExplorer": {
     "defaultTitle": "Repository browser",
-    "intro": "Line counts from a snapshot of the repo (zip download). Large or binary files are skipped.",
+    "intro": "Line counts from a snapshot of the repo (zip download). Binary assets under public/ or static/ are listed but only text files load in the preview pane.",
     "lineCountsFailed": "Failed to load line counts",
     "loadRepoFailed": "Failed to load repository",
     "fileLoadFailed": "Failed to load file",
@@ -955,7 +955,11 @@
     "noFiles": "No files",
     "loading": "Loading…",
     "linesOfCode": "Lines of code",
-    "noLanguageBreakdown": "No language breakdown"
+    "noLanguageBreakdown": "No language breakdown",
+    "cannotPreviewBinary": "This file is binary or not decodable as text.",
+    "cannotPreviewTooLarge": "This file is too large to preview here.",
+    "openOnGitHub": "View on GitHub",
+    "openOnPreview": "Open on preview"
   },
   "terminal": {
     "tabBuild": "build",
