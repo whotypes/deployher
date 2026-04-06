@@ -1745,6 +1745,46 @@ const processJob = async (job: DeploymentJob) => {
         .where(eq(schema.deployments.id, deployment.id));
       void notifyPreviewRunnersPrewarm(pull);
     }
+
+    if (
+      status === "success" &&
+      serveStrategy === "server" &&
+      (runtimeImagePullRef?.trim() || runtimeImageArtifactKey?.trim())
+    ) {
+      const runnerEnabled = config.runner.previewEnabled && Boolean(config.runner.url?.trim());
+      if (!runnerEnabled) {
+        status = "failed";
+        logLine(
+          ctx,
+          "Server preview requires an isolated runner (set RUNNER_PREVIEW_ENABLED and RUNNER_URL)."
+        );
+      } else {
+        logLine(ctx, "Starting preview container on isolated runner…");
+        enqueueLogFlush(0);
+        try {
+          await requestRunnerEnsurePreview({
+            deploymentId: deployment.id,
+            projectId: deployment.projectId,
+            runtimeImagePullRef: runtimeImagePullRef?.trim() || undefined,
+            runtimeImageArtifactKey: runtimeImageArtifactKey?.trim() || undefined,
+            runtimeConfig,
+            onLogLine: (line) => {
+              console.log(`[ensure-preview ${deployment.shortId}] ${line}`);
+              logLine(ctx, line);
+              enqueueLogFlush(0);
+            }
+          });
+          logLine(ctx, "Preview container is ready.");
+        } catch (err) {
+          status = "failed";
+          logLine(
+            ctx,
+            `Preview container failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+        enqueueLogFlush(0);
+      }
+    }
   } catch (error) {
       status = "failed";
       logLine(ctx, `Build error: ${error instanceof Error ? error.message : String(error)}`);
@@ -1818,25 +1858,6 @@ const processJob = async (job: DeploymentJob) => {
       void refreshProjectSiteMetadata(deployment.projectId, { previewPageUrl: previewUrl }).catch((err) => {
         console.error("Failed to refresh project site metadata:", err);
       });
-    }
-
-    if (status === "success" && serveStrategy === "server" && (runtimeImagePullRef?.trim() || runtimeImageArtifactKey?.trim())) {
-      const [currentRow] = await db
-        .select({ currentDeploymentId: schema.projects.currentDeploymentId })
-        .from(schema.projects)
-        .where(eq(schema.projects.id, deployment.projectId))
-        .limit(1);
-      if (currentRow?.currentDeploymentId === deployment.id) {
-        void requestRunnerEnsurePreview({
-          deploymentId: deployment.id,
-          projectId: deployment.projectId,
-          runtimeImagePullRef: runtimeImagePullRef?.trim() || undefined,
-          runtimeImageArtifactKey: runtimeImageArtifactKey?.trim() || undefined,
-          runtimeConfig
-        }).catch((err) => {
-          console.error("Failed to request preview container ensure after build:", err);
-        });
-      }
     }
 
     await publishDeploymentEvent(deployment.id, { type: "status", status });
