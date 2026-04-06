@@ -59,4 +59,52 @@ describe("computeRepoLocsFromZipBuffer", () => {
     expect(res.locs.loc).toBe(1);
     expect(res.locs.children?.["x.ts"]).toBe(1);
   });
+
+  it("includes public and static binary assets at 0 LOC", () => {
+    const zipped = zipSync({
+      "r-abc/src/a.ts": strToU8("x\n"),
+      "r-abc/public/demo/og.webp": new Uint8Array([0x52, 0x49, 0x46, 0x46]),
+      "r-abc/static/hero.png": new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      "r-abc/src/asset.png": strToU8("not-in-public\n")
+    });
+    const res = computeRepoLocsFromZipBuffer(zipped, {
+      projectRoot: "",
+      filter: ""
+    });
+    expect(res.locs.children?.public).toBeDefined();
+    const pub = res.locs.children?.public;
+    expect(typeof pub === "object" && pub !== null && "children" in pub && pub.children?.demo).toBeDefined();
+    const demo = pub && typeof pub === "object" && "children" in pub ? pub.children?.demo : undefined;
+    expect(typeof demo === "object" && demo !== null && "children" in demo && demo.children?.["og.webp"]).toBe(0);
+
+    expect(res.locs.children?.static).toBeDefined();
+    const st = res.locs.children?.static;
+    expect(
+      typeof st === "object" && st !== null && "children" in st && st.children?.["hero.png"]
+    ).toBe(0);
+
+    expect(res.locs.children?.src).toBeDefined();
+    expect(res.locs.children?.src).toMatchObject({
+      loc: 1,
+      children: { "a.ts": 1 }
+    });
+  });
+
+  it("includes oversized public binary assets in the tree", () => {
+    const big = new Uint8Array(512 * 1024 + 1024);
+    big[0] = 0xff;
+    big[1] = 0xd8;
+    const zipped = zipSync({
+      "r-abc/public/huge.jpg": big
+    });
+    const res = computeRepoLocsFromZipBuffer(zipped, {
+      projectRoot: "",
+      filter: ""
+    });
+    expect(res.locs.children?.public).toBeDefined();
+    const pub = res.locs.children?.public;
+    expect(
+      typeof pub === "object" && pub !== null && "children" in pub && pub.children?.["huge.jpg"]
+    ).toBe(0);
+  });
 });
