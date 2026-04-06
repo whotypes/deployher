@@ -12,6 +12,12 @@ import { LazyRepoCodeExplorer } from "./repo-code-explorer-lazy";
 type Props = { bootstrap: ProjectDetailBootstrap };
 
 export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
+  const siteMeta = bootstrap.siteMeta;
+  const siteIconUrl = siteMeta?.siteIconUrl ?? "";
+  const siteOgImageUrl = siteMeta?.siteOgImageUrl ?? "";
+  const siteMetaFetchedAt = siteMeta?.siteMetaFetchedAt ?? "";
+  const siteMetaError = siteMeta?.siteMetaError ?? "";
+
   useEffect(() => {
     const roots: Root[] = [];
     const { projectId } = bootstrap;
@@ -49,6 +55,7 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
       r.render(
         <ProjectDetailHeroSitePreview
           projectId={projectId}
+          projectName={bootstrap.projectName}
           previewUrl={bootstrap.currentPreviewUrl}
           initial={bootstrap.siteMeta}
         />
@@ -74,6 +81,7 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
               repo={spec.repo}
               ref={bootstrap.branch.trim()}
               projectRoot={bootstrap.projectRootDir.trim() === "" ? "." : bootstrap.projectRootDir.trim()}
+              previewBaseUrl={bootstrap.currentPreviewUrl ?? undefined}
             />
           </Suspense>
         );
@@ -90,7 +98,19 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
         }
       });
     };
-  }, [bootstrap]);
+  }, [
+    bootstrap.projectId,
+    bootstrap.projectName,
+    bootstrap.repoUrl,
+    bootstrap.branch,
+    bootstrap.projectRootDir,
+    bootstrap.currentPreviewUrl,
+    bootstrap.hasSuccessfulDeployment,
+    siteIconUrl,
+    siteOgImageUrl,
+    siteMetaFetchedAt,
+    siteMetaError
+  ]);
 
   return null;
 };
