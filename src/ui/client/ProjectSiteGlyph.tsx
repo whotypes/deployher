@@ -1,20 +1,29 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useState, type ReactElement } from "react";
+import { useProjectGlyphImage } from "@/ui/client/useProjectGlyphImage";
+import { type ReactElement } from "react";
 
 export const ProjectSiteGlyph = ({
   name,
   siteIconUrl,
-  className
+  previewUrl,
+  className,
+  imgClassName = "size-5 object-cover",
+  letterClassName = "flex size-5 items-center justify-center bg-muted text-[10px] font-semibold text-muted-foreground"
 }: {
   name: string;
   siteIconUrl: string | null;
+  previewUrl: string | null;
   className?: string;
+  imgClassName?: string;
+  letterClassName?: string;
 }): ReactElement => {
-  const [failed, setFailed] = useState(false);
-  const letter = name.trim()[0]?.toUpperCase() ?? "?";
-  const showImg = Boolean(siteIconUrl) && !failed;
+  const { activeSrc, showImg, handleImgError, letter } = useProjectGlyphImage(
+    name,
+    siteIconUrl,
+    previewUrl
+  );
   return (
     <span
       className={cn(
@@ -24,19 +33,15 @@ export const ProjectSiteGlyph = ({
     >
       {showImg ? (
         <img
-          src={siteIconUrl ?? ""}
+          src={activeSrc ?? ""}
           alt=""
-          className="size-5 object-cover"
-          width={20}
-          height={20}
+          className={imgClassName}
           loading="lazy"
           decoding="async"
-          onError={() => setFailed(true)}
+          onError={handleImgError}
         />
       ) : (
-        <span className="flex size-5 items-center justify-center bg-muted text-[10px] font-semibold text-muted-foreground">
-          {letter}
-        </span>
+        <span className={letterClassName}>{letter}</span>
       )}
     </span>
   );
