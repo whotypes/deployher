@@ -1,12 +1,12 @@
 import path from "path";
+import { STATIC_SITE_INDEX_HTML_RELATIVE_PATHS } from "../../../lib/staticSiteEntrypoints";
 import type { BuildRuntime, BuildStrategy } from "../types";
 
-const STATIC_ENTRYPOINTS = [
-  { entry: "index.html", outputDir: "." },
-  { entry: "public/index.html", outputDir: "public" },
-  { entry: "dist/index.html", outputDir: "dist" },
-  { entry: "build/index.html", outputDir: "build" }
-] as const;
+const STATIC_ENTRYPOINTS = STATIC_SITE_INDEX_HTML_RELATIVE_PATHS.map((entry) => {
+  const outputDir =
+    entry === "index.html" ? "." : entry.replace(/\/index\.html$/, "");
+  return { entry, outputDir } as const;
+});
 
 const detectStaticOutputDir = async (
   repoDir: string,

@@ -130,8 +130,14 @@ const validateStaticOutputDir = async (
   return resolvedOutputDir;
 };
 
-const buildNextRuntimeConfig = (): RuntimeConfig => ({
-  workingDir: ".",
+const runtimeWorkingDirFromProjectRoot = (repoRelativeDir: string): string => {
+  const n = repoRelativeDir.trim().replace(/\\/g, "/");
+  if (n === "" || n === ".") return ".";
+  return n;
+};
+
+const buildNextRuntimeConfig = (repoRelativeDir: string): RuntimeConfig => ({
+  workingDir: runtimeWorkingDirFromProjectRoot(repoRelativeDir),
   port: DEFAULT_SERVER_PORT,
   framework: "nextjs",
   command: [
@@ -258,7 +264,7 @@ export const nodeBuildStrategy: BuildStrategy = {
       nextAppSignals && (await runtime.isDirectory(path.join(repoDir, ".next")));
     const explicitServerRuntime = deployherConfig.runtimeCommand?.length
       ? {
-          workingDir: ".",
+          workingDir: runtimeWorkingDirFromProjectRoot(ctx.repoRelativeDir),
           port: deployherConfig.runtimePort ?? DEFAULT_SERVER_PORT,
           command: deployherConfig.runtimeCommand,
           framework: "node" as const
@@ -268,11 +274,11 @@ export const nodeBuildStrategy: BuildStrategy = {
       ctx.frameworkHint === "node" &&
       (ctx.previewMode === "server" || staticOutputDir == null);
     const serverRuntime = nextServerDetected
-      ? buildNextRuntimeConfig()
+      ? buildNextRuntimeConfig(ctx.repoRelativeDir)
       : explicitServerRuntime ?? (
           deployherConfig.serveStrategy === "server" || inferServerFromNodeFrameworkHint
             ? {
-                workingDir: ".",
+                workingDir: runtimeWorkingDirFromProjectRoot(ctx.repoRelativeDir),
                 port: deployherConfig.runtimePort ?? DEFAULT_SERVER_PORT,
                 command: defaultRuntimeCommand(manager.name),
                 framework: "node" as const

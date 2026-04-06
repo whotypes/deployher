@@ -24,11 +24,24 @@ export type RuntimeConfig = {
   env?: Record<string, string>;
 };
 
+export type RuntimePackaging =
+  | {
+      kind: "next-standalone";
+    }
+  | {
+      kind: "next-trace";
+    }
+  | {
+      kind: "workspace-install";
+      installCommand: string[];
+    };
+
 export type BuildResult = {
   buildStrategy: BuildStrategyId;
   serveStrategy: ServeStrategy;
   outputDir?: string;
   runtimeConfig?: RuntimeConfig;
+  runtimePackaging?: RuntimePackaging;
   previewResolution: PreviewResolution;
 };
 

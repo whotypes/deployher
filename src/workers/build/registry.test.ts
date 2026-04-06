@@ -332,6 +332,7 @@ describe("node build strategy", () => {
 
       expect(result.serveStrategy).toBe("server");
       expect(result.runtimeConfig?.framework).toBe("nextjs");
+      expect(result.runtimeConfig?.workingDir).toBe(".");
       expect(result.runtimeConfig?.command).toEqual([
         "node_modules/next/dist/bin/next",
         "start",
@@ -340,6 +341,45 @@ describe("node build strategy", () => {
         "-H",
         "0.0.0.0"
       ]);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("sets next runtime workingDir to the project root in a monorepo", async () => {
+    const repo = await createRepo({
+      "package.json": JSON.stringify({ name: "workspace", packageManager: "npm@10.0.0" }),
+      "package-lock.json": "{}",
+      "web/package.json": JSON.stringify({
+        name: "web",
+        scripts: { build: "next build" },
+        dependencies: { next: "15.0.0" }
+      }),
+      "web/.next/BUILD_ID": "build-id"
+    });
+
+    const runtime: BuildRuntime = {
+      ...createRuntime(),
+      runCommand: async () => ({ code: 0, stdout: "", stderr: "" })
+    };
+
+    try {
+      const result = await nodeBuildStrategy.build(
+        path.join(repo.dir, "web"),
+        {
+          ...createBuildCtx("dep-node-next-monorepo"),
+          repoDir: path.join(repo.dir, "web"),
+          workspaceDir: repo.dir,
+          repoRelativeDir: "web",
+          workspaceRelativeDir: ".",
+          previewMode: "auto"
+        },
+        runtime
+      );
+
+      expect(result.serveStrategy).toBe("server");
+      expect(result.runtimeConfig?.framework).toBe("nextjs");
+      expect(result.runtimeConfig?.workingDir).toBe("web");
     } finally {
       await repo.cleanup();
     }

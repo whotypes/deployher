@@ -6,6 +6,7 @@ export type NodePackageManagerName = "bun" | "pnpm" | "yarn" | "npm";
 export type NodePackageManager = {
   name: NodePackageManagerName;
   install: string[];
+  installProd: string[];
   runBuild: string[];
   extraEnv?: Record<string, string>;
 };
@@ -47,6 +48,9 @@ const buildNodePackageManager = (
         install: locked
           ? [bunCli.command, "install", "--frozen-lockfile"]
           : [bunCli.command, "install"],
+        installProd: locked
+          ? [bunCli.command, "install", "--frozen-lockfile", "--production"]
+          : [bunCli.command, "install", "--production"],
         runBuild: [bunCli.command, "run", "build"],
         ...(bunCli.env && { extraEnv: bunCli.env })
       };
@@ -57,6 +61,9 @@ const buildNodePackageManager = (
         install: locked
           ? ["corepack", "pnpm", "install", "--frozen-lockfile", "--prod=false"]
           : ["corepack", "pnpm", "install", "--prod=false"],
+        installProd: locked
+          ? ["corepack", "pnpm", "install", "--frozen-lockfile", "--prod"]
+          : ["corepack", "pnpm", "install", "--prod"],
         runBuild: ["corepack", "pnpm", "run", "build"]
       };
     case "yarn":
@@ -65,12 +72,16 @@ const buildNodePackageManager = (
         install: locked
           ? ["corepack", "yarn", "install", "--frozen-lockfile"]
           : ["corepack", "yarn", "install"],
+        installProd: locked
+          ? ["corepack", "yarn", "install", "--frozen-lockfile", "--production=true"]
+          : ["corepack", "yarn", "install", "--production=true"],
         runBuild: ["corepack", "yarn", "build"]
       };
     case "npm":
       return {
         name: "npm",
         install: locked ? ["npm", "ci"] : ["npm", "install"],
+        installProd: locked ? ["npm", "ci", "--omit=dev"] : ["npm", "install", "--omit=dev"],
         runBuild: ["npm", "run", "build"]
       };
   }
