@@ -47,13 +47,7 @@ export const BuildLogTerminal = ({ logPath, children, className, streamSlot }: B
             {streamSlot}
           </div>
         </div>
-        <div className="relative min-h-0 flex-1">
-          {children}
-          <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-2 h-14 bg-linear-to-t from-zinc-950 via-zinc-950/55 to-transparent"
-            aria-hidden="true"
-          />
-        </div>
+        <div className="relative min-h-0 flex-1">{children}</div>
       </div>
     </div>
   );

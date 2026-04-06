@@ -1,6 +1,7 @@
-import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser, SidebarProjectSummary } from "../ui/Layout";
-import { Layout } from "../ui/Layout";
+import { useTranslation } from "react-i18next";
+import type { LayoutUser, SidebarProjectSummary } from "../ui/layoutUser";
+import { AppShell } from "../ui/AppShell";
+import { HealthPageClient } from "../ui/client/HealthPageClient";
 
 export type HealthData = {
   pathname?: string;
@@ -33,25 +34,20 @@ export type HealthData = {
   sidebarProjects?: SidebarProjectSummary[];
 };
 
-const HealthPage = ({ data }: { data: HealthData }) => (
-  <Layout
-    title="Health · Deployher"
-    pathname={data.pathname ?? "/health"}
-    user={data.user ?? null}
-    scriptSrc="/assets/health-page.js"
-    breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Health" }]}
-    sidebarProjects={data.sidebarProjects}
-  >
-    <script
-      type="application/json"
-      id="health-page-bootstrap"
-      dangerouslySetInnerHTML={{
-        __html: JSON.stringify(data).replace(/</g, "\\u003c")
-      }}
-    />
-    <div id="health-client-root" />
-  </Layout>
-);
-
-export const renderHealthPage = (data: HealthData) =>
-  renderToReadableStream(<HealthPage data={data} />);
+export const HealthPage = ({ data }: { data: HealthData }) => {
+  const { t } = useTranslation();
+  return (
+    <AppShell
+      title={t("meta.healthTitle", { appName: t("common.appName") })}
+      pathname={data.pathname ?? "/health"}
+      user={data.user ?? null}
+      breadcrumbs={[
+        { label: t("dashboard.pageTitle"), href: "/dashboard" },
+        { label: t("health.breadcrumb") }
+      ]}
+      sidebarProjects={data.sidebarProjects}
+    >
+      <HealthPageClient initialData={data} />
+    </AppShell>
+  );
+};
