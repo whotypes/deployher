@@ -12,12 +12,12 @@ import {
 import { sanitizeProxyResponseHeaders } from "../lib/proxyHeaders";
 import {
   ensurePreviewContainerWithDeps,
+  formatPreviewStartupFailureText,
   getContainerHost,
   type PreviewStartupFailure,
   PreviewStartupError,
   PREVIEW_STARTUP_LOG_TAIL,
-  type RuntimeConfig,
-  waitForHttp
+  type RuntimeConfig
 } from "./core";
 
 const DOCKER_SOCKET_PATH =
@@ -122,13 +122,57 @@ const dockerClient = new Docker({ socketPath: DOCKER_SOCKET_PATH });
 const loadImageCache = new Map<string, Promise<string>>();
 const pullImageCache = new Map<string, Promise<void>>();
 
+const previewPullTimeoutMs = parsePositiveInt(process.env.PREVIEW_PULL_TIMEOUT_MS, 600_000);
+const previewImageLoadTimeoutMs = parsePositiveInt(process.env.PREVIEW_IMAGE_LOAD_TIMEOUT_MS, 600_000);
+
+const withTimeout = async <T>(label: string, ms: number, work: Promise<T>): Promise<T> => {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    t = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (t) clearTimeout(t);
+  }
+};
+
+const formatDockerPullProgressLine = (obj: unknown): string | null => {
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  const status = typeof o.status === "string" ? o.status : "";
+  const id = typeof o.id === "string" ? o.id.slice(0, 12) : "";
+  const progress = typeof o.progress === "string" ? o.progress : "";
+  const stream = typeof o.stream === "string" ? o.stream : "";
+  let extra = "";
+  if (progress) {
+    extra = ` ${progress}`;
+  } else if (o.progressDetail && typeof o.progressDetail === "object") {
+    const pd = o.progressDetail as Record<string, unknown>;
+    const cur = pd.current;
+    const tot = pd.total;
+    if (typeof cur === "number" && typeof tot === "number") {
+      extra = ` ${cur}/${tot}`;
+    }
+  }
+  const left = [id, stream].filter(Boolean).join(" ");
+  const base = [status, left].filter(Boolean).join(" — ");
+  if (!base && !extra.trim()) return null;
+  return `docker pull: ${`${base}${extra}`.trim()}`;
+};
+
 const extractImageNameFromLoadOutput = (output: string, fallbackTag: string): string => {
   const loadedMatch = output.match(/Loaded image:\s+([^\s]+)/i);
   if (loadedMatch?.[1]) return loadedMatch[1];
   return fallbackTag;
 };
 
-const loadImageFromS3Key = async (artifactKey: string): Promise<string> => {
+const loadImageFromS3Key = async (
+  artifactKey: string,
+  onProgress?: (line: string) => void
+): Promise<string> => {
   const cached = loadImageCache.get(artifactKey);
   if (cached) return cached;
 
@@ -136,12 +180,19 @@ const loadImageFromS3Key = async (artifactKey: string): Promise<string> => {
   if (!client) throw new Error("S3 is not configured for preview runner");
 
   const promise = (async () => {
+    onProgress?.("Loading runtime image from artifact storage…");
     const stream = client.file(artifactKey).stream();
     const nodeReadable = Readable.fromWeb(stream as unknown as import("stream/web").ReadableStream);
-    const loadStream = await dockerClient.loadImage(nodeReadable as NodeJS.ReadableStream);
+    const loadStream = await withTimeout(
+      "S3 docker load",
+      previewImageLoadTimeoutMs,
+      dockerClient.loadImage(nodeReadable as NodeJS.ReadableStream)
+    );
     const output = await readDockerLoadOutput(loadStream as NodeJS.ReadableStream);
     const fallbackTag = `deployher-preview:${sanitizeLabelValue(artifactKey).slice(-40)}_${randomUUID().slice(0, 8)}`;
-    return extractImageNameFromLoadOutput(output, fallbackTag);
+    const tag = extractImageNameFromLoadOutput(output, fallbackTag);
+    onProgress?.(`Loaded image: ${tag}`);
+    return tag;
   })();
 
   loadImageCache.set(artifactKey, promise);
@@ -153,16 +204,21 @@ const loadImageFromS3Key = async (artifactKey: string): Promise<string> => {
   }
 };
 
-const ensureImagePulled = async (pullRef: string): Promise<void> => {
+const ensureImagePulled = async (pullRef: string, onProgress?: (line: string) => void): Promise<void> => {
   const ref = pullRef.trim();
   const cfg = loadPreviewRuntimeRegistryConfig();
   assertAllowedPullRef(ref, cfg);
   const cached = pullImageCache.get(ref);
-  if (cached) return cached;
+  if (cached) {
+    onProgress?.("(reusing in-flight or completed docker pull for this image)");
+    return cached;
+  }
 
   const pullOpts = registryPullAuth ? { authconfig: registryPullAuth } : {};
+  let pullStream: NodeJS.ReadableStream | undefined;
 
-  const promise = new Promise<void>((resolve, reject) => {
+  const pullPromise = new Promise<void>((resolve, reject) => {
+    onProgress?.(`docker pull: starting ${ref}`);
     dockerClient.pull(ref, pullOpts, (err: Error | null, stream: NodeJS.ReadableStream | undefined) => {
       if (err) {
         reject(err);
@@ -172,18 +228,36 @@ const ensureImagePulled = async (pullRef: string): Promise<void> => {
         reject(new Error("docker pull returned no stream"));
         return;
       }
-      dockerClient.modem.followProgress(stream, (err2: Error | null) => {
-        if (err2) reject(err2);
-        else resolve();
-      });
+      pullStream = stream;
+      dockerClient.modem.followProgress(
+        stream,
+        (err2: Error | null) => {
+          if (err2) reject(err2);
+          else resolve();
+        },
+        (obj: unknown) => {
+          const line = formatDockerPullProgressLine(obj);
+          if (line) onProgress?.(line);
+        }
+      );
     });
   });
 
-  pullImageCache.set(ref, promise);
+  const tracked = withTimeout("Docker pull", previewPullTimeoutMs, pullPromise).catch((e: unknown) => {
+    try {
+      (pullStream as NodeJS.ReadableStream & { destroy?: () => void })?.destroy?.();
+    } catch {
+      // ignore
+    }
+    throw e;
+  });
+
+  pullImageCache.set(ref, tracked);
   try {
-    await promise;
+    await tracked;
   } catch (e) {
     pullImageCache.delete(ref);
+    console.error(`preview-runner: pull failed or timed out for ${ref}:`, e);
     throw e;
   }
 };
@@ -246,6 +320,7 @@ const resolvePreviewContainerCommand = (command: string[] | undefined): string[]
 const resolvePreviewImageId = async (options: {
   runtimeImagePullRef?: string;
   runtimeImageKey?: string;
+  onProgress?: (line: string) => void;
 }): Promise<string> => {
   const pullRef = options.runtimeImagePullRef?.trim() ?? "";
   const key = options.runtimeImageKey?.trim() ?? "";
@@ -253,11 +328,11 @@ const resolvePreviewImageId = async (options: {
     throw new Error("Conflicting runtime image headers");
   }
   if (pullRef) {
-    await ensureImagePulled(pullRef);
+    await ensureImagePulled(pullRef, options.onProgress);
     return pullRef;
   }
   if (key) {
-    return loadImageFromS3Key(key);
+    return loadImageFromS3Key(key, options.onProgress);
   }
   throw new Error("No runtime image reference provided");
 };
@@ -492,6 +567,7 @@ const ensurePreviewContainer = async (options: {
   memoryBytes: number;
   nanoCpus: number;
   dockerNetwork?: string;
+  onRuntimeImageProgress?: (line: string) => void;
 }): Promise<{ upstreamBase: string }> => {
   const {
     deploymentId,
@@ -502,7 +578,8 @@ const ensurePreviewContainer = async (options: {
     ttlMs,
     memoryBytes,
     nanoCpus,
-    dockerNetwork
+    dockerNetwork,
+    onRuntimeImageProgress
   } = options;
   const normalizedRuntimeConfig: RuntimeConfig = {
     ...runtimeConfig,
@@ -519,7 +596,8 @@ const ensurePreviewContainer = async (options: {
       ttlMs,
       memoryBytes,
       nanoCpus,
-      dockerNetwork
+      dockerNetwork,
+      onRuntimeImageProgress
     },
     {
       dockerClient,
@@ -527,7 +605,6 @@ const ensurePreviewContainer = async (options: {
       removeContainerIfExists,
       resolvePreviewImageId,
       sanitizeLabelValue,
-      waitForHttp,
       getContainerHost,
       readContainerLogTail: async (container) =>
         await new Promise<string>((resolve) => {
@@ -676,6 +753,9 @@ const previewNanoCpus = parseNanoCpus(process.env.PREVIEW_NANO_CPUS, 1_000_000_0
 const dockerNetwork = (process.env.RUNNER_DOCKER_NETWORK ?? "").trim();
 
 console.log(`deployher preview-runner listening on :${port}`);
+console.log(
+  `preview-runner: pull timeout ${previewPullTimeoutMs}ms, S3 load timeout ${previewImageLoadTimeoutMs}ms`
+);
 
 Bun.serve({
   port,
@@ -687,7 +767,11 @@ Bun.serve({
       return Response.json({ ok: true, service: "deployher-preview-runner" });
     }
 
-    if (url.pathname.startsWith("/preview/") || url.pathname.startsWith("/internal/runtime-logs/")) {
+    if (
+      url.pathname.startsWith("/preview/") ||
+      url.pathname.startsWith("/internal/runtime-logs/") ||
+      url.pathname === "/internal/ensure-preview"
+    ) {
       server.timeout(req, 0);
     }
 
@@ -787,25 +871,58 @@ Bun.serve({
         command: resolvePreviewContainerCommand(runtimeConfig.command) ?? []
       };
 
-      void ensurePreviewContainer({
-        deploymentId,
-        projectId: projectId || undefined,
-        runtimeImagePullRef: pullRef || undefined,
-        runtimeImageKey: artifactKey || undefined,
-        runtimeConfig: normalizedRuntimeConfig,
-        ttlMs: previewTtlMs,
-        memoryBytes: previewMemoryBytes,
-        nanoCpus: previewNanoCpus,
-        dockerNetwork: dockerNetwork || undefined
-      })
-        .then(() => {
-          console.log(`preview-runner: ensured preview container for deployment ${deploymentId}`);
-        })
-        .catch((err) => {
-          console.error(`preview-runner: ensure-preview failed for ${deploymentId}:`, err);
-        });
+      const enc = new TextEncoder();
+      const ensurePreviewNdjsonStream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const pushLog = (message: string) => {
+            console.log(`[ensure-preview ${deploymentId}] ${message}`);
+            controller.enqueue(enc.encode(`${JSON.stringify({ kind: "log", message })}\n`));
+          };
+          try {
+            const result = await ensurePreviewContainer({
+              deploymentId,
+              projectId: projectId || undefined,
+              runtimeImagePullRef: pullRef || undefined,
+              runtimeImageKey: artifactKey || undefined,
+              runtimeConfig: normalizedRuntimeConfig,
+              ttlMs: previewTtlMs,
+              memoryBytes: previewMemoryBytes,
+              nanoCpus: previewNanoCpus,
+              dockerNetwork: dockerNetwork || undefined,
+              onRuntimeImageProgress: pushLog
+            });
+            console.log(`preview-runner: ensured preview container for deployment ${deploymentId}`);
+            controller.enqueue(
+              enc.encode(`${JSON.stringify({ kind: "done", upstreamBase: result.upstreamBase })}\n`)
+            );
+            controller.close();
+          } catch (err) {
+            console.error(`preview-runner: ensure-preview failed for ${deploymentId}:`, err);
+            if (err instanceof PreviewStartupError) {
+              controller.enqueue(
+                enc.encode(
+                  `${JSON.stringify({
+                    kind: "error",
+                    message: formatPreviewStartupFailureText(err.details)
+                  })}\n`
+                )
+              );
+            } else {
+              const message = err instanceof Error ? err.message : "Preview unavailable";
+              controller.enqueue(enc.encode(`${JSON.stringify({ kind: "error", message })}\n`));
+            }
+            controller.close();
+          }
+        }
+      });
 
-      return new Response(null, { status: 202 });
+      return new Response(ensurePreviewNdjsonStream, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store"
+        }
+      });
     }
 
     const matched = matchPreviewPath(url.pathname);
@@ -920,6 +1037,9 @@ const schedulePreviewRehydrateTriggerFromApp = (): void => {
     return;
   }
   const secret = (process.env.RUNNER_SHARED_SECRET ?? "").trim();
+  const initialDelayMs = parsePositiveInt(process.env.PREVIEW_REHYDRATE_TRIGGER_INITIAL_DELAY_MS, 15_000);
+  const retryDelayMs = parsePositiveInt(process.env.PREVIEW_REHYDRATE_TRIGGER_RETRY_MS, 5000);
+  const maxAttempts = parsePositiveInt(process.env.PREVIEW_REHYDRATE_TRIGGER_MAX_ATTEMPTS, 24);
   const attempt = (n: number): void => {
     void (async () => {
       try {
@@ -937,15 +1057,24 @@ const schedulePreviewRehydrateTriggerFromApp = (): void => {
         }
         console.log("preview-runner: app preview rehydrate trigger accepted");
       } catch (e) {
-        if (n < 6) {
-          setTimeout(() => attempt(n + 1), 4000);
+        if (n < maxAttempts) {
+          if (n === 1) {
+            const hint =
+              "app may still be booting (migrations) or unreachable from this container; will retry. " +
+              "Unset PREVIEW_REHYDRATE_TRIGGER_URL if the app is not on the same Docker network.";
+            console.warn(`preview-runner: app rehydrate trigger attempt ${n}/${maxAttempts} failed (${hint})`, e);
+          }
+          setTimeout(() => attempt(n + 1), retryDelayMs);
         } else {
-          console.error("preview-runner: app preview rehydrate trigger failed after retries:", e);
+          console.error(
+            "preview-runner: app preview rehydrate trigger failed after retries (check app is up, PORT, and DNS name `app` on the compose network):",
+            e
+          );
         }
       }
     })();
   };
-  setTimeout(() => attempt(1), 5000);
+  setTimeout(() => attempt(1), initialDelayMs);
 };
 
 schedulePreviewRehydrateTriggerFromApp();

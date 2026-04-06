@@ -81,6 +81,31 @@ export const waitForHttp = async (
   return false;
 };
 
+export const waitForPreviewHttpProbe = async (
+  baseUrl: string,
+  getRunningState: () => Promise<{ running: boolean; exitCode?: number }>,
+  maxAttempts = PREVIEW_STARTUP_MAX_ATTEMPTS,
+  delayMs = PREVIEW_STARTUP_POLL_INTERVAL_MS
+): Promise<boolean> => {
+  for (let i = 0; i < maxAttempts; i++) {
+    const state = await getRunningState();
+    if (!state.running) {
+      return false;
+    }
+    try {
+      const r = await fetch(baseUrl, {
+        method: "GET",
+        signal: AbortSignal.timeout(PREVIEW_STARTUP_REQUEST_TIMEOUT_MS)
+      });
+      if (r.ok || r.status === 404 || r.status === 304) return true;
+    } catch {
+      // retry
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return false;
+};
+
 export class PreviewStartupError extends Error {
   readonly details: PreviewStartupFailure;
 
@@ -144,6 +169,7 @@ type EnsurePreviewContainerOptions = {
   memoryBytes: number;
   nanoCpus: number;
   dockerNetwork?: string;
+  onRuntimeImageProgress?: (line: string) => void;
 };
 
 type EnsurePreviewContainerDeps = {
@@ -167,6 +193,7 @@ type EnsurePreviewContainerDeps = {
   resolvePreviewImageId(options: {
     runtimeImagePullRef?: string;
     runtimeImageKey?: string;
+    onProgress?: (line: string) => void;
   }): Promise<string>;
   sanitizeLabelValue(value: string): string;
   waitForHttp?(baseUrl: string): Promise<boolean>;
@@ -244,7 +271,18 @@ export const ensurePreviewContainerWithDeps = async (
   } = options;
   const sanitizeLabelValue = deps.sanitizeLabelValue;
   const resolveHost = deps.getContainerHost ?? getContainerHost;
-  const waitForUpstream = deps.waitForHttp ?? waitForHttp;
+  const waitForUpstream = async (
+    baseUrl: string,
+    getRunningState?: () => Promise<{ running: boolean; exitCode?: number }>
+  ): Promise<boolean> => {
+    if (deps.waitForHttp) {
+      return deps.waitForHttp(baseUrl);
+    }
+    if (getRunningState) {
+      return waitForPreviewHttpProbe(baseUrl, getRunningState);
+    }
+    return waitForHttp(baseUrl);
+  };
   const depSan = sanitizeLabelValue(deploymentId);
   const port = runtimeConfig.port ?? 3000;
 
@@ -297,13 +335,26 @@ export const ensurePreviewContainerWithDeps = async (
       continue;
     }
     const base = `http://${ip}:${port}`;
-    if (await waitForUpstream(`${base}/`)) {
+    if (
+      await waitForUpstream(`${base}/`, async () => {
+        const inspection = await existingContainer.inspect();
+        return {
+          running: !!inspection.State?.Running,
+          exitCode:
+            typeof inspection.State?.ExitCode === "number" ? inspection.State.ExitCode : undefined
+        };
+      })
+    ) {
       return { upstreamBase: base };
     }
     await deps.removeContainerIfExists(entry.Id);
   }
 
-  const imageName = await deps.resolvePreviewImageId({ runtimeImagePullRef, runtimeImageKey });
+  const imageName = await deps.resolvePreviewImageId({
+    runtimeImagePullRef,
+    runtimeImageKey,
+    onProgress: options.onRuntimeImageProgress
+  });
   const expiresAt = Date.now() + ttlMs;
   const labels: Record<string, string> = {
     "io.deployher.preview": "true",
@@ -377,7 +428,13 @@ export const ensurePreviewContainerWithDeps = async (
   }
 
   const base = `http://${ip}:${port}`;
-  const ok = await waitForUpstream(`${base}/`);
+  const ok = await waitForUpstream(`${base}/`, async () => {
+    const inspection = await container.inspect();
+    return {
+      running: !!inspection.State?.Running,
+      exitCode: typeof inspection.State?.ExitCode === "number" ? inspection.State.ExitCode : undefined
+    };
+  });
   if (ok) {
     return { upstreamBase: base };
   }
