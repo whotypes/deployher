@@ -3,6 +3,7 @@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { ProjectSiteGlyph } from "@/ui/client/ProjectSiteGlyph";
 import { fetchWithCsrf } from "@/ui/client/fetchWithCsrf";
 import type {
     LayoutUser,
@@ -27,38 +28,6 @@ import {
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-
-const SidebarProjectGlyph = ({
-  name,
-  siteIconUrl
-}: {
-  name: string;
-  siteIconUrl: string | null;
-}): ReactElement => {
-  const [failed, setFailed] = useState(false);
-  const letter = name.trim()[0]?.toUpperCase() ?? "?";
-  const showImg = Boolean(siteIconUrl) && !failed;
-  return (
-    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-      {showImg ? (
-        <img
-          src={siteIconUrl ?? ""}
-          alt=""
-          className="size-5 object-cover"
-          width={20}
-          height={20}
-          loading="lazy"
-          decoding="async"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <span className="flex size-5 items-center justify-center rounded-sm bg-sidebar-accent/50 text-[10px] font-semibold text-sidebar-foreground/90">
-          {letter}
-        </span>
-      )}
-    </span>
-  );
-};
 
 export type DeployherSidebarProps = {
   pathname: string;
@@ -280,7 +249,13 @@ const WorkspaceProjectsRow = ({
                   )}
                 >
                   <span className="flex min-w-0 flex-1 items-center gap-2">
-                    <SidebarProjectGlyph name={p.name} siteIconUrl={p.siteIconUrl} />
+                    <ProjectSiteGlyph
+                      name={p.name}
+                      siteIconUrl={p.siteIconUrl}
+                      previewUrl={p.previewUrl ?? null}
+                      className="ring-0"
+                      letterClassName="flex size-5 items-center justify-center rounded-sm bg-sidebar-accent/50 text-[10px] font-semibold text-sidebar-foreground/90"
+                    />
                     <span className="min-w-0 truncate">{p.name}</span>
                   </span>
                   <SidebarProjectStatusDot status={p.deploymentStatus} />
