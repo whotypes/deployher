@@ -5,6 +5,8 @@ export type GitHubRepo = {
   htmlUrl: string;
   private: boolean;
   description: string | null;
+  /** Default branch from GitHub (used for framework scan before a deploy branch is chosen). */
+  defaultBranch: string;
 };
 
 export const filterReposByQuery = (repos: GitHubRepo[], query: string): GitHubRepo[] => {
