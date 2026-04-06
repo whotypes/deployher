@@ -1,6 +1,7 @@
-import { renderToReadableStream } from "react-dom/server";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { LandingTerminalDemo } from "./client/landing-page";
 import { GitHubMark } from "./GitHubMark";
-import { GoogleFontsLinks } from "./GoogleFontsLinks";
 
 export type LandingPageProps = {
   authenticated: boolean;
@@ -8,27 +9,15 @@ export type LandingPageProps = {
 
 const GITHUB_URL = "https://github.com/whotypes/deployher";
 
-const LandingPage = ({ authenticated }: LandingPageProps) => (
-  <html lang="en" className="dark font-sans">
-    <head>
-      <meta charSet="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <meta name="color-scheme" content="dark" />
-      <meta name="theme-color" content="#000000" />
-      <title>Deployher – Self-hosted PaaS</title>
-      <meta
-        name="description"
-        content="Deployher connects GitHub to isolated builds and previews. Learn more at deployher.com."
-      />
-      <GoogleFontsLinks />
-      <link rel="stylesheet" href="/assets/app.css" />
-    </head>
-    <body className="bg-background text-foreground min-h-svh font-sans text-base">
+const LandingPage = ({ authenticated }: LandingPageProps) => {
+  const { t } = useTranslation();
+  return (
+  <div className="bg-background text-foreground min-h-svh font-sans text-base">
       <a
         href="#landing-main"
         className="bg-background text-foreground sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
       >
-        Skip to main content
+        {t("common.skipToMain")}
       </a>
       <div className="relative flex min-h-svh flex-col overflow-hidden">
         <div
@@ -68,46 +57,46 @@ const LandingPage = ({ authenticated }: LandingPageProps) => (
               <div className="flex flex-col gap-8">
                 <div className="deployher-enter flex flex-wrap items-center gap-3">
                   <span className="topbar-chip text-muted-foreground px-4 py-2 text-sm">
-                    Self-hosted PaaS
+                    {t("landing.chip")}
                   </span>
-                  <a
-                    href="/why"
+                  <Link
+                    to="/why"
                     className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm font-medium transition-colors"
                   >
-                    Why self-host
+                    {t("landing.whySelfHost")}
                     <span aria-hidden>→</span>
-                  </a>
+                  </Link>
                 </div>
                 <h1
                   id="landing-hero-heading"
                   className="deployher-enter deployher-enter-delay-1 font-serif text-pretty text-5xl leading-[1.05] font-semibold tracking-tight sm:text-6xl lg:text-7xl lg:leading-[1.02]"
                 >
                   <span className="bg-linear-to-b from-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
-                    Finally. Your metal, your rules.
+                    {t("landing.heroTitle")}
                   </span>
                 </h1>
                 <p className="deployher-enter deployher-enter-delay-2 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-                  Deployher is a self-hosted PaaS that runs on a single VPS node, featuring isolated builds, log streams, and live previews.
+                  {t("landing.heroSubtitle")}
                 </p>
                 <div className="deployher-enter deployher-enter-delay-3 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
-                  <a
+                  <Link
                     id="sign-in"
-                    href="/login"
+                    to="/login"
                     className="inline-flex h-12 items-center justify-center gap-2.5 rounded-md bg-primary px-7 text-base font-semibold text-primary-foreground no-underline shadow-[0_14px_40px_-18px_color-mix(in_oklab,var(--primary)_88%,black)] ring-1 ring-primary/35 transition-[opacity,transform] duration-200 hover:no-underline hover:opacity-95 active:scale-[0.99]"
-                    aria-label="Sign in to Deployher with GitHub"
+                    aria-label={t("landing.signInGithubAria")}
                   >
                     <GitHubMark className="size-5 text-primary-foreground" />
-                    Sign in with GitHub
-                  </a>
+                    {t("landing.signInGithub")}
+                  </Link>
                   <a
                     href={GITHUB_URL}
                     className="border-input bg-background/60 text-foreground hover:bg-accent/80 inline-flex h-12 items-center justify-center rounded-md border px-7 text-base font-semibold no-underline backdrop-blur-sm transition-colors hover:no-underline"
                     rel="noopener noreferrer"
                   >
-                   See The Source
+                   {t("landing.seeSource")}
                   </a>
                   <span className="font-mono text-sm text-muted-foreground sm:pl-1">
-                    OAuth · repo-scoped
+                    {t("common.oauthRepoScoped")}
                   </span>
                 </div>
               </div>
@@ -126,11 +115,9 @@ const LandingPage = ({ authenticated }: LandingPageProps) => (
                     id="landing-terminal-root"
                     className="min-h-[min(36rem,58vh)]"
                     aria-busy="true"
-                    aria-label="Animated terminal demo: build, deploy, and logs"
+                    aria-label={t("landing.terminalDemoAria")}
                   >
-                    <div className="text-muted-foreground flex min-h-[min(36rem,58vh)] items-center justify-center rounded-xl border border-dashed border-border/40 bg-background/30 p-8 text-center font-mono text-lg">
-                      Loading terminal demo…
-                    </div>
+                    <LandingTerminalDemo />
                   </div>
                 </div>
               </div>
@@ -138,24 +125,24 @@ const LandingPage = ({ authenticated }: LandingPageProps) => (
 
             <ul
               className="deployher-enter deployher-enter-delay-5 mt-16 grid gap-4 sm:grid-cols-3 lg:mt-20"
-              aria-label="Highlights"
+              aria-label={t("common.highlights")}
             >
               <li className="border-border/60 bg-card/40 rounded-2xl border px-5 py-5 backdrop-blur-sm">
-                <p className="text-foreground text-base font-semibold sm:text-lg">Isolated workers</p>
+                <p className="text-foreground text-base font-semibold sm:text-lg">{t("landing.highlight1Title")}</p>
                 <p className="text-muted-foreground mt-2 text-sm leading-relaxed sm:text-base">
-                  Containerized builds, no noisy neighbors.
+                  {t("landing.highlight1Body")}
                 </p>
               </li>
               <li className="border-border/60 bg-card/40 rounded-2xl border px-5 py-5 backdrop-blur-sm">
-                <p className="text-foreground text-base font-semibold sm:text-lg">Honest logs</p>
+                <p className="text-foreground text-base font-semibold sm:text-lg">{t("landing.highlight2Title")}</p>
                 <p className="text-muted-foreground mt-2 text-sm leading-relaxed sm:text-base">
-                  Stream stdout like you are SSH’d in.
+                  {t("landing.highlight2Body")}
                 </p>
               </li>
               <li className="border-border/60 bg-card/40 rounded-2xl border px-5 py-5 backdrop-blur-sm">
-                <p className="text-foreground text-base font-semibold sm:text-lg">Bun-native</p>
+                <p className="text-foreground text-base font-semibold sm:text-lg">{t("landing.highlight3Title")}</p>
                 <p className="text-muted-foreground mt-2 text-sm leading-relaxed sm:text-base">
-                  Fast toolchain for Node-style apps.
+                  {t("landing.highlight3Body")}
                 </p>
               </li>
             </ul>
@@ -163,7 +150,7 @@ const LandingPage = ({ authenticated }: LandingPageProps) => (
 
           <footer className="border-border/80 relative z-1 border-t py-12 md:py-14">
             <nav
-              aria-label="Footer"
+              aria-label={t("common.footer")}
               className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-10 px-5 text-base md:px-8"
             >
               <a
@@ -172,31 +159,29 @@ const LandingPage = ({ authenticated }: LandingPageProps) => (
                 rel="noopener noreferrer"
               >
                 <GitHubMark className="size-5" />
-                GitHub
+                {t("common.github")}
               </a>
               {authenticated ? (
-                <a
-                  href="/dashboard"
+                <Link
+                  to="/dashboard"
                   className="text-muted-foreground hover:text-foreground font-medium transition-colors"
                 >
-                  Dashboard
-                </a>
+                  {t("common.dashboard")}
+                </Link>
               ) : (
-                <a
-                  href="/login"
+                <Link
+                  to="/login"
                   className="text-muted-foreground hover:text-foreground font-medium transition-colors"
                 >
-                  Log in
-                </a>
+                  {t("common.logIn")}
+                </Link>
               )}
             </nav>
           </footer>
         </main>
       </div>
-      <script src="/assets/landing-page.js" type="module" />
-    </body>
-  </html>
-);
+  </div>
+  );
+};
 
-export const renderLandingPage = (props: LandingPageProps) =>
-  renderToReadableStream(<LandingPage {...props} />);
+export { LandingPage };
