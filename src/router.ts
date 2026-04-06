@@ -312,6 +312,10 @@ const protectedRoutes: ProtectedRoute[] = [
     pattern: "/api/projects/:id/site-metadata/refresh",
     methods: { POST: projects.postRefreshProjectSiteMetadata }
   },
+  {
+    pattern: "/api/projects/:id/site-metadata/preview-image",
+    methods: { GET: projects.getProjectSitePreviewImage }
+  },
   { pattern: "/api/admin/examples", operatorOnly: true, methods: { GET: admin.listExamples } },
   {
     pattern: "/api/admin/examples/:name/deploy",
@@ -351,62 +355,9 @@ const resolveAssetFile = async (subPath: string): Promise<string | null> => {
   return null;
 };
 
-export const router = async (req: Request): Promise<Response> => {
-  const url = new URL(req.url);
+const dispatchPublicAndProtectedRoutes = async (req: Request): Promise<Response | null> => {
   const method = req.method;
-  const pathname = url.pathname;
-
-  const host = req.headers.get("host") ?? "";
-  const deploymentIdInfo = extractDeploymentIdFromHost(host);
-  if (deploymentIdInfo) {
-    return serveSubdomainPreview(req, deploymentIdInfo);
-  }
-
-  if (pathname.startsWith("/assets/") && method === "GET") {
-    const subPath = pathname.slice("/assets".length).replace(/^\/+/, "") || "";
-    const resolved = await resolveAssetFile(subPath);
-    if (!resolved) {
-      const embeddedAsset = getEmbeddedClientAsset(subPath);
-      if (embeddedAsset) {
-        return new Response(embeddedAsset.blob, {
-          headers: { "Content-Type": embeddedAsset.contentType }
-        });
-      }
-      const nestedTry = getEmbeddedClientAsset(`assets/${subPath}`);
-      if (nestedTry) {
-        return new Response(nestedTry.blob, {
-          headers: { "Content-Type": nestedTry.contentType }
-        });
-      }
-      return json({ error: "Not Found" }, { status: 404 });
-    }
-    return new Response(Bun.file(resolved), {
-      headers: { "Content-Type": guessContentType(resolved) }
-    });
-  }
-
-  if (pathname === "/internal/trigger-preview-rehydrate" && method === "POST") {
-    return runnerInternal.postTriggerPreviewRehydrate(req);
-  }
-
-  if (pathname.startsWith("/api/auth")) {
-    if (method !== "GET" && method !== "POST") {
-      return json({ error: "Method Not Allowed" }, { status: 405 });
-    }
-    return auth.handler(req);
-  }
-
-  if (pathname.startsWith("/d/")) {
-    const pathParts = pathname.slice(3).split("/");
-    const pathId = pathParts[0] ?? "";
-    const rawPath = pathParts.slice(1).join("/");
-    if (SHORT_ID_REGEX.test(pathId)) {
-      return servePathBasedPreview(req, { id: pathId, isShortId: true }, rawPath);
-    }
-    if (UUID_REGEX.test(pathId)) {
-      return servePathBasedPreview(req, { id: pathId, isShortId: false }, rawPath);
-    }
-  }
+  const pathname = new URL(req.url).pathname;
 
   for (const route of publicRoutes) {
     const { match, params } = matchRoute(route.pattern, pathname);
@@ -451,6 +402,106 @@ export const router = async (req: Request): Promise<Response> => {
       }
       return json({ error: "Method Not Allowed" }, { status: 405 });
     }
+  }
+
+  return null;
+};
+
+/**
+ * Subset of `/api/*` that may be invoked on a **tenant preview host** (e.g. `shortId.localhost`).
+ * Every other path there is deployment content (including arbitrary `/api/...` from static sites).
+ * On the **main app host**, all `/api/*` (except `/api/auth`) is dispatched — new routes do not need
+ * to be listed here unless they must work from the tenant origin too.
+ */
+export const isPdployApiPathOnTenantHost = (pathname: string): boolean => {
+  if (!pathname.startsWith("/api/")) return false;
+  if (pathname.startsWith("/api/auth")) return false;
+  if (pathname === "/api/csrf" || pathname === "/api/session" || pathname === "/api/health") return true;
+  if (pathname.startsWith("/api/ui/")) return true;
+  if (pathname.startsWith("/api/workspace/")) return true;
+  if (pathname.startsWith("/api/github/")) return true;
+  if (pathname === "/api/projects" || pathname.startsWith("/api/projects/")) return true;
+  if (pathname.startsWith("/api/admin")) return true;
+  if (pathname.startsWith("/api/deployments/")) return true;
+  return false;
+};
+
+const respondDashboardApiOr404 = async (req: Request): Promise<Response> => {
+  const apiResponse = await dispatchPublicAndProtectedRoutes(req);
+  if (apiResponse !== null) {
+    return apiResponse;
+  }
+  return json({ error: "Not Found" }, { status: 404 });
+};
+
+export const router = async (req: Request): Promise<Response> => {
+  const url = new URL(req.url);
+  const method = req.method;
+  const pathname = url.pathname;
+
+  if (pathname === "/internal/trigger-preview-rehydrate" && method === "POST") {
+    return runnerInternal.postTriggerPreviewRehydrate(req);
+  }
+
+  if (pathname.startsWith("/api/auth")) {
+    if (method !== "GET" && method !== "POST") {
+      return json({ error: "Method Not Allowed" }, { status: 405 });
+    }
+    return auth.handler(req);
+  }
+
+  const host = req.headers.get("host") ?? "";
+  const deploymentIdInfo = extractDeploymentIdFromHost(host);
+
+  if (deploymentIdInfo) {
+    if (isPdployApiPathOnTenantHost(pathname)) {
+      return respondDashboardApiOr404(req);
+    }
+    return serveSubdomainPreview(req, deploymentIdInfo);
+  }
+
+  if (pathname.startsWith("/assets/") && method === "GET") {
+    const subPath = pathname.slice("/assets".length).replace(/^\/+/, "") || "";
+    const resolved = await resolveAssetFile(subPath);
+    if (!resolved) {
+      const embeddedAsset = getEmbeddedClientAsset(subPath);
+      if (embeddedAsset) {
+        return new Response(embeddedAsset.blob, {
+          headers: { "Content-Type": embeddedAsset.contentType }
+        });
+      }
+      const nestedTry = getEmbeddedClientAsset(`assets/${subPath}`);
+      if (nestedTry) {
+        return new Response(nestedTry.blob, {
+          headers: { "Content-Type": nestedTry.contentType }
+        });
+      }
+      return json({ error: "Not Found" }, { status: 404 });
+    }
+    return new Response(Bun.file(resolved), {
+      headers: { "Content-Type": guessContentType(resolved) }
+    });
+  }
+
+  if (pathname.startsWith("/api/")) {
+    return respondDashboardApiOr404(req);
+  }
+
+  if (pathname.startsWith("/d/")) {
+    const pathParts = pathname.slice(3).split("/");
+    const pathId = pathParts[0] ?? "";
+    const rawPath = pathParts.slice(1).join("/");
+    if (SHORT_ID_REGEX.test(pathId)) {
+      return servePathBasedPreview(req, { id: pathId, isShortId: true }, rawPath);
+    }
+    if (UUID_REGEX.test(pathId)) {
+      return servePathBasedPreview(req, { id: pathId, isShortId: false }, rawPath);
+    }
+  }
+
+  const pageResponse = await dispatchPublicAndProtectedRoutes(req);
+  if (pageResponse !== null) {
+    return pageResponse;
   }
 
   if (pages.wantsHtml(req)) {
