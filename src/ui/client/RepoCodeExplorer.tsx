@@ -25,8 +25,36 @@ export type RepoCodeExplorerProps = {
   repo: string;
   ref: string;
   projectRoot: string;
+  /** When set, "Open on preview" is shown for binary/large files under public/ or static/. */
+  previewBaseUrl?: string;
   title?: string;
   className?: string;
+};
+
+const buildGitHubBlobUrl = (owner: string, repo: string, ref: string, fullPath: string): string => {
+  const pathPart = fullPath
+    .split("/")
+    .filter(Boolean)
+    .map((s) => encodeURIComponent(s))
+    .join("/");
+  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/blob/${encodeURIComponent(ref)}/${pathPart}`;
+};
+
+const buildPreviewUrlForStaticAsset = (
+  previewBaseUrl: string | undefined,
+  relFilePath: string
+): string | null => {
+  const base = previewBaseUrl?.trim();
+  if (!base) return null;
+  const norm = relFilePath.replace(/\\/g, "/");
+  const lower = norm.toLowerCase();
+  if (lower.startsWith("public/")) {
+    return `${base.replace(/\/$/, "")}/${norm.slice(7)}`;
+  }
+  if (lower.startsWith("static/")) {
+    return `${base.replace(/\/$/, "")}/${norm.slice(7)}`;
+  }
+  return null;
 };
 
 const isFolder = (child: LocsChild): child is Locs => typeof child !== "number";
@@ -84,6 +112,7 @@ export const RepoCodeExplorer = ({
   repo,
   ref,
   projectRoot,
+  previewBaseUrl,
   title,
   className
 }: RepoCodeExplorerProps): React.ReactElement => {
@@ -99,6 +128,7 @@ export const RepoCodeExplorer = ({
   const [fileContent, setFileContent] = React.useState<string | null>(null);
   const [fileLoading, setFileLoading] = React.useState(false);
   const [fileError, setFileError] = React.useState<string | null>(null);
+  const [fileBinaryOrLarge, setFileBinaryOrLarge] = React.useState<"binary" | "large" | null>(null);
   const root = locsRes?.locs ?? null;
   const atNode = drillPath(root, path);
   const isFile = atNode !== null && !isFolder(atNode);
@@ -112,6 +142,7 @@ export const RepoCodeExplorer = ({
     setSelectedLang(null);
     setFileContent(null);
     setFileError(null);
+    setFileBinaryOrLarge(null);
   }, [owner, repo, ref, projectRoot, debouncedFilter]);
 
   React.useEffect(() => {
@@ -155,19 +186,29 @@ export const RepoCodeExplorer = ({
 
   const relFilePath = path.length ? path.join("/") : "";
 
+  const fullGitPath = React.useMemo(() => {
+    const rootNorm =
+      projectRoot.trim() === "" || projectRoot.trim() === "." ? "" : projectRoot.trim();
+    return rootNorm ? joinRepoContentPath(rootNorm, relFilePath) : relFilePath;
+  }, [projectRoot, relFilePath]);
+
+  const staticPreviewAssetUrl = React.useMemo(
+    () => buildPreviewUrlForStaticAsset(previewBaseUrl, relFilePath),
+    [previewBaseUrl, relFilePath]
+  );
+
   React.useEffect(() => {
     if (!isFile || !relFilePath) {
       setFileContent(null);
       setFileError(null);
       return;
     }
-    const rootNorm =
-      projectRoot.trim() === "" || projectRoot.trim() === "." ? "" : projectRoot.trim();
-    const fullPath = rootNorm ? joinRepoContentPath(rootNorm, relFilePath) : relFilePath;
+    const fullPath = fullGitPath;
     let cancelled = false;
     setFileLoading(true);
     setFileError(null);
     setFileContent(null);
+    setFileBinaryOrLarge(null);
     void (async () => {
       try {
         const params = new URLSearchParams({
@@ -180,6 +221,12 @@ export const RepoCodeExplorer = ({
           headers: { Accept: "application/json" }
         });
         const data = (await response.json().catch(() => ({}))) as RepoFileApiResponse & { error?: string };
+        if (response.status === 415 || response.status === 413) {
+          if (!cancelled) {
+            setFileBinaryOrLarge(response.status === 415 ? "binary" : "large");
+          }
+          return;
+        }
         if (!response.ok) {
           throw new Error(data.error ?? t("repoExplorer.fileLoadFailed"));
         }
@@ -197,7 +244,7 @@ export const RepoCodeExplorer = ({
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, ref, projectRoot, isFile, relFilePath, t]);
+  }, [owner, repo, ref, projectRoot, isFile, relFilePath, fullGitPath, t]);
 
   const prismBlock = React.useMemo(() => {
     if (!isFile || fileContent === null || relFilePath === "") {
@@ -386,6 +433,32 @@ export const RepoCodeExplorer = ({
                         <div className="text-muted-foreground flex flex-1 items-center justify-center gap-2 text-xs">
                           <Loader2 className="size-4 animate-spin" />
                           {t("repoExplorer.loading")}
+                        </div>
+                      ) : fileBinaryOrLarge ? (
+                        <div className="flex flex-1 flex-col gap-3 p-4 text-xs">
+                          <p className="text-muted-foreground">
+                            {fileBinaryOrLarge === "binary"
+                              ? t("repoExplorer.cannotPreviewBinary")
+                              : t("repoExplorer.cannotPreviewTooLarge")}
+                          </p>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            <Button variant="secondary" size="sm" asChild>
+                              <a
+                                href={buildGitHubBlobUrl(owner, repo, ref, fullGitPath)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {t("repoExplorer.openOnGitHub")}
+                              </a>
+                            </Button>
+                            {staticPreviewAssetUrl ? (
+                              <Button variant="secondary" size="sm" asChild>
+                                <a href={staticPreviewAssetUrl} target="_blank" rel="noopener noreferrer">
+                                  {t("repoExplorer.openOnPreview")}
+                                </a>
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
                       ) : fileError ? (
                         <p className="text-destructive p-3 text-xs">{fileError}</p>
