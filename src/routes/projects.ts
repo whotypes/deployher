@@ -1,12 +1,20 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { type RequestWithParamsAndSession } from "../auth/session";
-import { resolveProjectDomains } from "../config";
+import { buildDevSubdomainUrl, config, resolveProjectDomains } from "../config";
+import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { normalizeGitHubRepoUrl } from "../github";
 import { badRequest, json, notFound, parseJson } from "../http/helpers";
 import { parseProjectCommandForStorage } from "../lib/parseProjectCommandLine";
 import { parseRepoRelativePath, parseRuntimeImageMode } from "../lib/projectPaths";
+import { preferPreviewOriginForExternalAsset } from "../lib/previewAssetUrl";
+import {
+  buildPreviewIconCandidateUrls,
+  fetchPreviewDeploymentAsset,
+  fetchPreviewDeploymentAssetTryUrls,
+  fetchSiteMetadataCachedForDeployment
+} from "../lib/siteMetadata";
 import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
 import { pickFeaturedDeploymentFromSortedDesc } from "../lib/sidebarFeaturedDeployment";
 import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
@@ -126,7 +134,9 @@ export const listSidebarProjectSummariesForUser = async (userId: string) => {
       name: schema.projects.name,
       currentStatus: schema.deployments.status,
       siteIconUrl: schema.projects.siteIconUrl,
-      siteOgImageUrl: schema.projects.siteOgImageUrl
+      siteOgImageUrl: schema.projects.siteOgImageUrl,
+      previewUrl: schema.deployments.previewUrl,
+      deploymentShortId: schema.deployments.shortId
     })
     .from(schema.projects)
     .leftJoin(
@@ -140,7 +150,8 @@ export const listSidebarProjectSummariesForUser = async (userId: string) => {
     name: r.name,
     deploymentStatus: parseSidebarProjectDeploymentStatus(r.currentStatus),
     siteIconUrl: r.siteIconUrl ?? null,
-    siteOgImageUrl: r.siteOgImageUrl ?? null
+    siteOgImageUrl: r.siteOgImageUrl ?? null,
+    previewUrl: effectiveDeploymentPreviewUrl(r.currentStatus, r.previewUrl, r.deploymentShortId)
   }));
 };
 
@@ -727,6 +738,119 @@ export const postRefreshProjectSiteMetadata = async (req: RequestWithParamsAndSe
     siteIconUrl: result.siteIconUrl,
     siteOgImageUrl: result.siteOgImageUrl,
     siteMetaFetchedAt: result.siteMetaFetchedAt.toISOString()
+  });
+};
+
+export const getProjectSitePreviewImage = async (req: RequestWithParamsAndSession): Promise<Response> => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Project not found");
+  }
+  const userId = req.session.user.id;
+  const [projectRow] = await db
+    .select({
+      siteIconUrl: schema.projects.siteIconUrl,
+      siteOgImageUrl: schema.projects.siteOgImageUrl,
+      currentDeploymentId: schema.projects.currentDeploymentId
+    })
+    .from(schema.projects)
+    .where(and(eq(schema.projects.id, id), eq(schema.projects.userId, userId)))
+    .limit(1);
+  if (!projectRow) {
+    return notFound("Project not found");
+  }
+
+  const url = new URL(req.url);
+  const kind = url.searchParams.get("kind")?.trim();
+  if (kind !== "og" && kind !== "icon") {
+    return badRequest("kind must be og or icon");
+  }
+
+  if (!projectRow.currentDeploymentId) {
+    return json({ error: "No current deployment" }, { status: 422 });
+  }
+
+  const [dep] = await db
+    .select({
+      id: schema.deployments.id,
+      previewUrl: schema.deployments.previewUrl,
+      shortId: schema.deployments.shortId,
+      status: schema.deployments.status
+    })
+    .from(schema.deployments)
+    .where(eq(schema.deployments.id, projectRow.currentDeploymentId))
+    .limit(1);
+
+  if (!dep || dep.status !== "success") {
+    return json({ error: "Current deployment is not live" }, { status: 422 });
+  }
+
+  const previewBase = dep.previewUrl?.trim() || buildDevSubdomainUrl(dep.shortId);
+
+  let resolved: string;
+  if (kind === "og") {
+    let raw = projectRow.siteOgImageUrl?.trim() ?? "";
+    if (!raw) {
+      const live = await fetchSiteMetadataCachedForDeployment(id, dep.id, previewBase);
+      if (!live.ok || !live.ogImageUrl?.trim()) {
+        return notFound("No image URL");
+      }
+      raw = live.ogImageUrl.trim();
+    }
+    resolved = preferPreviewOriginForExternalAsset(raw, previewBase) ?? raw;
+  } else {
+    let raw = projectRow.siteIconUrl?.trim() ?? "";
+    if (!raw) {
+      const live = await fetchSiteMetadataCachedForDeployment(id, dep.id, previewBase);
+      if (live.ok && live.iconUrl?.trim()) {
+        raw = live.iconUrl.trim();
+      }
+    }
+    if (raw) {
+      resolved = preferPreviewOriginForExternalAsset(raw, previewBase) ?? raw;
+    } else {
+      let origin: string;
+      try {
+        origin = new URL(previewBase).origin;
+      } catch {
+        return notFound("No image URL");
+      }
+      resolved = `${origin}/favicon.ico`;
+    }
+  }
+
+  if (!resolved) {
+    return notFound("No image URL");
+  }
+
+  let upstream: Response;
+  try {
+    if (kind === "icon") {
+      upstream = await fetchPreviewDeploymentAssetTryUrls(
+        buildPreviewIconCandidateUrls(resolved, previewBase),
+        { accept: "*/*" }
+      );
+    } else {
+      upstream = await fetchPreviewDeploymentAsset(resolved);
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to fetch preview image";
+    return json({ error: message }, { status: 502 });
+  }
+
+  const buf = await upstream.arrayBuffer();
+  const maxBytes = config.siteMetadata.previewImageMaxBytes;
+  if (buf.byteLength > maxBytes) {
+    return json({ error: `Image exceeds ${maxBytes} byte limit` }, { status: 413 });
+  }
+
+  const ct = upstream.headers.get("content-type")?.trim() || "application/octet-stream";
+  return new Response(buf, {
+    status: 200,
+    headers: {
+      "Content-Type": ct,
+      "Cache-Control": "private, max-age=300"
+    }
   });
 };
 
