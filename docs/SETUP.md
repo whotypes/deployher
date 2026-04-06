@@ -173,9 +173,9 @@ bun run dev
 bun run start:worker
 ```
 
-5. App URL: `http://localhost:3001`
+5. App API URL: `http://localhost:3001` (Better Auth, `/api/*`, `/health`). The **web UI** is a Vite SPA: in a **third** terminal run `bun run dev:vite` and open **`http://localhost:5173`**. Vite proxies `/api`, `/assets`, `/d`, and `/preview` to the Bun server (default `http://127.0.0.1:3001`; override with **`VITE_DEV_API_URL`** if needed).
 
-6. Stop host app/worker with Ctrl+C. Infra (Postgres, Redis, Garage) keeps running.
+6. Stop host app/worker (and Vite) with Ctrl+C. Infra (Postgres, Redis, Garage) keeps running.
 
 7. Stop infra:
 
@@ -283,7 +283,7 @@ Deployments can be viewed in two ways:
 
 After a successful deployment, the build worker fetches the live preview HTML and stores **favicon / touch icon** and **`og:image`** URLs on the project for the sidebar and project switcher. You can re-run the fetch from **Project settings → General → Refresh from live preview**.
 
-If the **deployment worker** runs in Docker but the app is only reachable at a host URL (for example `http://<shortId>.localhost:3000` from your browser), the worker container may not resolve that host. Set **`SITE_META_FETCH_ORIGIN`** to an origin the worker can open (for example **`http://host.docker.internal:3000`**, or your internal gateway). The fetch still sends the **`Host`** header from the public preview URL so name-based routing works. Optional tunables: **`SITE_META_FETCH_TIMEOUT_MS`**, **`SITE_META_MAX_HTML_BYTES`**.
+For **`*.localhost`** preview URLs, the app **automatically** retries the metadata fetch against **`127.0.0.1`**, the **`app`** hostname (Docker Compose), and **`host.docker.internal`**, each with the public preview URL in the **`Host`** header, so you usually do not need **`SITE_META_FETCH_ORIGIN`**. Override it only when your network needs a different gateway (for example a custom internal URL). Optional tunables: **`SITE_META_FETCH_TIMEOUT_MS`**, **`SITE_META_MAX_HTML_BYTES`**.
 
 ### Server previews (isolated preview runner)
 
@@ -350,6 +350,8 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 | `./dist/deployher-cli <cmd>` | Run the compiled infra CLI (after **`build:cli`**). |
 | `bun run test` | Run CLI unit tests (`bun test cli`). |
 | `bun run dev` | Start app with hot reload (`bun --hot src/index.ts`). |
+| `bun run dev:vite` | Vite dev server for the SPA (port **5173**); proxies API paths to Bun. Pair with `bun run dev`. |
+| `bun run check:server-ui` | Ensures Bun server `.ts` files do not import React / `react-dom` / streaming SSR APIs. |
 | `bun run start` | Start app without hot reload. |
 | `bun run start:worker` | Start the standalone build worker process. |
 | `bun run start:preview-runner` | Start the isolated preview runner (Docker socket + S3 env required). |

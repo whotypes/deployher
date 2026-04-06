@@ -916,34 +916,16 @@ const cacheControl = contentType.includes("text/html")
 
 The `/preview/*` route is a redirect shim—it takes the deployment ID from the path and redirects to the subdomain URL. This is useful for the dashboard UI where you can link to a preview without knowing the domain configuration.
 
-## The UI: React 19 SSR, no hydration
+## The UI: Vite SPA + Bun JSON APIs
 
-The dashboard is server-rendered React 19. No Next.js. No Remix. No client-side hydration at all.
+The dashboard is a **single-page application** built with **Vite**, **React**, and **React Router**. The Bun HTTP server does **not** import or execute React: it serves the built shell from `dist/client`, streams **non-HTML** bodies where needed (build logs, Docker, storage), and exposes **JSON** under `/api/*` (including aggregate UI payloads such as `/api/workspace/dashboard` and `/api/ui/...`).
 
-Every page is a function that takes props and returns a `Response`:
+Browser navigations receive the same `index.html` shell (with optional CSRF meta injection); the client loads route chunks and fetches data with `fetch(..., { credentials: "include" })`. Styles ship as hashed CSS under `/assets/*` from `vite build`.
 
-```typescript
-export const dashboardPage = async (req: RequestWithParamsAndSession) => {
-  const projects = await db.select().from(schema.projects)
-    .where(eq(schema.projects.userId, req.session.user.id));
-
-  const stream = await renderToReadableStream(
-    <DashboardPage projects={projects} user={req.session.user} />
-  );
-  return new Response(stream, {
-    headers: { "Content-Type": "text/html; charset=utf-8" }
-  });
-};
-```
-
-`renderToReadableStream` is React 19's streaming SSR API. It returns a `ReadableStream<Uint8Array>` that Bun can directly pipe to the HTTP response. No buffering the full HTML in memory. No `renderToString()`.
-
-Client-side interactivity is minimal—mostly vanilla JS inlined in `<script>` tags for things like form submissions and the log viewer's SSE connection. The CSS is bundled by `Bun.build()` at startup and served from `/assets/`.
-
-This is a deliberate architectural choice. A deployment dashboard doesn't need React's reactivity model on the client. You look at a list of projects, click "Deploy," and read logs. Server rendering gives you instant page loads, zero JS bundle for most pages, and dramatically simpler code.
+For **local development**, run the API with `bun run dev` (Bun) and the Vite dev server in another terminal (`bun run dev:vite`); Vite **proxies** `/api`, `/assets`, and preview paths to the Bun backend so the browser stays on a single origin (see `vite.config.ts` and `VITE_DEV_API_URL`).
 
 <Rabbit>
-The "no hydration" approach means the React component tree only exists on the server. There's no `hydrateRoot()` call, no client-side component tree, no useEffect, no useState. If I need interactivity, it's `<script>document.getElementById("deploy-btn").addEventListener("click", ...)</script>`. Old school? Yes. Does it work perfectly for a deployment dashboard? Also yes.
+Keeping React off the server keeps the Bun binary small, avoids streaming HTML from React, and makes caching and CSRF boundaries predictable. The tradeoff is first paint after load—mitigated with loading states and the same API the UI already needs for interactivity.
 </Rabbit>
 
 ## Authentication: Better Auth + GitHub OAuth

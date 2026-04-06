@@ -70,7 +70,7 @@ bun run start:worker
 # terminal 3 (server previews): bun run start:preview-runner — needs Docker + same S3 env as the app; set RUNNER_DOCKER_NETWORK to your compose default network (e.g. deployher_default) if the runner runs in a container
 ```
 
-Docker app: `http://localhost:3000`. Host Bun dev: `http://localhost:3001`. If OrbStack or another service already owns `3000`, `docker compose stop app deployment-worker` only frees the Compose app ports; it does not stop unrelated listeners already bound on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows, env reference, and troubleshooting: **[docs/SETUP.md](docs/SETUP.md)**.
+Docker app: `http://localhost:3000`. Host Bun API (default from `config/default.toml`): `http://localhost:3001`. For the **Vite SPA** in dev, run **`bun run dev:vite`** (default `http://localhost:5173`); it proxies `/api` and `/assets` to the Bun server (`VITE_DEV_API_URL` overrides the proxy target if needed). If OrbStack or another service already owns `3000`, `docker compose stop app deployment-worker` only frees the Compose app ports; it does not stop unrelated listeners already bound on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows, env reference, and troubleshooting: **[docs/SETUP.md](docs/SETUP.md)**.
 
 Static preview assets are redirected to object storage or a configured CDN base URL when possible. Server previews require `RUNNER_PREVIEW_ENABLED=1`, `RUNNER_URL` pointing at the preview-runner (or compatible) service, and matching S3 credentials on the runner. Optional `RUNNER_SHARED_SECRET` is sent as `x-deployher-runner-secret`.
 

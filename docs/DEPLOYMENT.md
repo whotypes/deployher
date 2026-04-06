@@ -1,5 +1,9 @@
 # Deployment Recipes
 
+## Deployher control plane UI (Vite + Bun)
+
+The dashboard is a **Vite-built SPA** (`bun run build:client` → `dist/client`). The Bun process serves `index.html`, `/assets/*`, and JSON APIs only—it does not render React on the server. Docker images run `build:client` in the builder stage and copy `dist/client` into the runtime image (`SKIP_CLIENT_BUILD=1` at runtime).
+
 ## Workspace vs app roots
 
 Use `workspaceRootDir` for lockfiles and installs, and `projectRootDir` for strategy detection and app builds.
