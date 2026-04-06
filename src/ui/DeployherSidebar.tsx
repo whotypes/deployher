@@ -1,30 +1,32 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore, type ReactElement } from "react";
-import {
-  Activity,
-  ChevronDown,
-  CirclePlay,
-  FolderKanban,
-  LayoutDashboard,
-  Loader2,
-  LogOut,
-  Rocket,
-  Settings2,
-  Shield,
-  X,
-  XCircle
-} from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { fetchWithCsrf } from "@/ui/client/fetchWithCsrf";
 import { cn } from "@/lib/utils";
+import { fetchWithCsrf } from "@/ui/client/fetchWithCsrf";
 import type {
-  LayoutUser,
-  SidebarFeaturedDeployment,
-  SidebarProjectDeploymentStatus,
-  SidebarProjectSummary
+    LayoutUser,
+    SidebarFeaturedDeployment,
+    SidebarProjectDeploymentStatus,
+    SidebarProjectSummary
 } from "@/ui/layoutUser";
+import {
+    Activity,
+    ChevronDown,
+    CirclePlay,
+    FolderKanban,
+    LayoutDashboard,
+    Loader2,
+    LogOut,
+    Rocket,
+    Settings2,
+    Shield,
+    X,
+    XCircle
+} from "lucide-react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 
 const SidebarProjectGlyph = ({
   name,
@@ -83,36 +85,6 @@ type NavGroup = {
   items: NavLink[];
 };
 
-const dashboardNav: NavLink = {
-  href: "/dashboard",
-  label: "Dashboard",
-  icon: LayoutDashboard,
-  match: (pathname) => pathname === "/dashboard" || pathname === "/home"
-};
-
-const projectsNav: NavLink = {
-  href: "/projects",
-  label: "Projects",
-  icon: FolderKanban,
-  match: (pathname) => pathname === "/projects" || pathname.startsWith("/projects/")
-};
-
-const healthNav: NavLink = {
-  href: "/health",
-  label: "System Health",
-  icon: Activity,
-  match: (pathname) => pathname === "/health"
-};
-
-const adminNav: NavLink[] = [
-  {
-    href: "/admin",
-    label: "Admin Workflow",
-    icon: Shield,
-    match: (pathname) => pathname === "/admin" || pathname.startsWith("/admin/")
-  }
-];
-
 const navIsActive = (pathname: string, item: NavLink): boolean => {
   if (item.match) return item.match(pathname);
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -166,23 +138,28 @@ const sidebarProjectStatusDotClass = (status: SidebarProjectDeploymentStatus | n
   }
 };
 
-const sidebarProjectStatusAriaLabel = (status: SidebarProjectDeploymentStatus | null): string => {
-  if (status === null) return "No current deployment status";
-  if (status === "success") return "Live";
-  if (status === "failed") return "Failed";
-  if (status === "building") return "Building";
-  return "Queued";
+const SidebarProjectStatusDot = ({ status }: { status: SidebarProjectDeploymentStatus | null }) => {
+  const { t } = useTranslation();
+  const aria =
+    status === null
+      ? t("sidebar.statusNoDeploy")
+      : status === "success"
+        ? t("sidebar.statusLive")
+        : status === "failed"
+          ? t("sidebar.statusFailed")
+          : status === "building"
+            ? t("sidebar.statusBuilding")
+            : t("sidebar.statusQueued");
+  return (
+    <span
+      className={cn(
+        "size-1.5 shrink-0 rounded-full animate-pulse-slow",
+        sidebarProjectStatusDotClass(status)
+      )}
+      aria-label={aria}
+    />
+  );
 };
-
-const SidebarProjectStatusDot = ({ status }: { status: SidebarProjectDeploymentStatus | null }) => (
-  <span
-    className={cn(
-      "size-1.5 shrink-0 rounded-full animate-pulse-slow",
-      sidebarProjectStatusDotClass(status)
-    )}
-    aria-label={sidebarProjectStatusAriaLabel(status)}
-  />
-);
 
 const SidebarGroupLabel = ({ children }: { children: string }) => (
   <p className="deployher-sidebar-label shrink-0 px-2 pb-1 pt-3 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 transition-[margin,opacity] duration-200 group-[.sidebar-collapsed]/shell:pointer-events-none group-[.sidebar-collapsed]/shell:-mt-6 group-[.sidebar-collapsed]/shell:opacity-0">
@@ -204,8 +181,8 @@ const SidebarLink = ({
   return (
     <li data-slot="sidebar-menu-item">
       <CollapsedSidebarTooltip label={item.label}>
-        <a
-          href={item.href}
+        <Link
+          to={item.href}
           aria-current={active ? "page" : undefined}
           data-active={active ? "true" : "false"}
           data-slot="sidebar-menu-button"
@@ -216,7 +193,7 @@ const SidebarLink = ({
         >
           {Icon ? <Icon className="shrink-0" aria-hidden /> : <span className="size-4 shrink-0" aria-hidden />}
           <span className="deployher-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">{item.label}</span>
-        </a>
+        </Link>
       </CollapsedSidebarTooltip>
     </li>
   );
@@ -224,10 +201,14 @@ const SidebarLink = ({
 
 const WorkspaceProjectsRow = ({
   pathname,
-  sidebarProjects
+  sidebarProjects,
+  projectsNav,
+  t
 }: {
   pathname: string;
   sidebarProjects: SidebarProjectSummary[];
+  projectsNav: NavLink;
+  t: (key: string) => string;
 }) => {
   const shellCollapsed = useShellSidebarCollapsed();
   const [nestOpen, setNestOpen] = useState(
@@ -251,8 +232,8 @@ const WorkspaceProjectsRow = ({
       <Collapsible open={nestOpen} onOpenChange={setNestOpen}>
         <div className="flex min-w-0 items-stretch gap-0.5">
           <CollapsedSidebarTooltip label={projectsNav.label}>
-            <a
-              href={projectsNav.href}
+            <Link
+              to={projectsNav.href}
               aria-current={projectsActive ? "page" : undefined}
               data-active={projectsActive ? "true" : "false"}
               data-slot="sidebar-menu-button"
@@ -263,13 +244,13 @@ const WorkspaceProjectsRow = ({
             >
               {ProjectsIcon ? <ProjectsIcon className="shrink-0" aria-hidden /> : null}
               <span className="deployher-sidebar-label truncate">{projectsNav.label}</span>
-            </a>
+            </Link>
           </CollapsedSidebarTooltip>
           <CollapsibleTrigger
             className={cn(
               "flex h-[inherit] min-h-9 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent focus-visible:ring-2 data-[state=open]:bg-sidebar-accent/60 [&>svg]:size-4"
             )}
-            aria-label={nestOpen ? "Collapse project list" : "Expand project list"}
+            aria-label={nestOpen ? t("sidebar.collapseProjectList") : t("sidebar.expandProjectList")}
           >
             <ChevronDown
               className={cn("transition-transform duration-200", nestOpen ? "rotate-180" : "rotate-0")}
@@ -286,9 +267,9 @@ const WorkspaceProjectsRow = ({
               const active =
                 pathname === `/projects/${p.id}` || pathname.startsWith(`/projects/${p.id}/`);
               return (
-                <a
+                <Link
                   key={p.id}
-                  href={`/projects/${p.id}`}
+                  to={`/projects/${p.id}`}
                   role="listitem"
                   aria-current={active ? "page" : undefined}
                   className={cn(
@@ -303,7 +284,7 @@ const WorkspaceProjectsRow = ({
                     <span className="min-w-0 truncate">{p.name}</span>
                   </span>
                   <SidebarProjectStatusDot status={p.deploymentStatus} />
-                </a>
+                </Link>
               );
             })}
           </div>
@@ -315,16 +296,29 @@ const WorkspaceProjectsRow = ({
 
 const SidebarWorkspace = ({
   pathname,
-  sidebarProjects
+  sidebarProjects,
+  dashboardNav,
+  projectsNav,
+  healthNav,
+  t
 }: {
   pathname: string;
   sidebarProjects: SidebarProjectSummary[];
+  dashboardNav: NavLink;
+  projectsNav: NavLink;
+  healthNav: NavLink;
+  t: (key: string) => string;
 }) => (
   <div>
-    <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+    <SidebarGroupLabel>{t("nav.workspace")}</SidebarGroupLabel>
     <ul className="flex flex-col gap-1" data-slot="sidebar-menu">
       <SidebarLink item={dashboardNav} pathname={pathname} />
-      <WorkspaceProjectsRow pathname={pathname} sidebarProjects={sidebarProjects} />
+      <WorkspaceProjectsRow
+        pathname={pathname}
+        sidebarProjects={sidebarProjects}
+        projectsNav={projectsNav}
+        t={t}
+      />
       <SidebarLink item={healthNav} pathname={pathname} />
     </ul>
   </div>
@@ -342,6 +336,7 @@ const SidebarGroup = ({ group, pathname, muted }: { group: NavGroup; pathname: s
 );
 
 const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
+  const { t } = useTranslation();
   const collapsed = useShellSidebarCollapsed();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -357,21 +352,21 @@ const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
       });
       const data = (await response.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to create deployment");
+        throw new Error(data.error ?? t("sidebar.failedCreateDeployment"));
       }
       if (data.id) {
         window.location.href = `/deployments/${data.id}`;
         return;
       }
-      throw new Error("Deployment started but no id returned");
+      throw new Error(t("sidebar.deploymentNoId"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Deploy failed");
+      setError(err instanceof Error ? err.message : t("sidebar.deployFailed"));
     } finally {
       setBusy(false);
     }
   };
 
-  const label = busy ? "Deploying…" : "Deploy this project";
+  const label = busy ? t("sidebar.deploying") : t("sidebar.deployThisProject");
 
   if (collapsed) {
     return (
@@ -401,7 +396,7 @@ const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
         aria-label={label}
       >
         <Rocket className="size-4 shrink-0" aria-hidden />
-        <span>{busy ? "Deploying…" : "Deploy"}</span>
+        <span>{busy ? t("sidebar.deploying") : t("sidebar.deploy")}</span>
       </button>
       {error ? (
         <p className="px-0.5 text-xs text-red-400/90" role="alert">
@@ -410,17 +405,6 @@ const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
       ) : null}
     </div>
   );
-};
-
-const sidebarDeploymentSectionTitle = (d: SidebarFeaturedDeployment): string => {
-  switch (d.sidebarRole) {
-    case "live":
-      return "Live deployment";
-    case "failed":
-      return "Last failed deployment";
-    case "in_progress":
-      return "Latest run";
-  }
 };
 
 const SidebarDeploymentRowIcon = ({ deployment }: { deployment: SidebarFeaturedDeployment }) => {
@@ -443,6 +427,7 @@ const SidebarProjectCard = ({
   pathname: string;
   sidebarContext: NonNullable<DeployherSidebarProps["sidebarContext"]>;
 }) => {
+  const { t } = useTranslation();
   const project = sidebarContext.project;
   if (!project) return null;
 
@@ -461,23 +446,34 @@ const SidebarProjectCard = ({
     label: string;
     section: "general" | "env" | "danger" | "observability";
   }[] = [
-    { href: `/projects/${project.id}/observability`, label: "Observability", section: "observability" },
-    { href: `/projects/${project.id}/settings`, label: "General Settings", section: "general" },
-    { href: `/projects/${project.id}/settings/env`, label: "Environment Variables", section: "env" },
-    { href: `/projects/${project.id}/settings/danger`, label: "Danger Zone", section: "danger" }
+    { href: `/projects/${project.id}/observability`, label: t("sidebar.observability"), section: "observability" },
+    { href: `/projects/${project.id}/settings`, label: t("sidebar.generalSettings"), section: "general" },
+    { href: `/projects/${project.id}/settings/env`, label: t("sidebar.environmentVariables"), section: "env" },
+    { href: `/projects/${project.id}/settings/danger`, label: t("sidebar.dangerZone"), section: "danger" }
   ];
 
   const deployment = sidebarContext.deployment;
 
+  const deploymentSectionTitle = (d: SidebarFeaturedDeployment): string => {
+    switch (d.sidebarRole) {
+      case "live":
+        return t("sidebar.liveDeployment");
+      case "failed":
+        return t("sidebar.lastFailedDeployment");
+      case "in_progress":
+        return t("sidebar.latestRun");
+    }
+  };
+
   return (
     <div className="rounded-lg border border-sidebar-border/90 bg-sidebar-accent/25 p-2 shadow-sm ring-1 ring-sidebar-border/40 group-[.sidebar-collapsed]/shell:border-0 group-[.sidebar-collapsed]/shell:bg-transparent group-[.sidebar-collapsed]/shell:p-0 group-[.sidebar-collapsed]/shell:shadow-none group-[.sidebar-collapsed]/shell:ring-0">
       <p className="deployher-sidebar-label mb-2 px-0.5 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 group-[.sidebar-collapsed]/shell:sr-only">
-        Current project
+        {t("sidebar.currentProject")}
       </p>
       <div className="space-y-2 group-[.sidebar-collapsed]/shell:space-y-1">
         <CollapsedSidebarTooltip label={project.name}>
-          <a
-            href={`/projects/${project.id}`}
+          <Link
+            to={`/projects/${project.id}`}
             aria-current={
               pathname === `/projects/${project.id}` || pathname.startsWith(`/projects/${project.id}/`)
                 ? "page"
@@ -487,7 +483,7 @@ const SidebarProjectCard = ({
           >
             <FolderKanban className="size-4 shrink-0 group-[.sidebar-collapsed]/shell:size-5" aria-hidden />
             <span className="deployher-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">{project.name}</span>
-          </a>
+          </Link>
         </CollapsedSidebarTooltip>
 
         <SidebarProjectDeploy projectId={project.id} />
@@ -496,9 +492,9 @@ const SidebarProjectCard = ({
             {subLinks.map((s) => {
               const active = settingsMatch(pathname, s.section);
               return (
-                <a
+                <Link
                   key={s.href}
-                  href={s.href}
+                  to={s.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
                     "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline [&>svg]:size-3.5 [&>svg]:shrink-0",
@@ -511,7 +507,7 @@ const SidebarProjectCard = ({
                   {s.section === "general" ? <Settings2 className="shrink-0" aria-hidden /> : null}
                   {s.section === "observability" ? <Activity className="shrink-0" aria-hidden /> : null}
                   <span className="truncate">{s.label}</span>
-                </a>
+                </Link>
               );
             })}
           </div>
@@ -520,13 +516,13 @@ const SidebarProjectCard = ({
         {deployment ? (
           <div className="border-t border-sidebar-border/60 pt-2 group-[.sidebar-collapsed]/shell:hidden">
             <p className="mb-1 px-0.5 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/50">
-              {sidebarDeploymentSectionTitle(deployment)}
+              {deploymentSectionTitle(deployment)}
             </p>
             <CollapsedSidebarTooltip
-              label={`Open deployment ${deployment.shortId} (${deployment.status})`}
+              label={t("sidebar.openDeployment", { shortId: deployment.shortId, status: deployment.status })}
             >
-              <a
-                href={`/deployments/${deployment.id}`}
+              <Link
+                to={`/deployments/${deployment.id}`}
                 aria-current={pathname === `/deployments/${deployment.id}` ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-2 rounded-md p-2 text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent focus-visible:ring-2 no-underline hover:no-underline",
@@ -537,12 +533,12 @@ const SidebarProjectCard = ({
               >
                 <SidebarDeploymentRowIcon deployment={deployment} />
                 <span className="truncate">
-                  Run {deployment.shortId}
+                  {t("sidebar.runShortId", { shortId: deployment.shortId })}
                   {deployment.sidebarRole === "in_progress" ? (
                     <span className="ml-1 text-xs opacity-80">({deployment.status})</span>
                   ) : null}
                 </span>
-              </a>
+              </Link>
             </CollapsedSidebarTooltip>
           </div>
         ) : null}
@@ -551,11 +547,55 @@ const SidebarProjectCard = ({
   );
 };
 
-const buildAdminGroups = (pathname: string, user: LayoutUser | null | undefined): NavGroup[] =>
-  user?.role === "operator" ? [{ label: "Operations", items: adminNav }] : [];
-
 export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebarContext }: DeployherSidebarProps) => {
-  const adminGroups = buildAdminGroups(pathname, user);
+  const { t } = useTranslation();
+
+  const dashboardNav = useMemo(
+    (): NavLink => ({
+      href: "/dashboard",
+      label: t("nav.dashboard"),
+      icon: LayoutDashboard,
+      match: (p) => p === "/dashboard" || p === "/home"
+    }),
+    [t]
+  );
+
+  const projectsNav = useMemo(
+    (): NavLink => ({
+      href: "/projects",
+      label: t("nav.projects"),
+      icon: FolderKanban,
+      match: (p) => p === "/projects" || p.startsWith("/projects/")
+    }),
+    [t]
+  );
+
+  const healthNav = useMemo(
+    (): NavLink => ({
+      href: "/health",
+      label: t("nav.systemHealth"),
+      icon: Activity,
+      match: (p) => p === "/health"
+    }),
+    [t]
+  );
+
+  const adminNav = useMemo(
+    (): NavLink[] => [
+      {
+        href: "/admin",
+        label: t("nav.adminWorkflow"),
+        icon: Shield,
+        match: (p) => p === "/admin" || p.startsWith("/admin/")
+      }
+    ],
+    [t]
+  );
+
+  const adminGroups: NavGroup[] = useMemo(
+    () => (user?.role === "operator" ? [{ label: t("nav.operations"), items: adminNav }] : []),
+    [user?.role, adminNav, t]
+  );
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -566,32 +606,39 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
         className="fixed inset-y-0 left-0 z-40 flex h-svh w-(--sidebar-width) -translate-x-full flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-none transition-[transform,width] duration-200 ease-linear data-[mobile-open=true]:translate-x-0 md:z-30 md:translate-x-0 group-[.sidebar-collapsed]/shell:w-(--sidebar-width-icon)"
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-3 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:px-2">
-          <CollapsedSidebarTooltip label="Deployher">
-            <a
-              href="/dashboard"
+          <CollapsedSidebarTooltip label={t("common.deployherBrand")}>
+            <Link
+              to="/dashboard"
               className="deployher-sidebar-brand flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold text-sidebar-foreground no-underline hover:no-underline hover:bg-sidebar-accent group-[.sidebar-collapsed]/shell:flex-none group-[.sidebar-collapsed]/shell:justify-center"
-              aria-label="Deployher home"
+              aria-label={t("sidebar.deployherHome")}
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary via-primary to-color-mix(in_oklab,var(--chart-2)_55%,var(--primary)) text-sm font-bold text-primary-foreground shadow-[0_0_24px_-4px_color-mix(in_oklab,var(--primary)_70%,transparent)] ring-1 ring-primary/40">
                 d
               </span>
               <span className="deployher-sidebar-label truncate font-serif text-base font-semibold tracking-tight group-[.sidebar-collapsed]/shell:sr-only">
-                Deployher
+                {t("common.deployherBrand")}
               </span>
-            </a>
+            </Link>
           </CollapsedSidebarTooltip>
           <button
             type="button"
             id="deployher-sidebar-close-mobile"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent focus-visible:ring-2 md:hidden"
-            aria-label="Close sidebar"
+            aria-label={t("sidebar.closeSidebar")}
           >
             <X className="size-4" aria-hidden />
           </button>
         </div>
 
         <div className="deployher-sidebar-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2" data-slot="sidebar-content">
-          <SidebarWorkspace pathname={pathname} sidebarProjects={sidebarProjects} />
+          <SidebarWorkspace
+            pathname={pathname}
+            sidebarProjects={sidebarProjects}
+            dashboardNav={dashboardNav}
+            projectsNav={projectsNav}
+            healthNav={healthNav}
+            t={t}
+          />
           {sidebarContext ? <SidebarProjectCard pathname={pathname} sidebarContext={sidebarContext} /> : null}
           {adminGroups.map((group) => (
             <SidebarGroup key={group.label} group={group} pathname={pathname} muted />
@@ -602,10 +649,10 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
           {user ? (
             <>
               <CollapsedSidebarTooltip label={user.name ?? user.email}>
-                <a
-                  href="/account"
+                <Link
+                  to="/account"
                   className="deployher-sidebar-link mb-1 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground/90 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center"
-                  aria-label="Account"
+                  aria-label={t("sidebar.accountLink")}
                 >
                   {user.image ? (
                     <img src={user.image} alt="" width={28} height={28} className="size-7 shrink-0 rounded-md object-cover" />
@@ -617,28 +664,28 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
                   <span className="deployher-sidebar-label min-w-0 truncate group-[.sidebar-collapsed]/shell:sr-only">
                     {user.name ?? user.email}
                   </span>
-                </a>
+                </Link>
               </CollapsedSidebarTooltip>
               <form id="signout-form" method="post" action="/api/auth/sign-out" className="group-[.sidebar-collapsed]/shell:px-0">
-                <CollapsedSidebarTooltip label="Sign out">
+                <CollapsedSidebarTooltip label={t("common.signOut")}>
                   <button
                     type="submit"
                     className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-[.sidebar-collapsed]/shell:justify-center"
-                    aria-label="Sign out"
+                    aria-label={t("common.signOut")}
                   >
                     <LogOut className="size-4 shrink-0" aria-hidden />
-                    <span className="deployher-sidebar-label group-[.sidebar-collapsed]/shell:sr-only">Sign out</span>
+                    <span className="deployher-sidebar-label group-[.sidebar-collapsed]/shell:sr-only">{t("common.signOut")}</span>
                   </button>
                 </CollapsedSidebarTooltip>
               </form>
             </>
           ) : (
-            <a
-              href="/login"
+            <Link
+              to="/login"
               className="flex items-center justify-center rounded-md bg-sidebar-primary px-2 py-2 text-sm font-medium text-sidebar-primary-foreground no-underline hover:no-underline hover:opacity-90"
             >
-              Sign in
-            </a>
+              {t("sidebar.signInCta")}
+            </Link>
           )}
         </div>
 
@@ -646,8 +693,8 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
           type="button"
           id="deployher-sidebar-rail"
           tabIndex={-1}
-          title="Toggle sidebar"
-          aria-label="Toggle sidebar"
+          title={t("sidebar.toggleSidebarRail")}
+          aria-label={t("sidebar.toggleSidebarRail")}
           className="absolute inset-y-0 right-0 z-20 hidden w-3 cursor-ew-resize border-0 bg-transparent p-0 md:block group-[.sidebar-collapsed]/shell:cursor-e-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-sidebar-border"
         />
       </aside>

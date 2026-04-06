@@ -1,12 +1,15 @@
 import { ExternalLink, FileTerminal } from "lucide-react";
+import { useMemo } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser, SidebarProjectSummary } from "./Layout";
-import { Layout } from "./Layout";
+import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
+import { AppShell } from "./AppShell";
 import { ProjectSiteGlyph } from "./client/ProjectSiteGlyph";
 
 type FrameworkHint = "auto" | "nextjs" | "node" | "python" | "static";
@@ -74,59 +77,11 @@ const statusVariant = (status?: string): "default" | "secondary" | "destructive"
   }
 };
 
-const statusLabel = (status: string): string => {
-  const s = status.toLowerCase();
-  if (s === "building") return "Building";
-  if (s === "queued") return "Queued";
-  if (s === "success") return "Live";
-  if (s === "failed") return "Failed";
-  return status;
-};
 
-const frameworkHintLabel = (hint: FrameworkHint): string => {
-  switch (hint) {
-    case "auto":
-      return "Auto";
-    case "nextjs":
-      return "Next.js";
-    case "node":
-      return "Node";
-    case "python":
-      return "Python";
-    case "static":
-      return "Static";
-    default:
-      return hint;
-  }
-};
-
-const buildStrategyLabel = (strategy: string): string => {
-  switch (strategy) {
-    case "node":
-      return "Node build";
-    case "python":
-      return "Python build";
-    case "static":
-      return "Static build";
-    default:
-      return strategy;
-  }
-};
-
-const deploymentBuildTypeSummary = (dep: ProjectListCurrentDeployment): string => {
-  if (dep.buildStrategy === "unknown") {
-    if (dep.status === "queued" || dep.status === "building") {
-      return "Resolving build type…";
-    }
-    return "Unknown build type";
-  }
-  return `${buildStrategyLabel(dep.buildStrategy)} · ${dep.serveStrategy} serve`;
-};
-
-const formatBuildDuration = (startIso: string, endIso: string | null): string => {
-  if (!endIso) return "—";
+const formatBuildDuration = (startIso: string, endIso: string | null, emDash: string): string => {
+  if (!endIso) return emDash;
   const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
-  if (ms < 0) return "—";
+  if (ms < 0) return emDash;
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   const rs = s % 60;
@@ -162,6 +117,7 @@ const bucketForProject = (p: Project): StatusBucket => {
 };
 
 const ProjectsStatusBar = ({ projects }: { projects: Project[] }) => {
+  const { t } = useTranslation();
   const n = projects.length;
   const counts: Record<StatusBucket, number> = {
     success: 0,
@@ -175,11 +131,11 @@ const ProjectsStatusBar = ({ projects }: { projects: Project[] }) => {
   }
 
   const segmentDefs: { key: StatusBucket; count: number; className: string; label: string }[] = [
-    { key: "success", count: counts.success, className: "bg-emerald-500/90", label: "Live" },
-    { key: "failed", count: counts.failed, className: "bg-destructive/85", label: "Failed" },
-    { key: "building", count: counts.building, className: "bg-amber-500/85", label: "Building" },
-    { key: "queued", count: counts.queued, className: "bg-sky-500/80", label: "Queued" },
-    { key: "none", count: counts.none, className: "bg-muted-foreground/35", label: "No deploy" }
+    { key: "success", count: counts.success, className: "bg-emerald-500/90", label: t("projects.bucket.live") },
+    { key: "failed", count: counts.failed, className: "bg-destructive/85", label: t("projects.bucket.failed") },
+    { key: "building", count: counts.building, className: "bg-amber-500/85", label: t("projects.bucket.building") },
+    { key: "queued", count: counts.queued, className: "bg-sky-500/80", label: t("projects.bucket.queued") },
+    { key: "none", count: counts.none, className: "bg-muted-foreground/35", label: t("projects.bucket.none") }
   ];
   const segments = segmentDefs.filter((s) => s.count > 0);
 
@@ -187,24 +143,27 @@ const ProjectsStatusBar = ({ projects }: { projects: Project[] }) => {
     <div className="space-y-2">
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>
-          <span className="tabular-nums text-foreground">{n}</span> projects
+          <span className="tabular-nums text-foreground">{n}</span> {t("projects.wordProjects")}
         </span>
         <span>
-          <span className="tabular-nums text-emerald-600 dark:text-emerald-400">{counts.success}</span> live
+          <span className="tabular-nums text-emerald-600 dark:text-emerald-400">{counts.success}</span>{" "}
+          {t("projects.wordLive")}
         </span>
         <span>
-          <span className="tabular-nums text-destructive">{counts.failed}</span> failed
+          <span className="tabular-nums text-destructive">{counts.failed}</span> {t("projects.wordFailed")}
         </span>
         <span>
           <span className="tabular-nums text-amber-600 dark:text-amber-400">{counts.building + counts.queued}</span>{" "}
-          in flight
+          {t("projects.wordInFlight")}
         </span>
       </div>
       {n > 0 ? (
         <div
           className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
           role="img"
-          aria-label={`Deployment status mix: ${segments.map((s) => `${s.label} ${s.count}`).join(", ")}`}
+          aria-label={t("projects.segmentAria", {
+            summary: segments.map((s) => `${s.label} ${s.count}`).join(", ")
+          })}
         >
           {segments.map((s) => (
             <div
@@ -221,10 +180,11 @@ const ProjectsStatusBar = ({ projects }: { projects: Project[] }) => {
 };
 
 const GitHubToolbarBadge = ({ github }: { github: ProjectsPageData["github"] }) => {
+  const { t } = useTranslation();
   if (!github.linked) {
     return (
       <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-        <a href="/account">GitHub · connect</a>
+        <Link to="/account">{t("projects.githubConnect")}</Link>
       </Button>
     );
   }
@@ -236,25 +196,62 @@ const GitHubToolbarBadge = ({ github }: { github: ProjectsPageData["github"] }) 
         className="h-8 border-amber-500/40 text-xs text-amber-700 dark:text-amber-400"
         asChild
       >
-        <a href="/account">GitHub · limited access</a>
+        <Link to="/account">{t("projects.githubLimited")}</Link>
       </Button>
     );
   }
   return (
     <span className="inline-flex h-8 items-center rounded-md border border-border/60 px-2.5 text-xs text-muted-foreground">
-      GitHub
+      {t("projects.githubBadge")}
     </span>
   );
 };
 
+const deploymentBuildTypeSummary = (dep: ProjectListCurrentDeployment, t: TFunction): string => {
+  if (dep.buildStrategy === "unknown") {
+    if (dep.status === "queued" || dep.status === "building") {
+      return t("projects.resolvingBuildType");
+    }
+    return t("projects.unknownBuildType");
+  }
+  const buildLabel = (() => {
+    switch (dep.buildStrategy) {
+      case "node":
+        return t("projects.nodeBuild");
+      case "python":
+        return t("projects.pythonBuild");
+      case "static":
+        return t("projects.staticBuild");
+      default:
+        return dep.buildStrategy;
+    }
+  })();
+  return `${buildLabel} · ${dep.serveStrategy} ${t("projects.serveSuffix")}`;
+};
+
 const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
+  const { t, i18n } = useTranslation();
   const dep = project.currentDeployment;
   const hint = dep ? failureHint(dep) : null;
-  const duration = dep && dep.finishedAt ? formatBuildDuration(dep.createdAt, dep.finishedAt) : null;
-  const updatedLabel = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(project.updatedAt));
+  const emDash = t("common.emDash");
+  const duration =
+    dep && dep.finishedAt ? formatBuildDuration(dep.createdAt, dep.finishedAt, emDash) : null;
+  const locale = i18n.language.startsWith("fr") ? "fr" : "en";
+  const dateFmt = useMemo(
+    () => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }),
+    [locale]
+  );
+  const updatedLabel = dateFmt.format(new Date(project.updatedAt));
+
+  const frameworkHintLabel = (hint: FrameworkHint) => t(`projects.framework.${hint}`);
+
+  const statusLabel = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === "building" || s === "queued" || s === "success" || s === "failed") {
+      return t(`projects.status.${s}`);
+    }
+    return status;
+  };
 
   return (
     <Card
@@ -264,10 +261,10 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
       )}
     >
       <CardContent className="relative p-4">
-        <a
-          href={`/projects/${project.id}`}
+        <Link
+          to={`/projects/${project.id}`}
           className="absolute inset-0 z-0 rounded-lg outline-none"
-          aria-label={`Open project ${project.name}`}
+          aria-label={t("projects.openProjectAria", { name: project.name })}
         />
         <div className="relative z-10 space-y-3 pointer-events-none">
         <div className="flex items-start justify-between gap-3">
@@ -290,13 +287,17 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
           </time>
         </div>
 
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" className="font-mono text-[0.65rem]">
             {project.branch}
           </Badge>
-          <Badge variant="secondary" className="text-[0.65rem] font-normal">
+          <div
+            className="border-border/80 bg-background inline-flex h-7 min-w-24 max-w-48 items-center truncate rounded-md border px-2 text-[0.65rem] font-medium text-foreground"
+            title={frameworkHintLabel(project.frameworkHint)}
+            aria-label={t("projects.frameworkAria", { framework: frameworkHintLabel(project.frameworkHint) })}
+          >
             {frameworkHintLabel(project.frameworkHint)}
-          </Badge>
+          </div>
           {project.projectRootDir !== "." ? (
             <Badge variant="outline" className="font-mono text-[0.65rem]">
               {project.projectRootDir}
@@ -309,37 +310,31 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
         {dep ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <a href={deploymentDetailHref(dep.id)} className="pointer-events-auto no-underline">
+              <Link to={deploymentDetailHref(dep.id)} className="pointer-events-auto no-underline">
                 <Badge variant={statusVariant(dep.status)} className="gap-1 text-xs">
                   {statusLabel(dep.status)}
                 </Badge>
-              </a>
-              <a
-                href={deploymentDetailHref(dep.id)}
+              </Link>
+              <Link
+                to={deploymentDetailHref(dep.id)}
                 className="pointer-events-auto font-mono text-xs text-muted-foreground no-underline hover:text-foreground hover:underline"
               >
                 {dep.shortId}
-              </a>
+              </Link>
             </div>
             <p className="text-xs text-muted-foreground">
-              {deploymentBuildTypeSummary(dep)}
+              {deploymentBuildTypeSummary(dep, t)}
               {duration ? ` · ${duration}` : null}
             </p>
             <p className="text-[0.7rem] text-muted-foreground">
-              Started{" "}
-              {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-                new Date(dep.createdAt)
-              )}
+              {t("projects.started", { time: dateFmt.format(new Date(dep.createdAt)) })}
               {dep.finishedAt ? (
                 <>
                   {" "}
-                  · Finished{" "}
-                  {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-                    new Date(dep.finishedAt)
-                  )}
+                  · {t("projects.finished", { time: dateFmt.format(new Date(dep.finishedAt)) })}
                 </>
               ) : dep.status === "building" || dep.status === "queued" ? (
-                <span className="text-amber-600/90 dark:text-amber-400/90"> · Still running</span>
+                <span className="text-amber-600/90 dark:text-amber-400/90"> {t("projects.stillRunning")}</span>
               ) : null}
             </p>
             {dep.status === "failed" && hint ? (
@@ -358,24 +353,24 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
           </div>
         ) : (
           <Badge variant="secondary" className="w-fit text-xs">
-            No deploys
+            {t("projects.noDeploys")}
           </Badge>
         )}
 
         <div className="flex flex-wrap gap-2 pt-1">
           {dep && dep.status === "failed" ? (
             <Button variant="destructive" size="sm" className="pointer-events-auto h-8 gap-1.5" asChild>
-              <a href={deploymentLogsHref(dep.id)}>
+              <Link to={deploymentLogsHref(dep.id)}>
                 <FileTerminal className="size-3.5" aria-hidden />
-                Logs
-              </a>
+                {t("common.logs")}
+              </Link>
             </Button>
           ) : null}
           {dep && dep.status === "success" && dep.previewUrl ? (
             <Button size="sm" className="pointer-events-auto h-8 gap-1.5" asChild>
               <a href={dep.previewUrl} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="size-3.5" aria-hidden />
-                Preview
+                {t("common.preview")}
               </a>
             </Button>
           ) : null}
@@ -384,7 +379,7 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
             dep.status === "queued" ||
             (dep.status === "success" && !dep.previewUrl)) ? (
             <Button variant="outline" size="sm" className="pointer-events-auto h-8" asChild>
-              <a href={deploymentDetailHref(dep.id)}>Deployment</a>
+              <Link to={deploymentDetailHref(dep.id)}>{t("common.deployment")}</Link>
             </Button>
           ) : null}
         </div>
@@ -394,46 +389,49 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
   );
 };
 
-const ProjectsPage = ({ data }: { data: ProjectsPageData }) => (
-  <Layout
-    title="Projects · Deployher"
-    pathname={data.pathname}
-    user={data.user ?? null}
-    csrfToken={data.csrfToken}
-    sidebarProjects={data.sidebarProjects}
-    breadcrumbs={[{ label: "Projects" }]}
-  >
-    <div className="mb-6 space-y-4 rounded-lg border border-border/70 bg-card/20 p-4 md:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Projects</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <GitHubToolbarBadge github={data.github} />
-          <Button size="sm" asChild>
-            <a href="/projects/new">Add project</a>
-          </Button>
+export const ProjectsPage = ({ data }: { data: ProjectsPageData }) => {
+  const { t } = useTranslation();
+  return (
+    <AppShell
+      title={t("meta.titleWithApp", {
+        page: t("projects.pageTitle"),
+        appName: t("common.appName")
+      })}
+      pathname={data.pathname}
+      user={data.user ?? null}
+      sidebarProjects={data.sidebarProjects}
+      breadcrumbs={[{ label: t("projects.pageTitle") }]}
+    >
+      <div className="mb-6 space-y-4 rounded-lg border border-border/70 bg-card/20 p-4 md:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{t("projects.pageTitle")}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <GitHubToolbarBadge github={data.github} />
+            <Button size="sm" asChild>
+              <Link to="/projects/new">{t("projects.addProject")}</Link>
+            </Button>
+          </div>
         </div>
+        <ProjectsStatusBar projects={data.projects} />
       </div>
-      <ProjectsStatusBar projects={data.projects} />
-    </div>
 
-    {data.projects.length === 0 ? (
-      <Card className="dashboard-surface border-border/80 shadow-none">
-        <CardContent className="p-6 text-sm text-muted-foreground">
-          No projects yet.{" "}
-          <a href="/projects/new" className="font-medium text-foreground no-underline hover:underline">
-            Add one
-          </a>
-          .
-        </CardContent>
-      </Card>
-    ) : (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {data.projects.map((project) => (
-          <ProjectWorkspaceCard key={project.id} project={project} />
-        ))}
-      </div>
-    )}
-  </Layout>
-);
-
-export const renderProjectsPage = (data: ProjectsPageData) => renderToReadableStream(<ProjectsPage data={data} />);
+      {data.projects.length === 0 ? (
+        <Card className="dashboard-surface border-border/80 shadow-none">
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            {t("projects.empty")}{" "}
+            <Link to="/projects/new" className="font-medium text-foreground no-underline hover:underline">
+              {t("projects.emptyAdd")}
+            </Link>
+            .
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {data.projects.map((project) => (
+            <ProjectWorkspaceCard key={project.id} project={project} />
+          ))}
+        </div>
+      )}
+    </AppShell>
+  );
+};

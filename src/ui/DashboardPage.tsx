@@ -1,15 +1,18 @@
 import { formatDistanceToNow } from "date-fns";
-import { renderToReadableStream } from "react-dom/server";
+import { useTranslation } from "react-i18next";
+import { Link, useNavigate } from "react-router-dom";
 import type { HealthData } from "../health/HealthPage";
+import { getDateFnsLocale } from "@/lib/dateLocale";
 import type { WorkspaceDashboardCharts } from "../lib/workspaceDashboardMetrics";
 import { formatBytes, formatDuration } from "../utils/format";
-import type { LayoutUser, SidebarProjectSummary } from "./Layout";
-import { Layout } from "./Layout";
+import type { LayoutUser, SidebarProjectSummary } from "./layoutUser";
+import { AppShell } from "./AppShell";
+import { DashboardPageClient } from "./client/DashboardPageClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink, Globe } from "lucide-react";
 
 type ProjectSummary = {
   id: string;
@@ -54,59 +57,61 @@ const statusVariant = (status: string): "default" | "secondary" | "destructive" 
   }
 };
 
-const deploymentStatusOrder = ["building", "queued", "success", "failed"] as const;
-
 const DashboardPage = ({ data }: { data: DashboardData }) => {
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const { stats } = data;
-  const statusRows = deploymentStatusOrder
-    .filter((s) => (stats.deploymentsByStatus[s] ?? 0) > 0)
-    .map((s) => ({ status: s, count: stats.deploymentsByStatus[s] ?? 0 }));
-  const otherStatuses = Object.entries(stats.deploymentsByStatus).filter(
-    ([s]) => !deploymentStatusOrder.includes(s as (typeof deploymentStatusOrder)[number])
-  );
   const lastActivity = data.recentDeployments[0]?.createdAt ?? null;
   const lastActivityFull = lastActivity ? new Date(lastActivity).toISOString() : undefined;
   const lastActivityRelative = lastActivity
-    ? formatDistanceToNow(new Date(lastActivity), { addSuffix: true })
+    ? formatDistanceToNow(new Date(lastActivity), {
+        addSuffix: true,
+        locale: getDateFnsLocale(i18n.language)
+      })
     : null;
 
+  const pageTitle = t("meta.titleWithApp", {
+    page: t("dashboard.pageTitle"),
+    appName: t("common.appName")
+  });
+
+  const deploymentStatusLabel = (status: string): string => {
+    const s = status.toLowerCase();
+    if (s === "building") return t("projects.status.building");
+    if (s === "queued") return t("projects.status.queued");
+    if (s === "success") return t("projects.status.success");
+    if (s === "failed") return t("projects.status.failed");
+    return status;
+  };
+
   return (
-    <Layout
-      title="Dashboard · Deployher"
+    <AppShell
+      title={pageTitle}
       pathname={data.pathname}
       user={data.user ?? null}
       sidebarProjects={data.sidebarProjects}
-      breadcrumbs={[{ label: "Dashboard" }]}
-      scriptSrc="/assets/dashboard-page.js"
+      breadcrumbs={[{ label: t("dashboard.pageTitle") }]}
     >
-      <script
-        type="application/json"
-        id="dashboard-charts-bootstrap"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(data.workspaceCharts).replace(/</g, "\\u003c")
-        }}
-      />
-
       <div className="mb-6 flex flex-col gap-4 rounded-lg border border-border/70 bg-card/20 p-4 md:flex-row md:items-center md:justify-between md:p-5">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Dashboard</h1>
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{t("dashboard.pageTitle")}</h1>
           {lastActivityRelative ? (
             <p className="text-xs text-muted-foreground" title={lastActivityFull}>
-              Last deployment {lastActivityRelative}
+              {t("dashboard.lastDeployment", { time: lastActivityRelative })}
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground">No deployments yet</p>
+            <p className="text-xs text-muted-foreground">{t("dashboard.noDeploymentsYet")}</p>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" asChild>
-            <a href="/projects/new">New project</a>
+            <Link to="/projects/new">{t("dashboard.newProject")}</Link>
           </Button>
           <Button size="sm" variant="outline" asChild>
-            <a href="/health">Health</a>
+            <Link to="/health">{t("dashboard.health")}</Link>
           </Button>
           <Button size="sm" variant="outline" asChild>
-            <a href="/projects">Projects</a>
+            <Link to="/projects">{t("dashboard.projectsLink")}</Link>
           </Button>
         </div>
       </div>
@@ -115,7 +120,7 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
         <Card className="border-border/70 shadow-none">
           <CardHeader className="pb-1 pt-3">
             <CardTitle className="text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-              Projects
+              {t("dashboard.statProjects")}
             </CardTitle>
           </CardHeader>
           <CardContent className="pb-3 pt-0">
@@ -125,7 +130,7 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
         <Card className="border-border/70 shadow-none">
           <CardHeader className="pb-1 pt-3">
             <CardTitle className="text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-              Deployments
+              {t("dashboard.statDeployments")}
             </CardTitle>
           </CardHeader>
           <CardContent className="pb-3 pt-0">
@@ -135,7 +140,7 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
         <Card className="border-border/70 shadow-none">
           <CardHeader className="pb-1 pt-3">
             <CardTitle className="text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-              Control plane
+              {t("dashboard.statControlPlane")}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-2 pb-3 pt-0">
@@ -150,7 +155,7 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
         <Card className="border-border/70 shadow-none">
           <CardHeader className="pb-1 pt-3">
             <CardTitle className="text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-              Environment
+              {t("dashboard.statEnvironment")}
             </CardTitle>
           </CardHeader>
           <CardContent className="pb-3 pt-0">
@@ -164,72 +169,42 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-start">
         <div className="space-y-4 xl:col-span-5">
-          <div id="dashboard-charts-root" className="space-y-4" />
+          <div id="dashboard-charts-root" className="space-y-4">
+            <DashboardPageClient bootstrap={data.workspaceCharts} />
+          </div>
           <Card className="dashboard-surface border-border/80 shadow-none">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">All-time by status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {stats.deploymentTotal === 0 ? (
-                <p className="text-sm text-muted-foreground">No deployments yet.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {statusRows.map(({ status, count }) => (
-                    <Badge key={status} variant={statusVariant(status)} className="gap-1.5 px-2 py-0.5 text-xs">
-                      <span className="capitalize">{status}</span>
-                      <span className="tabular-nums opacity-90">{count}</span>
-                    </Badge>
-                  ))}
-                  {otherStatuses.map(([status, count]) => (
-                    <Badge key={status} variant="outline" className="gap-1.5 px-2 py-0.5 text-xs capitalize">
-                      {status}
-                      <span className="tabular-nums">{count}</span>
-                    </Badge>
-                  ))}
+            <CardHeader className="space-y-1 pb-2">
+              <div className="flex items-start gap-2">
+                <Globe className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <div className="min-w-0 space-y-1">
+                  <CardTitle className="text-sm font-medium">{t("dashboard.deploymentUrlsTitle")}</CardTitle>
+                  <p className="text-xs text-muted-foreground">{t("dashboard.deploymentUrlsDesc")}</p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card className="dashboard-surface border-border/80 shadow-none">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Runtime</CardTitle>
+              </div>
             </CardHeader>
-            <CardContent className="grid gap-2 text-xs sm:grid-cols-2">
-              <div className="flex justify-between gap-2 border-b border-border/40 pb-2 sm:border-0 sm:pb-0">
-                <span className="text-muted-foreground">Bun</span>
-                <span className="font-mono">{data.health.bunVersion}</span>
-              </div>
-              <div className="flex justify-between gap-2 border-b border-border/40 pb-2 sm:border-0 sm:pb-0">
-                <span className="text-muted-foreground">Pending HTTP</span>
-                <span className="font-mono tabular-nums">{data.health.pendingRequests}</span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-muted-foreground">Heap</span>
-                <span className="font-mono">{formatBytes(data.health.memory.heapUsed)}</span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-muted-foreground">PID</span>
-                <span className="font-mono tabular-nums">{data.health.pid}</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="dashboard-surface border-border/80 shadow-none">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">URL patterns</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs">
-              <div>
-                <p className="mb-0.5 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                  Preview
+            <CardContent className="space-y-3 text-xs">
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                <p className="mb-1 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+                  {t("common.preview")}
                 </p>
-                <code className="break-all text-[0.7rem] leading-relaxed">{data.health.domains.dev}</code>
+                <code className="break-all font-mono text-[0.75rem] leading-relaxed text-foreground">
+                  {data.health.domains.dev}
+                </code>
               </div>
-              <div>
-                <p className="mb-0.5 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                  Production
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                <p className="mb-1 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+                  {t("dashboard.production")}
                 </p>
-                <code className="break-all text-[0.7rem] leading-relaxed">{data.health.domains.prod}</code>
+                <code className="break-all font-mono text-[0.75rem] leading-relaxed text-foreground">
+                  {data.health.domains.prod}
+                </code>
               </div>
+              <p className="text-[0.7rem] text-muted-foreground">
+                {t("dashboard.diagnosticsHint")}{" "}
+                <Link to="/health" className="font-medium text-foreground underline-offset-4 hover:underline">
+                  {t("dashboard.health")}
+                </Link>
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -237,25 +212,29 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
         <div className="space-y-6 xl:col-span-7">
           <Card className="dashboard-surface overflow-hidden border-border/80 shadow-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-base">Recent deployments</CardTitle>
-              <a
-                href="/projects"
+              <CardTitle className="text-base">{t("dashboard.recentDeployments")}</CardTitle>
+              <Link
+                to="/projects"
                 className="text-xs text-muted-foreground no-underline hover:text-foreground"
               >
-                Projects
-              </a>
+                {t("dashboard.projectsLink")}
+              </Link>
             </CardHeader>
             <CardContent className="p-0">
               {data.recentDeployments.length === 0 ? (
-                <p className="px-4 pb-4 pt-0 text-sm text-muted-foreground">No deployments yet.</p>
+                <p className="px-4 pb-4 pt-0 text-sm text-muted-foreground">{t("dashboard.noDeploymentsWindow")}</p>
               ) : (
-                <ul className="divide-y divide-border/60" aria-label="Recent deployments">
+                <ul className="divide-y divide-border/60" aria-label={t("dashboard.recentDeployments")}>
                   {data.recentDeployments.map((deployment) => (
                     <li key={deployment.id} className="flex min-h-[52px] items-stretch">
-                      <a
-                        href={`/deployments/${deployment.id}`}
+                      <Link
+                        to={`/deployments/${deployment.id}`}
                         className="group flex min-w-0 flex-1 flex-col gap-2 px-4 py-3 text-left no-underline outline-none transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:flex-row sm:items-center sm:gap-3"
-                        aria-label={`Deployment ${deployment.shortId}: ${deployment.projectName}, ${deployment.status}`}
+                        aria-label={t("dashboard.deploymentAria", {
+                          shortId: deployment.shortId,
+                          projectName: deployment.projectName,
+                          status: deployment.status
+                        })}
                       >
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -272,14 +251,14 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
                         </div>
                         <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-3">
                           <Badge variant={statusVariant(deployment.status)} className="text-xs">
-                            {deployment.status}
+                            {deploymentStatusLabel(deployment.status)}
                           </Badge>
                           <ChevronRight
                             className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
                             aria-hidden
                           />
                         </div>
-                      </a>
+                      </Link>
                       {deployment.previewUrl ? (
                         <div className="flex shrink-0 items-center border-l border-border/60 px-3">
                           <Button variant="outline" size="sm" className="h-8 gap-1" asChild>
@@ -287,10 +266,10 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
                               href={deployment.previewUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              aria-label={`Open preview for ${deployment.shortId}`}
+                              aria-label={t("dashboard.openPreviewAria", { shortId: deployment.shortId })}
                             >
                               <ExternalLink className="size-3.5" aria-hidden />
-                              Preview
+                              {t("common.preview")}
                             </a>
                           </Button>
                         </div>
@@ -304,41 +283,43 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
 
           <Card className="dashboard-surface overflow-hidden border-border/80 shadow-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-base">Projects</CardTitle>
-              <a
-                href="/projects"
+              <CardTitle className="text-base">{t("dashboard.statProjects")}</CardTitle>
+              <Link
+                to="/projects"
                 className="text-xs text-muted-foreground no-underline hover:text-foreground"
               >
-                View all
-              </a>
+                {t("dashboard.viewAll")}
+              </Link>
             </CardHeader>
             <CardContent className="p-0">
               {data.projects.length === 0 ? (
-                <p className="px-4 pb-4 pt-0 text-sm text-muted-foreground">No projects yet.</p>
+                <p className="px-4 pb-4 pt-0 text-sm text-muted-foreground">{t("projects.empty")}</p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead>Name</TableHead>
-                      <TableHead className="hidden sm:table-cell">Repository</TableHead>
-                      <TableHead className="w-[72px] text-right"> </TableHead>
+                      <TableHead>{t("dashboard.nameCol")}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t("dashboard.repositoryCol")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.projects.slice(0, 8).map((project) => (
-                      <TableRow key={project.id}>
+                      <TableRow
+                        key={project.id}
+                        className="group cursor-pointer hover:bg-muted/50"
+                        aria-label={t("projects.openProjectAria", { name: project.name })}
+                        onClick={(e) => {
+                          if (e.button !== 0) return;
+                          const el = e.target as HTMLElement;
+                          if (el.closest("a, button, input, textarea, select")) return;
+                          navigate(`/projects/${project.id}`);
+                        }}
+                      >
                         <TableCell className="font-medium">
-                          <a href={`/projects/${project.id}`} className="no-underline hover:underline">
-                            {project.name}
-                          </a>
+                          <span className="underline-offset-4 group-hover:underline">{project.name}</span>
                         </TableCell>
                         <TableCell className="hidden max-w-[200px] truncate font-mono text-xs text-muted-foreground sm:table-cell">
                           {project.repoUrl.replace(/^https:\/\/github\.com\//, "")}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" asChild>
-                            <a href={`/projects/${project.id}`}>Open</a>
-                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -350,19 +331,18 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
 
           <div className="flex flex-wrap gap-2 border-t border-border/50 pt-4">
             <Button variant="outline" size="sm" asChild>
-              <a href="/account#workspace-preferences">Preferences</a>
+              <Link to="/account#workspace-preferences">{t("dashboard.preferences")}</Link>
             </Button>
             {data.user?.role === "operator" ? (
               <Button variant="outline" size="sm" asChild>
-                <a href="/admin">Admin</a>
+                <Link to="/admin">{t("dashboard.admin")}</Link>
               </Button>
             ) : null}
           </div>
         </div>
       </div>
-    </Layout>
+    </AppShell>
   );
 };
 
-export const renderDashboardPage = (data: DashboardData) =>
-  renderToReadableStream(<DashboardPage data={data} />);
+export { DashboardPage };
