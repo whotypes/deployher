@@ -4,6 +4,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { fetchWithCsrf } from "./fetchWithCsrf";
 import { showPageToast } from "./pageNotifications";
+import { useProjectGlyphImage } from "./useProjectGlyphImage";
 
 export type ProjectDetailSiteMetaBootstrap = {
   siteIconUrl: string | null;
@@ -24,6 +25,7 @@ export type ProjectDeploymentRowBootstrap = {
 
 export type ProjectDetailBootstrap = {
   projectId: string;
+  projectName: string;
   repoUrl: string;
   branch: string;
   projectRootDir: string;
@@ -111,10 +113,12 @@ export const ProjectDetailSetCurrentRoot = ({
 
 export const ProjectDetailHeroSitePreview = ({
   projectId,
+  projectName,
   previewUrl,
   initial
 }: {
   projectId: string;
+  projectName: string;
   previewUrl: string;
   initial: ProjectDetailSiteMetaBootstrap;
 }): React.ReactElement => {
@@ -124,6 +128,19 @@ export const ProjectDetailHeroSitePreview = ({
   const [siteMetaFetchedAt, setSiteMetaFetchedAt] = React.useState<string | null>(initial.siteMetaFetchedAt);
   const [siteMetaError, setSiteMetaError] = React.useState<string | null>(initial.siteMetaError);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [ogLoadFailed, setOgLoadFailed] = React.useState(false);
+
+  const { activeSrc, showImg, handleImgError, letter } = useProjectGlyphImage(
+    projectName,
+    siteIconUrl,
+    previewUrl
+  );
+
+  const ogProxySrc = `/api/projects/${projectId}/site-metadata/preview-image?kind=og`;
+
+  React.useEffect(() => {
+    setOgLoadFailed(false);
+  }, [ogProxySrc, siteOgImageUrl]);
 
   const runRefresh = React.useCallback(async (): Promise<void> => {
     setRefreshing(true);
@@ -151,10 +168,6 @@ export const ProjectDetailHeroSitePreview = ({
     }
   }, [projectId, t]);
 
-  React.useEffect(() => {
-    void runRefresh();
-  }, [runRefresh]);
-
   return (
     <div className="relative size-full min-w-0">
       <a
@@ -164,13 +177,14 @@ export const ProjectDetailHeroSitePreview = ({
         aria-label={t("projectDetail.openLivePreview")}
         className="group relative flex size-full overflow-hidden rounded-lg border border-border/80 bg-muted/25 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
       >
-        {siteOgImageUrl ? (
+        {!ogLoadFailed ? (
           <img
-            src={siteOgImageUrl}
+            src={ogProxySrc}
             alt=""
             className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
             loading="lazy"
             decoding="async"
+            onError={() => setOgLoadFailed(true)}
           />
         ) : (
           <div className="flex size-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
@@ -178,17 +192,27 @@ export const ProjectDetailHeroSitePreview = ({
           </div>
         )}
       </a>
-      {siteIconUrl ? (
-        <img
-          src={siteIconUrl}
-          alt=""
-          width={36}
-          height={36}
-          className="absolute left-3 top-3 z-10 size-9 rounded-md border border-border bg-background object-cover shadow-sm"
-          loading="lazy"
-          decoding="async"
-        />
-      ) : null}
+      <span
+        className="absolute left-3 top-3 z-10 flex size-9 items-center justify-center overflow-hidden rounded-md border border-border bg-background shadow-sm"
+        aria-hidden
+      >
+        {showImg ? (
+          <img
+            src={activeSrc ?? ""}
+            alt=""
+            width={36}
+            height={36}
+            className="size-full object-cover"
+            loading="lazy"
+            decoding="async"
+            onError={handleImgError}
+          />
+        ) : (
+          <span className="flex size-full items-center justify-center rounded-md bg-primary/20 text-xs font-semibold text-primary">
+            {letter}
+          </span>
+        )}
+      </span>
       <Button
         type="button"
         variant="secondary"
