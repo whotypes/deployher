@@ -2,7 +2,7 @@ import path from "path";
 import { guessContentType } from "../utils/contentType";
 
 const HASHED_ASSET_PATTERN = /-[a-f0-9]{8,}\./i;
-const CLIENT_ASSET_EXTENSIONS = [".js", ".css", ".map", ".woff2"] as const;
+const CLIENT_ASSET_EXTENSIONS = [".js", ".css", ".map", ".woff2", ".html"] as const;
 
 const hasClientAssetExtension = (name: string): boolean =>
   CLIENT_ASSET_EXTENSIONS.some((ext) => name.endsWith(ext));
