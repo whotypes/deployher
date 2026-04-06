@@ -13,6 +13,8 @@ export type SidebarProjectSummary = {
   deploymentStatus: SidebarProjectDeploymentStatus | null;
   siteIconUrl: string | null;
   siteOgImageUrl: string | null;
+  /** Current deployment preview base URL (for `/favicon.ico` when siteIconUrl is unset). */
+  previewUrl: string | null;
 };
 
 export type SidebarFeaturedDeployment = {
