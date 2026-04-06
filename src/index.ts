@@ -18,10 +18,10 @@ const start = async () => {
   } else if (!buildResult.success) {
     console.warn("Client assets may be missing; /assets/* will 404 until build succeeds.");
   }
-  const appCss = path.join(clientOutDir, "app.css");
-  if (!(await Bun.file(appCss).exists())) {
+  const indexHtml = path.join(clientOutDir, "index.html");
+  if (!(await Bun.file(indexHtml).exists())) {
     console.warn(
-      `Missing ${appCss}: UI will look unstyled. Run \`bun run build:client\` or unset SKIP_CLIENT_BUILD.`
+      `Missing ${indexHtml}: SPA shell missing. Run \`bun run build:client\` or unset SKIP_CLIENT_BUILD.`
     );
   }
   const server = Bun.serve({
