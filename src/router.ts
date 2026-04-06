@@ -1,31 +1,35 @@
 import path from "path";
+import { auth } from "../auth";
 import {
-  type ProtectedRouteHandler,
-  type PublicRouteHandler,
-  requireSession
+    getSession,
+    type ProtectedRouteHandler,
+    type PublicRouteHandler,
+    requireSession
 } from "./auth/session";
 import { clientOutDir } from "./client/build";
 import { getEmbeddedClientAsset } from "./client/embeddedAssets";
+import { buildSpaHtmlResponse, readSpaIndexHtml, spaHtmlUnavailable } from "./client/spaHtml";
 import { json } from "./http/helpers";
-import {
-  extractDeploymentIdFromHost,
-  servePathBasedPreview,
-  serveSubdomainPreview,
-  servePreview,
-  SHORT_ID_REGEX,
-  UUID_REGEX
-} from "./routes/preview";
-import * as admin from "./routes/admin";
+import * as pageData from "./lib/pageData";
 import * as account from "./routes/account";
+import * as admin from "./routes/admin";
 import * as deployments from "./routes/deployments";
 import * as github from "./routes/github";
 import * as pages from "./routes/pages";
-import * as projects from "./routes/projects";
+import {
+    extractDeploymentIdFromHost,
+    servePathBasedPreview,
+    servePreview,
+    serveSubdomainPreview,
+    SHORT_ID_REGEX,
+    UUID_REGEX
+} from "./routes/preview";
 import * as projectObservability from "./routes/projectObservability";
+import * as projects from "./routes/projects";
 import * as runnerInternal from "./routes/runnerInternal";
-import { auth } from "../auth";
-import { guessContentType } from "./utils/contentType";
+import * as uiApi from "./routes/uiApi";
 import { attachCsrfCookie, ensureCsrfToken, validateMutationRequest } from "./security/csrf";
+import { guessContentType } from "./utils/contentType";
 
 type PublicRoute = {
   pattern: string;
@@ -70,23 +74,113 @@ const matchRoute = (
   return { match: true, params };
 };
 
+const serveSpa = async (req: Request, csrfToken: string) => {
+  const html = await readSpaIndexHtml();
+  if (!html) return spaHtmlUnavailable();
+  return buildSpaHtmlResponse(html, csrfToken);
+};
+
+const servePublicSpa: PublicRouteHandler = async (req) => {
+  const csrf = ensureCsrfToken(req);
+  const res = await serveSpa(req, csrf.token);
+  return attachCsrfCookie(res, csrf);
+};
+
+const loginSpa: PublicRouteHandler = async (req) => {
+  const url = new URL(req.url);
+  const session = await getSession(req);
+  const oauthError = url.searchParams.get("error");
+  const oauthErrorDescription = url.searchParams.get("error_description");
+  const hasOauthError = oauthError !== null || oauthErrorDescription !== null;
+  if (session && !hasOauthError) {
+    const redirectTo = url.searchParams.get("redirect") ?? "/dashboard";
+    return Response.redirect(new URL(redirectTo, url.origin).toString(), 302);
+  }
+  const csrf = ensureCsrfToken(req);
+  const res = await serveSpa(req, csrf.token);
+  return attachCsrfCookie(res, csrf);
+};
+
+const healthSpa: PublicRouteHandler = async (req) => {
+  const accept = req.headers.get("accept") ?? "";
+  if (accept.includes("text/html")) {
+    const csrf = ensureCsrfToken(req);
+    const res = await serveSpa(req, csrf.token);
+    return attachCsrfCookie(res, csrf);
+  }
+  return json(pageData.buildHealthCore());
+};
+
+const protectedSpa: ProtectedRouteHandler = async (req) => {
+  const csrf = ensureCsrfToken(req);
+  const res = await serveSpa(req, csrf.token);
+  return attachCsrfCookie(res, csrf);
+};
+
+const projectDetailPageGet: ProtectedRouteHandler = async (req) => {
+  if (pages.wantsHtml(req)) {
+    const csrf = ensureCsrfToken(req);
+    const res = await serveSpa(req, csrf.token);
+    return attachCsrfCookie(res, csrf);
+  }
+  return projects.getProject(req);
+};
+
+const deploymentDetailPageGet: ProtectedRouteHandler = async (req) => {
+  if (pages.wantsHtml(req)) {
+    const csrf = ensureCsrfToken(req);
+    const res = await serveSpa(req, csrf.token);
+    return attachCsrfCookie(res, csrf);
+  }
+  return deployments.getDeployment(req);
+};
+
 const publicRoutes: PublicRoute[] = [
-  { pattern: "/", methods: { GET: pages.landingPage } },
-  { pattern: "/why", methods: { GET: pages.whyPage } },
-  { pattern: "/login", methods: { GET: pages.loginPage } },
-  { pattern: "/health", methods: { GET: pages.health } },
-  { pattern: "/preview/*", methods: { GET: servePreview } }
+  { pattern: "/", methods: { GET: servePublicSpa } },
+  { pattern: "/why", methods: { GET: servePublicSpa } },
+  { pattern: "/login", methods: { GET: loginSpa } },
+  { pattern: "/health", methods: { GET: healthSpa } },
+  { pattern: "/preview/*", methods: { GET: servePreview } },
+  { pattern: "/api/csrf", methods: { GET: uiApi.getCsrfApi } },
+  { pattern: "/api/session", methods: { GET: uiApi.getSessionApi } },
+  { pattern: "/api/health", methods: { GET: uiApi.getHealthApi } },
+  { pattern: "/api/ui/landing", methods: { GET: uiApi.getLandingSessionApi } }
 ];
 
 const protectedRoutes: ProtectedRoute[] = [
-  { pattern: "/home", methods: { GET: pages.dashboardPage } },
-  { pattern: "/dashboard", methods: { GET: pages.dashboardPage } },
-  { pattern: "/projects", methods: { GET: pages.projectsPage, POST: projects.createProject } },
-  { pattern: "/projects/new", methods: { GET: pages.newProjectPage } },
+  { pattern: "/api/workspace/dashboard", methods: { GET: uiApi.getWorkspaceDashboardApi } },
+  { pattern: "/api/ui/projects-page", methods: { GET: uiApi.getUiProjectsPageApi } },
+  { pattern: "/api/ui/new-project", methods: { GET: uiApi.getUiNewProjectApi } },
+  { pattern: "/api/ui/projects/:id/detail", methods: { GET: uiApi.getUiProjectDetailApi } },
+  { pattern: "/api/ui/projects/:id/observability", methods: { GET: uiApi.getUiProjectObservabilityApi } },
+  {
+    pattern: "/api/ui/projects/:id/settings/general",
+    methods: { GET: (req) => uiApi.getUiProjectSettingsApi(req, "general") }
+  },
+  {
+    pattern: "/api/ui/projects/:id/settings/env",
+    methods: { GET: (req) => uiApi.getUiProjectSettingsApi(req, "env") }
+  },
+  {
+    pattern: "/api/ui/projects/:id/settings/danger",
+    methods: { GET: (req) => uiApi.getUiProjectSettingsApi(req, "danger") }
+  },
+  { pattern: "/api/ui/deployments/:id/detail", methods: { GET: uiApi.getUiDeploymentDetailApi } },
+  { pattern: "/api/ui/health-page", methods: { GET: uiApi.getUiHealthPageApi } },
+  { pattern: "/api/ui/account", methods: { GET: uiApi.getUiAccountApi } },
+  {
+    pattern: "/api/ui/admin/examples",
+    operatorOnly: true,
+    methods: { GET: uiApi.getUiAdminExamplesApi }
+  },
+  { pattern: "/home", methods: { GET: protectedSpa } },
+  { pattern: "/dashboard", methods: { GET: protectedSpa } },
+  { pattern: "/projects", methods: { GET: protectedSpa, POST: projects.createProject } },
+  { pattern: "/projects/new", methods: { GET: protectedSpa } },
   {
     pattern: "/projects/:id",
     methods: {
-      GET: pages.handleProjectRoute,
+      GET: projectDetailPageGet,
       PATCH: projects.updateProject,
       PUT: projects.updateProject,
       DELETE: projects.deleteProject
@@ -94,15 +188,15 @@ const protectedRoutes: ProtectedRoute[] = [
   },
   {
     pattern: "/projects/:id/settings",
-    methods: { GET: pages.projectSettingsPage }
+    methods: { GET: protectedSpa }
   },
   {
     pattern: "/projects/:id/settings/env",
-    methods: { GET: pages.projectSettingsEnvPage }
+    methods: { GET: protectedSpa }
   },
   {
     pattern: "/projects/:id/settings/danger",
-    methods: { GET: pages.projectSettingsDangerPage }
+    methods: { GET: protectedSpa }
   },
   {
     pattern: "/projects/:id/deployments",
@@ -113,12 +207,12 @@ const protectedRoutes: ProtectedRoute[] = [
   },
   {
     pattern: "/projects/:id/observability",
-    methods: { GET: pages.projectObservabilityPage }
+    methods: { GET: protectedSpa }
   },
-  { pattern: "/admin", operatorOnly: true, methods: { GET: pages.adminExamplesPage } },
+  { pattern: "/admin", operatorOnly: true, methods: { GET: protectedSpa } },
   {
     pattern: "/deployments/:id",
-    methods: { GET: pages.handleDeploymentRoute }
+    methods: { GET: deploymentDetailPageGet }
   },
   {
     pattern: "/deployments/:id/cancel",
@@ -140,7 +234,7 @@ const protectedRoutes: ProtectedRoute[] = [
     pattern: "/deployments/:id/runtime-log",
     methods: { GET: deployments.getDeploymentRuntimeLog }
   },
-  { pattern: "/account", methods: { GET: account.accountPage } },
+  { pattern: "/account", methods: { GET: protectedSpa } },
   { pattern: "/account/delete", methods: { POST: account.deleteAccount } },
   { pattern: "/api/github/repos", methods: { GET: github.listRepos } },
   { pattern: "/api/github/branches", methods: { GET: github.listBranches } },
@@ -228,6 +322,10 @@ const protectedRoutes: ProtectedRoute[] = [
   { pattern: "/api/deployments/:id", methods: { GET: deployments.getDeployment } },
   { pattern: "/api/deployments/:id/cancel", methods: { POST: deployments.cancelDeployment } },
   {
+    pattern: "/api/deployments/:id/ensure-preview",
+    methods: { POST: deployments.ensureDeploymentPreview }
+  },
+  {
     pattern: "/api/deployments/:id/log",
     methods: { GET: deployments.getDeploymentLog }
   },
@@ -240,6 +338,18 @@ const protectedRoutes: ProtectedRoute[] = [
     methods: { GET: deployments.getDeploymentRuntimeLog }
   }
 ];
+
+const resolveAssetFile = async (subPath: string): Promise<string | null> => {
+  const direct = path.resolve(clientOutDir, subPath);
+  if (direct.startsWith(clientOutDir) && (await Bun.file(direct).exists())) {
+    return direct;
+  }
+  const nested = path.resolve(clientOutDir, "assets", subPath);
+  if (nested.startsWith(clientOutDir) && (await Bun.file(nested).exists())) {
+    return nested;
+  }
+  return null;
+};
 
 export const router = async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
@@ -254,21 +364,23 @@ export const router = async (req: Request): Promise<Response> => {
 
   if (pathname.startsWith("/assets/") && method === "GET") {
     const subPath = pathname.slice("/assets".length).replace(/^\/+/, "") || "";
-    const resolved = path.resolve(clientOutDir, subPath);
-    if (!resolved.startsWith(clientOutDir)) {
-      return json({ error: "Not Found" }, { status: 404 });
-    }
-    const file = Bun.file(resolved);
-    if (!(await file.exists())) {
+    const resolved = await resolveAssetFile(subPath);
+    if (!resolved) {
       const embeddedAsset = getEmbeddedClientAsset(subPath);
       if (embeddedAsset) {
         return new Response(embeddedAsset.blob, {
           headers: { "Content-Type": embeddedAsset.contentType }
         });
       }
+      const nestedTry = getEmbeddedClientAsset(`assets/${subPath}`);
+      if (nestedTry) {
+        return new Response(nestedTry.blob, {
+          headers: { "Content-Type": nestedTry.contentType }
+        });
+      }
       return json({ error: "Not Found" }, { status: 404 });
     }
-    return new Response(file, {
+    return new Response(Bun.file(resolved), {
       headers: { "Content-Type": guessContentType(resolved) }
     });
   }
@@ -342,7 +454,9 @@ export const router = async (req: Request): Promise<Response> => {
   }
 
   if (pages.wantsHtml(req)) {
-    return pages.notFoundPage();
+    const csrf = ensureCsrfToken(req);
+    const res = await serveSpa(req, csrf.token);
+    return attachCsrfCookie(res, csrf);
   }
   return json({ error: "Not Found" }, { status: 404 });
 };
