@@ -6,6 +6,7 @@ import * as schema from "../db/schema";
 import { getBuildContainerConfig } from "../admin/buildSettings";
 import { buildExampleRowsForUser } from "../admin/exampleDeployments";
 import type { HealthData } from "../health/HealthPage";
+import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
 import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
 import { getWorkspaceDashboardMetrics } from "../lib/workspaceDashboardMetrics";
 import type { AdminExamplesPageData } from "../ui/AdminExamplesPage";
@@ -133,7 +134,11 @@ export const buildDashboardData = async (
       projectName: d.projectName ?? "Unknown",
       status: d.deployment.status,
       createdAt: d.deployment.createdAt.toISOString(),
-      previewUrl: d.deployment.previewUrl
+      previewUrl: effectiveDeploymentPreviewUrl(
+        d.deployment.status,
+        d.deployment.previewUrl,
+        d.deployment.shortId
+      )
     })),
     stats: {
       projectCount: projects.length,
@@ -182,7 +187,8 @@ export const buildProjectsPageData = async (
       name: p.name,
       deploymentStatus: parseSidebarProjectDeploymentStatus(dep?.status),
       siteIconUrl: p.siteIconUrl ?? null,
-      siteOgImageUrl: p.siteOgImageUrl ?? null
+      siteOgImageUrl: p.siteOgImageUrl ?? null,
+      previewUrl: effectiveDeploymentPreviewUrl(dep?.status, dep?.previewUrl, dep?.shortId)
     };
   });
 
@@ -221,7 +227,7 @@ export const buildProjectsPageData = async (
               id: dep.id,
               shortId: dep.shortId,
               status: dep.status,
-              previewUrl: dep.previewUrl,
+              previewUrl: effectiveDeploymentPreviewUrl(dep.status, dep.previewUrl, dep.shortId),
               buildStrategy: dep.buildStrategy,
               serveStrategy: dep.serveStrategy,
               previewResolution: dep.previewResolution,
@@ -276,7 +282,8 @@ export const buildNewProjectPageData = async (
       name: p.name,
       deploymentStatus: parseSidebarProjectDeploymentStatus(dep?.status),
       siteIconUrl: p.siteIconUrl ?? null,
-      siteOgImageUrl: p.siteOgImageUrl ?? null
+      siteOgImageUrl: p.siteOgImageUrl ?? null,
+      previewUrl: effectiveDeploymentPreviewUrl(dep?.status, dep?.previewUrl, dep?.shortId)
     };
   });
 
