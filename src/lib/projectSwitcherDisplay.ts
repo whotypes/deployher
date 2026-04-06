@@ -25,7 +25,13 @@ export const deriveSelectedProjectId = (input: ProjectSwitcherInput): string | n
 
 export const getProjectSwitcherTrigger = (
   input: ProjectSwitcherInput
-): { href: string; label: string; letter: string; siteIconUrl: string | null } => {
+): {
+  href: string;
+  label: string;
+  letter: string;
+  siteIconUrl: string | null;
+  previewUrl: string | null;
+} => {
   const list = input.sidebarProjects ?? [];
   const selectedId = deriveSelectedProjectId(input);
   const proj = selectedId ? list.find((p) => p.id === selectedId) : undefined;
@@ -34,11 +40,12 @@ export const getProjectSwitcherTrigger = (
       href: `/projects/${proj.id}`,
       label: proj.name,
       letter: letterFromLabel(proj.name),
-      siteIconUrl: proj.siteIconUrl ?? null
+      siteIconUrl: proj.siteIconUrl ?? null,
+      previewUrl: proj.previewUrl ?? null
     };
   }
   if (input.pathname.startsWith("/projects/new")) {
-    return { href: "/projects/new", label: "New project", letter: "N", siteIconUrl: null };
+    return { href: "/projects/new", label: "New project", letter: "N", siteIconUrl: null, previewUrl: null };
   }
-  return { href: "/projects", label: "Projects", letter: "P", siteIconUrl: null };
+  return { href: "/projects", label: "Projects", letter: "P", siteIconUrl: null, previewUrl: null };
 };
