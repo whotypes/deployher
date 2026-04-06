@@ -1,4 +1,5 @@
 import { emptyLockfilePresence, resolveJsToolchain, type LockfilePresence } from "./repoToolchainHints";
+import { hasStaticHtmlEntryFromScan, type StaticSiteIndexScan } from "./staticSiteEntrypoints";
 
 export type { LockfilePresence } from "./repoToolchainHints";
 
@@ -69,6 +70,7 @@ export const inferRepoFrameworkHints = (
     requirementsTxt?: string | null;
     pipfile?: string | null;
     lockfiles?: LockfilePresence;
+    staticHtmlScan?: StaticSiteIndexScan;
   }
 ): RepoFrameworkHints => {
   const pkg = parsePackageJson(packageJson);
@@ -80,6 +82,7 @@ export const inferRepoFrameworkHints = (
 
   const pySignals = inferPythonProjectSignals(opts);
   const locks = opts?.lockfiles ?? emptyLockfilePresence();
+  const staticHtmlEntry = opts?.staticHtmlScan ? hasStaticHtmlEntryFromScan(opts.staticHtmlScan) : false;
 
   if (!pkg) {
     if (pySignals) {
@@ -91,11 +94,20 @@ export const inferRepoFrameworkHints = (
         confidence: "medium"
       };
     }
+    if (staticHtmlEntry) {
+      return {
+        labels: ["Static site"],
+        suggestedFrameworkHint: "static",
+        suggestedPreviewMode: "static",
+        warnings: [],
+        confidence: "medium"
+      };
+    }
     return {
       labels: [],
       suggestedFrameworkHint: "auto",
       suggestedPreviewMode: "auto",
-      warnings: ["No package.json at this path."],
+      warnings: ["No package.json or static HTML entrypoint at this path."],
       confidence: "low"
     };
   }

@@ -21,7 +21,11 @@ const readExampleScanFiles = (exampleDir: string): RepoRootScanFiles => {
     bunLock: read("bun.lock"),
     pnpmLockYaml: read("pnpm-lock.yaml"),
     yarnLock: read("yarn.lock"),
-    packageLockJson: read("package-lock.json")
+    packageLockJson: read("package-lock.json"),
+    indexHtml: read("index.html"),
+    publicIndexHtml: read("public/index.html"),
+    distIndexHtml: read("dist/index.html"),
+    buildIndexHtml: read("build/index.html")
   };
 };
 
@@ -71,6 +75,34 @@ describe("inferRepoFrameworkHints", () => {
     expect(hints.suggestedFrameworkHint).toBe("python");
     expect(hints.labels).toEqual(["Python"]);
     expect(hints.warnings).toEqual([]);
+  });
+
+  it("detects static site when index.html exists without package.json", () => {
+    const hints = inferRepoFrameworkHints(null, {
+      staticHtmlScan: {
+        indexHtml: "<!doctype html><title>x</title>",
+        publicIndexHtml: null,
+        distIndexHtml: null,
+        buildIndexHtml: null
+      }
+    });
+    expect(hints.suggestedFrameworkHint).toBe("static");
+    expect(hints.suggestedPreviewMode).toBe("static");
+    expect(hints.labels).toEqual(["Static site"]);
+    expect(hints.warnings).toEqual([]);
+    expect(hints.confidence).toBe("medium");
+  });
+
+  it("detects static site from public/index.html only", () => {
+    const hints = inferRepoFrameworkHints(null, {
+      staticHtmlScan: {
+        indexHtml: null,
+        publicIndexHtml: "<html></html>",
+        distIndexHtml: null,
+        buildIndexHtml: null
+      }
+    });
+    expect(hints.suggestedFrameworkHint).toBe("static");
   });
 });
 
@@ -170,5 +202,27 @@ describe("inferMergedRepoHintsFromScanFiles on examples/", () => {
     expect(hints.suggestedFrameworkHint).toBe("python");
     expect(hints.primaryFramework?.slug).toBe("python");
     expect(hints.warnings).toEqual([]);
+  });
+
+  it("static html only: suggests static with HTML logo", async () => {
+    const hints = await inferMergedRepoHintsFromScanFiles({
+      packageJsonRaw: null,
+      pyprojectToml: null,
+      requirementsTxt: null,
+      pipfile: null,
+      bunLockb: null,
+      bunLock: null,
+      pnpmLockYaml: null,
+      yarnLock: null,
+      packageLockJson: null,
+      indexHtml: "<!doctype html>",
+      publicIndexHtml: null,
+      distIndexHtml: null,
+      buildIndexHtml: null
+    });
+    expect(hints.suggestedFrameworkHint).toBe("static");
+    expect(hints.suggestedPreviewMode).toBe("static");
+    expect(hints.primaryFramework?.slug).toBe("static-html");
+    expect(hints.primaryFramework?.name).toBe("Static site");
   });
 });

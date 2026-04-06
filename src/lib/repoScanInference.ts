@@ -1,5 +1,6 @@
 import { inferRepoFrameworkHints } from "./repoFrameworkHints";
 import type { LockfilePresence } from "./repoToolchainHints";
+import { STATIC_SITE_INDEX_HTML_RELATIVE_PATHS } from "./staticSiteEntrypoints";
 import { mergeVercelAndLegacyHints, mapVercelFrameworkToDeployher } from "./vercel/mapFrameworkToDeployher";
 import { detectFrameworkFromFileContents } from "./vercel/runFrameworkDetection";
 
@@ -12,7 +13,8 @@ export const REPO_HINT_SCAN_FILES = [
   "bun.lock",
   "pnpm-lock.yaml",
   "yarn.lock",
-  "package-lock.json"
+  "package-lock.json",
+  ...STATIC_SITE_INDEX_HTML_RELATIVE_PATHS
 ] as const;
 
 export type RepoRootScanFiles = {
@@ -25,6 +27,10 @@ export type RepoRootScanFiles = {
   pnpmLockYaml: string | null;
   yarnLock: string | null;
   packageLockJson: string | null;
+  indexHtml: string | null;
+  publicIndexHtml: string | null;
+  distIndexHtml: string | null;
+  buildIndexHtml: string | null;
 };
 
 export const lockfilesFromRepoScan = (files: RepoRootScanFiles): LockfilePresence => ({
@@ -72,7 +78,13 @@ export const inferMergedRepoHintsFromScanFiles = async (
     pyprojectToml: files.pyprojectToml,
     requirementsTxt: files.requirementsTxt,
     pipfile: files.pipfile,
-    lockfiles: lockfilesFromRepoScan(files)
+    lockfiles: lockfilesFromRepoScan(files),
+    staticHtmlScan: {
+      indexHtml: files.indexHtml,
+      publicIndexHtml: files.publicIndexHtml,
+      distIndexHtml: files.distIndexHtml,
+      buildIndexHtml: files.buildIndexHtml
+    }
   });
   return mergeVercelAndLegacyHints(vercelMapped, legacyHints, packageJson !== null);
 };
