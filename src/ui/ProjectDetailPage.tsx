@@ -6,6 +6,7 @@ import { AppShell } from "./AppShell";
 import type { ProjectDetailBootstrap } from "./client/ProjectDetailPageClient";
 import { ProjectDetailInteractiveMount } from "./client/ProjectDetailInteractiveMount";
 import { ProjectDeploymentsPanel } from "./client/ProjectDeploymentsPanel";
+import { ProjectSiteGlyph } from "@/ui/client/ProjectSiteGlyph";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -101,10 +102,16 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
       ? deployments.find((d) => d.id === data.project.currentDeploymentId) ?? null
       : null;
 
+  const deploymentStatusesKey = useMemo(
+    () => data.deployments.map((d) => `${d.id}:${d.status}`).join("|"),
+    [data.deployments]
+  );
+
   const interactiveBootstrap = useMemo((): ProjectDetailBootstrap => {
     const rows = data.deployments ?? [];
     return {
       projectId: data.project.id,
+      projectName: data.project.name,
       repoUrl: data.project.repoUrl,
       branch: data.project.branch,
       projectRootDir: data.project.projectRootDir,
@@ -121,7 +128,20 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
           : null,
       currentDeploymentId: data.project.currentDeploymentId
     };
-  }, [data]);
+  }, [
+    data.project.id,
+    data.project.name,
+    data.project.repoUrl,
+    data.project.branch,
+    data.project.projectRootDir,
+    data.currentPreviewUrl,
+    data.project.siteIconUrl,
+    data.project.siteOgImageUrl,
+    data.project.siteMetaFetchedAt,
+    data.project.siteMetaError,
+    data.project.currentDeploymentId,
+    deploymentStatusesKey
+  ]);
 
   return (
   <AppShell
@@ -171,7 +191,19 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
               <p className="eyebrow-label mb-2">
                 {currentDeployment ? t("projectDetail.currentDeployment") : t("projectDetail.projectEyebrow")}
               </p>
-              <h1 className="font-serif truncate text-3xl font-semibold tracking-tight md:text-4xl">{data.project.name}</h1>
+              <div className="flex min-w-0 items-center gap-3">
+                <ProjectSiteGlyph
+                  name={data.project.name}
+                  siteIconUrl={data.project.siteIconUrl}
+                  previewUrl={data.currentPreviewUrl}
+                  className="size-6 shrink-0 ring-0"
+                  imgClassName="size-6 shrink-0 rounded-md object-cover"
+                  letterClassName="flex size-6 items-center justify-center rounded-md bg-primary/20 text-xs font-semibold text-primary"
+                />
+                <h1 className="font-serif min-w-0 flex-1 truncate text-3xl font-semibold tracking-tight md:text-4xl">
+                  {data.project.name}
+                </h1>
+              </div>
               <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
                 {data.project.repoUrl.replace(/^https:\/\/github\.com\//, "")}
               </p>
