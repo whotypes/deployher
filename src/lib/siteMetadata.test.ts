@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+    buildPreviewIconCandidateUrls,
     buildSiteMetaFetchAttempts,
     extractDocumentBaseUrlFromHtml,
     extractIconFromHtml,
@@ -8,6 +9,7 @@ import {
     rebaseAssetUrlOntoPreviewOrigin,
     resolveMetadataFetchRequest
 } from "./siteMetadata";
+import { preferPreviewOriginForExternalAsset } from "./previewAssetUrl";
 
 describe("buildSiteMetaFetchAttempts", () => {
   test("adds internal fallbacks for tenant .localhost without override", () => {
@@ -170,6 +172,63 @@ describe("parseSiteMetadataFromHtml", () => {
     expect(parseSiteMetadataFromHtml(html, preview).ogImageUrl).toBe(
       "http://qpkghorfe.localhost:3000/opengraph-image.png?opengraph-image.f24bf553.png"
     );
+  });
+
+  test("rewrites absolute production og:image to preview origin (same path as public/)", () => {
+    const html = `<head><meta property="og:image" content="https://ghiblify.dev/demo/og.webp" /></head>`;
+    const preview = "http://r5cnb5rze.localhost:3000/";
+    expect(parseSiteMetadataFromHtml(html, preview).ogImageUrl).toBe(
+      "http://r5cnb5rze.localhost:3000/demo/og.webp"
+    );
+  });
+
+  test("rewrites production favicon to preview origin", () => {
+    const html = `<head><link rel="icon" href="https://ghiblify.dev/favicon.ico" /></head>`;
+    const preview = "http://abc.localhost:3000/";
+    expect(parseSiteMetadataFromHtml(html, preview).iconUrl).toBe("http://abc.localhost:3000/favicon.ico");
+  });
+});
+
+describe("buildPreviewIconCandidateUrls", () => {
+  test("dedupes and appends common root paths after the resolved icon URL", () => {
+    const urls = buildPreviewIconCandidateUrls(
+      "http://abc.localhost:3000/wrong-path.png",
+      "http://abc.localhost:3000/"
+    );
+    expect(urls[0]).toBe("http://abc.localhost:3000/wrong-path.png");
+    expect(urls).toContain("http://abc.localhost:3000/apple-touch-icon.png");
+    expect(urls).toContain("http://abc.localhost:3000/favicon.ico");
+    expect(urls.length).toBe(5);
+  });
+
+  test("does not duplicate apple-touch when resolved is already that path", () => {
+    const urls = buildPreviewIconCandidateUrls(
+      "http://abc.localhost:3000/apple-touch-icon.png",
+      "http://abc.localhost:3000/"
+    );
+    expect(urls.filter((u) => u.endsWith("/apple-touch-icon.png")).length).toBe(1);
+    expect(urls.length).toBe(4);
+  });
+});
+
+describe("preferPreviewOriginForExternalAsset", () => {
+  test("swaps host to preview origin", () => {
+    expect(
+      preferPreviewOriginForExternalAsset(
+        "https://prod.example/demo/og.webp?q=1#h",
+        "http://tenant.localhost:3000/"
+      )
+    ).toBe("http://tenant.localhost:3000/demo/og.webp?q=1#h");
+  });
+
+  test("leaves URL unchanged when host already matches preview", () => {
+    expect(
+      preferPreviewOriginForExternalAsset("http://tenant.localhost:3000/x.png", "http://tenant.localhost:3000/")
+    ).toBe("http://tenant.localhost:3000/x.png");
+  });
+
+  test("returns null for null input", () => {
+    expect(preferPreviewOriginForExternalAsset(null, "http://a/")).toBeNull();
   });
 });
 
