@@ -1,11 +1,43 @@
 import { describe, expect, test } from "bun:test";
 import {
-  extractIconFromHtml,
-  extractOgImageFromHtml,
-  parseSiteMetadataFromHtml,
-  rebaseAssetUrlOntoPreviewOrigin,
-  resolveMetadataFetchRequest
+    buildSiteMetaFetchAttempts,
+    extractDocumentBaseUrlFromHtml,
+    extractIconFromHtml,
+    extractOgImageFromHtml,
+    parseSiteMetadataFromHtml,
+    rebaseAssetUrlOntoPreviewOrigin,
+    resolveMetadataFetchRequest
 } from "./siteMetadata";
+
+describe("buildSiteMetaFetchAttempts", () => {
+  test("adds internal fallbacks for tenant .localhost without override", () => {
+    const r = buildSiteMetaFetchAttempts("http://abc.localhost:3000/foo?x=1", null);
+    expect(Array.isArray(r)).toBe(true);
+    if (!Array.isArray(r)) return;
+    expect(r.length).toBeGreaterThanOrEqual(4);
+    expect(r[0]?.url).toBe("http://abc.localhost:3000/foo?x=1");
+    expect(r[0]?.hostHeader).toBe("abc.localhost:3000");
+    expect(r.map((x) => x.url)).toContain("http://127.0.0.1:3000/foo?x=1");
+    expect(r.map((x) => x.url)).toContain("http://app:3000/foo?x=1");
+    expect(r.map((x) => x.url)).toContain("http://host.docker.internal:3000/foo?x=1");
+  });
+
+  test("single attempt for non-localhost host when no override", () => {
+    const r = buildSiteMetaFetchAttempts("https://preview.example.com/", null);
+    expect(Array.isArray(r)).toBe(true);
+    if (!Array.isArray(r)) return;
+    expect(r).toHaveLength(1);
+    expect(r[0]?.url).toBe("https://preview.example.com/");
+  });
+
+  test("single attempt when origin override is set", () => {
+    const r = buildSiteMetaFetchAttempts("http://abc.localhost:3000/", "http://127.0.0.1:3000");
+    expect(Array.isArray(r)).toBe(true);
+    if (!Array.isArray(r)) return;
+    expect(r).toHaveLength(1);
+    expect(r[0]?.url).toBe("http://127.0.0.1:3000/");
+  });
+});
 
 describe("resolveMetadataFetchRequest", () => {
   test("passes through public URL when no override", () => {
@@ -88,7 +120,37 @@ describe("extractIconFromHtml", () => {
   });
 });
 
+describe("extractDocumentBaseUrlFromHtml", () => {
+  test("uses first base href in head for relative resolution", () => {
+    const html = `<head><base href="https://cdn.example/assets/" /><meta property="og:image" content="og.png" /></head>`;
+    expect(extractDocumentBaseUrlFromHtml(html, "https://app.example/")).toBe("https://cdn.example/assets/");
+  });
+
+  test("resolves relative base href against document url", () => {
+    const html = `<head><base href="subdir/" /></head>`;
+    expect(extractDocumentBaseUrlFromHtml(html, "https://app.example/app/")).toBe("https://app.example/app/subdir/");
+  });
+
+  test("falls back to document url when no base", () => {
+    expect(extractDocumentBaseUrlFromHtml("<html></html>", "https://ex.com/foo")).toBe("https://ex.com/foo");
+  });
+});
+
 describe("parseSiteMetadataFromHtml", () => {
+  test("resolves og and icon paths against base href from index html", () => {
+    const html = `
+      <head>
+        <base href="/nested/" />
+        <link rel="icon" href="f.ico" />
+        <meta property="og:image" content="og.jpg" />
+      </head>
+    `;
+    expect(parseSiteMetadataFromHtml(html, "https://dep.example/")).toEqual({
+      iconUrl: "https://dep.example/nested/f.ico",
+      ogImageUrl: "https://dep.example/nested/og.jpg"
+    });
+  });
+
   test("extracts both", () => {
     const html = `
       <head>

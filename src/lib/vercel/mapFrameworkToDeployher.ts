@@ -72,6 +72,12 @@ export const vercelRecordToPrimaryPayload = (
   };
 };
 
+export const STATIC_SITE_PRIMARY_FRAMEWORK: PrimaryFrameworkPayload = {
+  slug: "static-html",
+  name: "Static site",
+  logo: "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.16.0/icons/html5/html5-original.svg"
+};
+
 export const mapVercelFrameworkToDeployher = (
   record: VersionedFrameworkRecord | null,
   packageJson: unknown
@@ -216,8 +222,10 @@ export const mergeVercelAndLegacyHints = (
   legacy: RepoFrameworkHints,
   packageJsonFound: boolean
 ): MergedRepoHints => {
-  const primaryFramework = vercel.primaryFramework;
-  const vercelActive = primaryFramework !== null;
+  const vercelPrimary = vercel.primaryFramework;
+  const vercelActive = vercelPrimary !== null;
+  const primaryFramework =
+    vercelPrimary ?? (legacy.suggestedFrameworkHint === "static" ? STATIC_SITE_PRIMARY_FRAMEWORK : null);
 
   let suggestedFrameworkHint: FrameworkHintOption;
   let suggestedPreviewMode: PreviewModeOption;

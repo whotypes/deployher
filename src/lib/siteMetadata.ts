@@ -38,6 +38,52 @@ export const resolveMetadataFetchRequest = (
   return { url: publicPreviewUrl, hostHeader: publicUrl.host };
 };
 
+const isLocalDevPreviewHost = (hostname: string): boolean => {
+  const h = hostname.toLowerCase();
+  return h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "[::1]" || h === "::1";
+};
+
+/**
+ * When SITE_META_FETCH_ORIGIN is unset, try the public preview URL first, then common loopback /
+ * Docker DNS targets with the same Host header so workers and the app can reach the HTTP server
+ * without per-env env vars.
+ */
+export const buildSiteMetaFetchAttempts = (
+  publicPreviewUrl: string,
+  fetchOriginOverride?: string | null
+): { url: string; hostHeader: string }[] | { error: string } => {
+  const resolved = resolveMetadataFetchRequest(publicPreviewUrl, fetchOriginOverride);
+  if ("error" in resolved) return resolved;
+  if ((fetchOriginOverride ?? "").trim()) {
+    return [resolved];
+  }
+  let publicUrl: URL;
+  try {
+    publicUrl = new URL(publicPreviewUrl);
+  } catch {
+    return { error: "Invalid preview URL" };
+  }
+  if (!isLocalDevPreviewHost(publicUrl.hostname)) {
+    return [resolved];
+  }
+  const pathAndQuery = `${publicUrl.pathname}${publicUrl.search}`;
+  const portPart = publicUrl.port ? `:${publicUrl.port}` : "";
+  const proto = publicUrl.protocol;
+  const hostHeader = publicUrl.host;
+  const seen = new Set<string>();
+  const out: { url: string; hostHeader: string }[] = [];
+  const push = (url: string): void => {
+    if (seen.has(url)) return;
+    seen.add(url);
+    out.push({ url, hostHeader });
+  };
+  push(resolved.url);
+  push(`${proto}//127.0.0.1${portPart}${pathAndQuery}`);
+  push(`${proto}//app${portPart}${pathAndQuery}`);
+  push(`${proto}//host.docker.internal${portPart}${pathAndQuery}`);
+  return out;
+};
+
 const isAllowedAbsoluteUrl = (value: string): boolean => {
   try {
     const u = new URL(value);
@@ -95,6 +141,26 @@ const resolveHref = (href: string, baseUrl: string): string | null => {
   }
 };
 
+/**
+ * Document base URL for resolving relative paths in meta/link tags: first `<base href>` in `<head>`,
+ * resolved against the fetched document URL; otherwise the document URL (same as a browser).
+ */
+export const extractDocumentBaseUrlFromHtml = (html: string, fetchedDocumentUrl: string): string => {
+  const headMatch = html.match(/<head\b[^>]*>[\s\S]*?<\/head>/i);
+  const head = headMatch ? headMatch[0] : html;
+  const baseRe = /<base\b[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = baseRe.exec(head)) !== null) {
+    const tag = m[0];
+    const hrefM = tag.match(/\bhref\s*=\s*"([^"]*)"/i) ?? tag.match(/\bhref\s*=\s*'([^']*)'/i);
+    const raw = hrefM?.[1]?.trim();
+    if (!raw) continue;
+    const resolved = resolveHref(raw, fetchedDocumentUrl);
+    if (resolved) return resolved;
+  }
+  return fetchedDocumentUrl;
+};
+
 const metaContent = (tag: string): string | null => {
   const m =
     tag.match(/\bcontent\s*=\s*"([^"]*)"/i) ??
@@ -121,7 +187,8 @@ export const extractOgImageFromHtml = (html: string, baseUrl: string): string | 
   const og = scan(
     (tag) =>
       /\bproperty\s*=\s*["']og:image["']/i.test(tag) ||
-      /\bproperty\s*=\s*["']og:image:url["']/i.test(tag)
+      /\bproperty\s*=\s*["']og:image:url["']/i.test(tag) ||
+      /\bproperty\s*=\s*["']og:image:secure_url["']/i.test(tag)
   );
   if (og) return og;
   return scan((tag) => /\bname\s*=\s*["']twitter:image["']/i.test(tag));
@@ -185,8 +252,9 @@ export const parseSiteMetadataFromHtml = (
   html: string,
   deploymentPreviewBaseHref: string
 ): { iconUrl: string | null; ogImageUrl: string | null } => {
-  const iconUrl = extractIconFromHtml(html, deploymentPreviewBaseHref);
-  const ogImageUrl = extractOgImageFromHtml(html, deploymentPreviewBaseHref);
+  const docBase = extractDocumentBaseUrlFromHtml(html, deploymentPreviewBaseHref);
+  const iconUrl = extractIconFromHtml(html, docBase);
+  const ogImageUrl = extractOgImageFromHtml(html, docBase);
   return {
     iconUrl: rebaseAssetUrlOntoPreviewOrigin(iconUrl, deploymentPreviewBaseHref),
     ogImageUrl: rebaseAssetUrlOntoPreviewOrigin(ogImageUrl, deploymentPreviewBaseHref)
@@ -222,34 +290,50 @@ const readResponseTextWithCap = async (response: Response, maxBytes: number): Pr
 };
 
 export const fetchSiteMetadata = async (publicPreviewUrl: string): Promise<SiteMetadataFetchResult> => {
-  const resolved = resolveMetadataFetchRequest(publicPreviewUrl, config.siteMetadata.fetchOrigin);
-  if ("error" in resolved) {
-    return { ok: false, error: resolved.error };
+  const attempts = buildSiteMetaFetchAttempts(publicPreviewUrl, config.siteMetadata.fetchOrigin);
+  if ("error" in attempts) {
+    return { ok: false, error: attempts.error };
   }
-  const { url, hostHeader } = resolved;
+  const multi = attempts.length > 1;
+  let lastError = "fetch failed";
+  let response: Response | null = null;
 
-  const headers = new Headers({
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "User-Agent": BROWSER_UA
-  });
-  headers.set("Host", hostHeader);
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: AbortSignal.timeout(config.siteMetadata.fetchTimeoutMs),
-      headers
+  for (let i = 0; i < attempts.length; i += 1) {
+    const { url, hostHeader } = attempts[i];
+    const headers = new Headers({
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "User-Agent": BROWSER_UA
     });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "fetch failed";
-    return { ok: false, error: msg };
+    headers.set("Host", hostHeader);
+
+    try {
+      const r = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        signal: AbortSignal.timeout(config.siteMetadata.fetchTimeoutMs),
+        headers
+      });
+      if (!r.ok) {
+        lastError = `HTTP ${r.status}`;
+        if (multi && i < attempts.length - 1) {
+          continue;
+        }
+        return { ok: false, error: lastError };
+      }
+      response = r;
+      break;
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : "fetch failed";
+      if (i < attempts.length - 1) {
+        continue;
+      }
+      return { ok: false, error: lastError };
+    }
   }
 
-  if (!response.ok) {
-    return { ok: false, error: `HTTP ${response.status}` };
+  if (!response) {
+    return { ok: false, error: lastError };
   }
 
   let html: string;

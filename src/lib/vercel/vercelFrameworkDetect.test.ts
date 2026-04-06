@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { mapVercelFrameworkToDeployher, mergeVercelAndLegacyHints } from "./mapFrameworkToDeployher";
+import {
+  mapVercelFrameworkToDeployher,
+  mergeVercelAndLegacyHints,
+  STATIC_SITE_PRIMARY_FRAMEWORK
+} from "./mapFrameworkToDeployher";
 import { detectFrameworkFromFileContents } from "./runFrameworkDetection";
 import { inferRepoFrameworkHints } from "../repoFrameworkHints";
 
@@ -55,5 +59,20 @@ describe("mapVercelFrameworkToDeployher", () => {
     const merged = mergeVercelAndLegacyHints(vercel, legacy, false);
     expect(merged.suggestedFrameworkHint).toBe("python");
     expect(merged.primaryFramework).toBeNull();
+  });
+
+  it("merges legacy static site with vercel absence and supplies primary logo", () => {
+    const legacy = inferRepoFrameworkHints(null, {
+      staticHtmlScan: {
+        indexHtml: "<!doctype html>",
+        publicIndexHtml: null,
+        distIndexHtml: null,
+        buildIndexHtml: null
+      }
+    });
+    const vercel = mapVercelFrameworkToDeployher(null, null);
+    const merged = mergeVercelAndLegacyHints(vercel, legacy, false);
+    expect(merged.suggestedFrameworkHint).toBe("static");
+    expect(merged.primaryFramework).toEqual(STATIC_SITE_PRIMARY_FRAMEWORK);
   });
 });
