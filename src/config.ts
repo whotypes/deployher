@@ -101,7 +101,11 @@ export const config = {
   siteMetadata: {
     fetchOrigin: normalizeUrl(rawEnv.SITE_META_FETCH_ORIGIN),
     fetchTimeoutMs: Math.min(30_000, Math.max(3_000, parseInteger(rawEnv.SITE_META_FETCH_TIMEOUT_MS, 10_000))),
-    maxHtmlBytes: Math.min(2 * 1024 * 1024, Math.max(64_000, parseInteger(rawEnv.SITE_META_MAX_HTML_BYTES, 786_432)))
+    maxHtmlBytes: Math.min(2 * 1024 * 1024, Math.max(64_000, parseInteger(rawEnv.SITE_META_MAX_HTML_BYTES, 786_432))),
+    previewImageMaxBytes: Math.min(
+      16 * 1024 * 1024,
+      Math.max(256 * 1024, parseInteger(rawEnv.SITE_PREVIEW_IMAGE_MAX_BYTES, 8 * 1024 * 1024))
+    )
   }
 };
 
