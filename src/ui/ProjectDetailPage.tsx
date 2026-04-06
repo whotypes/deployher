@@ -1,6 +1,11 @@
-import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser, SidebarProjectSummary } from "./Layout";
-import { Layout } from "./Layout";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
+import { AppShell } from "./AppShell";
+import type { ProjectDetailBootstrap } from "./client/ProjectDetailPageClient";
+import { ProjectDetailInteractiveMount } from "./client/ProjectDetailInteractiveMount";
+import { ProjectDeploymentsPanel } from "./client/ProjectDeploymentsPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -70,24 +75,58 @@ const statusVariant = (status: string): "default" | "secondary" | "destructive" 
   }
 };
 
-const deploymentPreviewLabel = (deployment: Deployment): string => {
-  if (deployment.buildPreviewMode === "server" || deployment.buildPreviewMode === "static") {
-    return deployment.buildPreviewMode;
-  }
-  return deployment.serveStrategy;
-};
+export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
+  const { t } = useTranslation();
+  const deploymentPreviewLabel = (deployment: Deployment): string => {
+    if (deployment.buildPreviewMode === "server") return t("deployment.previewMode.server");
+    if (deployment.buildPreviewMode === "static") return t("deployment.previewMode.static");
+    return deployment.serveStrategy === "server"
+      ? t("deployment.previewMode.server")
+      : t("deployment.previewMode.static");
+  };
 
-const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
+  const deploymentStatusLabel = (s: string): string => {
+    const k = s.toLowerCase();
+    if (k === "building") return t("deployment.status.building");
+    if (k === "queued") return t("deployment.status.queued");
+    if (k === "success") return t("deployment.status.success");
+    if (k === "failed") return t("deployment.status.failed");
+    return s;
+  };
+
+  const deployments = data.deployments ?? [];
+
   const currentDeployment =
     data.project.currentDeploymentId !== null
-      ? data.deployments.find((d) => d.id === data.project.currentDeploymentId) ?? null
+      ? deployments.find((d) => d.id === data.project.currentDeploymentId) ?? null
       : null;
 
+  const interactiveBootstrap = useMemo((): ProjectDetailBootstrap => {
+    const rows = data.deployments ?? [];
+    return {
+      projectId: data.project.id,
+      repoUrl: data.project.repoUrl,
+      branch: data.project.branch,
+      projectRootDir: data.project.projectRootDir,
+      currentPreviewUrl: data.currentPreviewUrl,
+      hasSuccessfulDeployment: rows.some((d) => d.status === "success"),
+      siteMeta:
+        data.currentPreviewUrl !== null
+          ? {
+              siteIconUrl: data.project.siteIconUrl,
+              siteOgImageUrl: data.project.siteOgImageUrl,
+              siteMetaFetchedAt: data.project.siteMetaFetchedAt,
+              siteMetaError: data.project.siteMetaError
+            }
+          : null,
+      currentDeploymentId: data.project.currentDeploymentId
+    };
+  }, [data]);
+
   return (
-  <Layout
-    title={`${data.project.name} · Deployher`}
+  <AppShell
+    title={t("meta.projectTitle", { name: data.project.name, appName: t("common.appName") })}
     pathname={data.pathname}
-    scriptSrc="/assets/project-detail-page.js"
     user={data.user ?? null}
     sidebarProjects={data.sidebarProjects}
     sidebarContext={{
@@ -96,16 +135,15 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
         name: data.project.name
       },
       deployment: pickFeaturedDeploymentFromSortedDesc(
-        data.deployments.map((d) => ({
+        deployments.map((d) => ({
           id: d.id,
           shortId: d.shortId,
           status: d.status
         }))
       )
     }}
-    csrfToken={data.csrfToken}
     breadcrumbs={[
-      { label: "Projects", href: "/projects" },
+      { label: t("common.projects"), href: "/projects" },
       { label: data.project.name }
     ]}
   >
@@ -114,40 +152,6 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
       aria-live="polite"
       className="hidden fixed top-17 right-4 z-50 rounded-md px-4 py-3 text-sm font-medium shadow-lg"
     />
-    <script
-      type="application/json"
-      id="project-detail-page-bootstrap"
-      dangerouslySetInnerHTML={{
-        __html: JSON.stringify({
-          projectId: data.project.id,
-          repoUrl: data.project.repoUrl,
-          branch: data.project.branch,
-          projectRootDir: data.project.projectRootDir,
-          currentPreviewUrl: data.currentPreviewUrl,
-          hasSuccessfulDeployment: data.deployments.some((d) => d.status === "success"),
-          siteMeta:
-            data.currentPreviewUrl !== null
-              ? {
-                  siteIconUrl: data.project.siteIconUrl,
-                  siteOgImageUrl: data.project.siteOgImageUrl,
-                  siteMetaFetchedAt: data.project.siteMetaFetchedAt,
-                  siteMetaError: data.project.siteMetaError
-                }
-              : null,
-          deployments: data.deployments.map((d) => ({
-            id: d.id,
-            shortId: d.shortId,
-            status: d.status,
-            serveStrategy: d.serveStrategy,
-            buildPreviewMode: d.buildPreviewMode,
-            previewUrl: d.previewUrl,
-            createdAt: d.createdAt
-          })),
-          currentDeploymentId: data.project.currentDeploymentId
-        }).replace(/</g, "\\u003c")
-      }}
-    />
-
     <div className="relative mb-8 overflow-hidden rounded-lg border border-border/80 border-l-4 border-l-primary/70 bg-card/30 shadow-sm ring-1 ring-black/5 dark:ring-white/5">
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-primary/40 via-transparent to-transparent"
@@ -164,7 +168,9 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-5">
           <div className="min-w-0 space-y-4">
             <div>
-              <p className="eyebrow-label mb-2">{currentDeployment ? "Current deployment" : "Project"}</p>
+              <p className="eyebrow-label mb-2">
+                {currentDeployment ? t("projectDetail.currentDeployment") : t("projectDetail.projectEyebrow")}
+              </p>
               <h1 className="font-serif truncate text-3xl font-semibold tracking-tight md:text-4xl">{data.project.name}</h1>
               <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
                 {data.project.repoUrl.replace(/^https:\/\/github\.com\//, "")}
@@ -173,7 +179,7 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
             <dl className="grid gap-3 text-sm">
               {data.currentPreviewUrl ? (
                 <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">
-                  <dt className="text-muted-foreground">Preview</dt>
+                  <dt className="text-muted-foreground">{t("projectDetail.previewLabel")}</dt>
                   <dd className="min-w-0 truncate font-mono text-xs">
                     <a
                       href={data.currentPreviewUrl}
@@ -187,7 +193,7 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
                 </div>
               ) : null}
               <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">
-                <dt className="text-muted-foreground">Branch</dt>
+                <dt className="text-muted-foreground">{t("projectDetail.branch")}</dt>
                 <dd className="min-w-0 truncate font-mono text-xs">
                   <code>{data.project.branch}</code>
                 </dd>
@@ -195,27 +201,29 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
               {currentDeployment ? (
                 <>
                   <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1">
-                    <dt className="text-muted-foreground">Deployment</dt>
+                    <dt className="text-muted-foreground">{t("common.deployment")}</dt>
                     <dd className="min-w-0">
-                      <a
-                        href={`/deployments/${currentDeployment.id}`}
+                      <Link
+                        to={`/deployments/${currentDeployment.id}`}
                         className="font-mono text-xs font-medium no-underline hover:underline"
                       >
                         {currentDeployment.shortId}
-                      </a>
+                      </Link>
                     </dd>
                   </div>
                   <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1">
-                    <dt className="text-muted-foreground">Status</dt>
+                    <dt className="text-muted-foreground">{t("projectDetail.status")}</dt>
                     <dd className="flex flex-wrap items-center gap-2">
-                      <Badge variant={statusVariant(currentDeployment.status)}>{currentDeployment.status}</Badge>
+                      <Badge variant={statusVariant(currentDeployment.status)}>
+                        {deploymentStatusLabel(currentDeployment.status)}
+                      </Badge>
                       <Badge variant="outline" className="font-normal">
                         {deploymentPreviewLabel(currentDeployment)}
                       </Badge>
                     </dd>
                   </div>
                   <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">
-                    <dt className="text-muted-foreground">Created</dt>
+                    <dt className="text-muted-foreground">{t("projectDetail.created")}</dt>
                     <dd className="text-xs text-muted-foreground tabular-nums">
                       {new Date(currentDeployment.createdAt).toLocaleString()}
                     </dd>
@@ -226,28 +234,28 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" asChild>
-              <a href={`/projects/${data.project.id}/settings`} aria-label="Project settings">
+              <Link to={`/projects/${data.project.id}/settings`} aria-label={t("projectDetail.settingsAria")}>
                 <Settings className="mr-1.5 size-4" aria-hidden />
-                Settings
-              </a>
+                {t("projectDetail.settings")}
+              </Link>
             </Button>
             {data.runtimeLogsAvailable &&
             currentDeployment?.serveStrategy === "server" &&
             currentDeployment.status === "success" ? (
               <Button variant="outline" size="sm" asChild>
-                <a
-                  href={`/projects/${data.project.id}/observability#runtime-logs`}
-                  aria-label="Runtime logs for current deployment"
+                <Link
+                  to={`/projects/${data.project.id}/observability#runtime-logs`}
+                  aria-label={t("projectDetail.runtimeLogsAria")}
                 >
                   <ScrollText className="mr-1.5 size-4" aria-hidden />
-                  Runtime logs
-                </a>
+                  {t("projectDetail.runtimeLogs")}
+                </Link>
               </Button>
             ) : null}
             {data.currentPreviewUrl ? (
               <Button variant="outline" asChild>
                 <a href={data.currentPreviewUrl} target="_blank" rel="noopener noreferrer">
-                  Visit
+                  {t("projectDetail.visit")}
                 </a>
               </Button>
             ) : null}
@@ -260,28 +268,26 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
       <Accordion type="single" collapsible className="border-t border-border/60 bg-muted/20 px-5 md:px-6">
         <AccordionItem value="project-details" className="border-0">
           <AccordionTrigger className="py-3.5 text-sm font-medium hover:no-underline">
-            Project details &amp; configuration
+            {t("projectDetail.accordionTitle")}
           </AccordionTrigger>
           <AccordionContent className="space-y-5 pb-5">
-            <p className="text-xs text-muted-foreground">
-              Values below are read-only on this page. Env vars for deploys live in project settings.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("projectDetail.accordionHint")}</p>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button variant="default" size="sm" className="justify-center gap-2 sm:justify-start" asChild>
-                <a href={`/projects/${data.project.id}/settings`}>
+                <Link to={`/projects/${data.project.id}/settings`}>
                   <Settings className="size-4" aria-hidden />
-                  Edit general &amp; build
-                </a>
+                  {t("projectDetail.editGeneral")}
+                </Link>
               </Button>
               <Button variant="outline" size="sm" className="justify-center sm:justify-start" asChild>
-                <a href={`/projects/${data.project.id}/settings/env`}>Edit environment variables</a>
+                <Link to={`/projects/${data.project.id}/settings/env`}>{t("projectDetail.editEnv")}</Link>
               </Button>
             </div>
             <div className="overflow-hidden rounded-md border border-border/80">
               <Table>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="w-36 text-muted-foreground font-medium">Repository</TableCell>
+                    <TableCell className="w-36 text-muted-foreground font-medium">{t("projectDetail.tableRepo")}</TableCell>
                     <TableCell>
                       <a
                         href={data.project.repoUrl}
@@ -294,70 +300,74 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Branch</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.branch")}</TableCell>
                     <TableCell>{data.project.branch}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Workspace Root</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.workspaceRoot")}</TableCell>
                     <TableCell>
                       <code>{data.project.workspaceRootDir}</code>
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Project Root</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.projectRoot")}</TableCell>
                     <TableCell>
                       <code>{data.project.projectRootDir}</code>
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Framework</TableCell>
-                    <TableCell>{data.project.frameworkHint === "auto" ? "Auto-detect" : data.project.frameworkHint}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Preview Type</TableCell>
-                    <TableCell className="capitalize">
-                      {data.project.previewMode === "auto" ? "Auto-detect" : data.project.previewMode}
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.framework")}</TableCell>
+                    <TableCell>
+                      {data.project.frameworkHint === "auto" ? t("projectDetail.autoDetect") : data.project.frameworkHint}
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Server Target</TableCell>
-                    <TableCell>Isolated runner</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.previewType")}</TableCell>
+                    <TableCell className="capitalize">
+                      {data.project.previewMode === "auto" ? t("projectDetail.autoDetect") : data.project.previewMode}
+                    </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Runtime Image</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.serverTarget")}</TableCell>
+                    <TableCell>{t("projectDetail.isolatedRunner")}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.runtimeImage")}</TableCell>
                     <TableCell className="capitalize">{data.project.runtimeImageMode}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Dockerfile</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.dockerfile")}</TableCell>
                     <TableCell>
                       <code>{data.project.dockerfilePath ?? "Dockerfile"}</code>
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Docker Target</TableCell>
-                    <TableCell>{data.project.dockerBuildTarget ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.dockerTarget")}</TableCell>
+                    <TableCell>{data.project.dockerBuildTarget ?? t("common.emDash")}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Host Build</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.hostBuild")}</TableCell>
                     <TableCell>
-                      {data.project.skipHostStrategyBuild ? "Skipped (Dockerfile-only)" : "Run strategy build"}
+                      {data.project.skipHostStrategyBuild
+                        ? t("projectDetail.skippedDockerfile")
+                        : t("projectDetail.runStrategyBuild")}
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Preview Port</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.previewPort")}</TableCell>
                     <TableCell>{data.project.runtimeContainerPort}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Created</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.created")}</TableCell>
                     <TableCell>{new Date(data.project.createdAt).toLocaleString()}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">Updated</TableCell>
+                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.updated")}</TableCell>
                     <TableCell>{new Date(data.project.updatedAt).toLocaleString()}</TableCell>
                   </TableRow>
                   {data.currentPreviewUrl ? (
                     <TableRow>
-                      <TableCell className="text-muted-foreground font-medium">Preview URL</TableCell>
+                      <TableCell className="text-muted-foreground font-medium">{t("projectDetail.previewUrl")}</TableCell>
                       <TableCell>
                         <a
                           href={data.currentPreviewUrl}
@@ -381,22 +391,33 @@ const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
     <div className="min-w-0 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Deployments</CardTitle>
+          <CardTitle className="text-base">{t("projectDetail.deploymentCardTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {data.deployments.length === 0 ? (
-            <p className="text-muted-foreground text-sm px-6 pb-4">No deployments yet. Click &quot;Deploy&quot; to create one.</p>
+          {deployments.length === 0 ? (
+            <p className="text-muted-foreground text-sm px-6 pb-4">{t("projectDetail.noDeployments")}</p>
           ) : (
-            <div id="project-detail-deployments-root" className="min-w-0" />
+            <div className="min-w-0">
+              <ProjectDeploymentsPanel
+                deployments={deployments.map((d) => ({
+                  id: d.id,
+                  shortId: d.shortId,
+                  status: d.status,
+                  serveStrategy: d.serveStrategy,
+                  buildPreviewMode: d.buildPreviewMode,
+                  previewUrl: d.previewUrl,
+                  createdAt: d.createdAt
+                }))}
+                currentDeploymentId={data.project.currentDeploymentId}
+              />
+            </div>
           )}
         </CardContent>
       </Card>
 
       <div id="project-detail-repo-explorer-root" className="min-w-0" />
     </div>
-  </Layout>
+    <ProjectDetailInteractiveMount bootstrap={interactiveBootstrap} />
+  </AppShell>
   );
 };
-
-export const renderProjectDetailPage = (data: ProjectDetailData) =>
-  renderToReadableStream(<ProjectDetailPage data={data} />);

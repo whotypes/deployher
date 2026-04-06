@@ -1,6 +1,7 @@
-import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "./Layout";
-import { Layout } from "./Layout";
+import { useTranslation } from "react-i18next";
+import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
+import { AppShell } from "./AppShell";
+import { DeploymentDetailPageClient } from "./client/DeploymentDetailPageClient";
 
 type Deployment = {
   id: string;
@@ -33,39 +34,34 @@ export type DeploymentDetailData = {
   sidebarProjects: SidebarProjectSummary[];
   sidebarFeaturedDeployment: SidebarFeaturedDeployment | null;
   runtimeLogsAvailable: boolean;
+  /** Server + runtime image + runner configured; user can warm the isolated preview container. */
+  previewEnsureAvailable: boolean;
 };
 
-const DeploymentDetailPage = ({ data }: { data: DeploymentDetailData }) => (
-  <Layout
-    title={`Deployment ${data.deployment.shortId} · Deployher`}
-    pathname={data.pathname}
-    scriptSrc="/assets/deployment-detail-page.js"
-    user={data.user ?? null}
-    csrfToken={data.csrfToken}
-    sidebarProjects={data.sidebarProjects}
-    sidebarContext={{
-      project: {
-        id: data.project.id,
-        name: data.project.name
-      },
-      deployment: data.sidebarFeaturedDeployment
-    }}
-    breadcrumbs={[
-      { label: "Projects", href: "/projects" },
-      { label: data.project.name, href: `/projects/${data.project.id}` },
-      { label: data.deployment.shortId }
-    ]}
-  >
-    <script
-      type="application/json"
-      id="deployment-detail-bootstrap"
-      dangerouslySetInnerHTML={{
-        __html: JSON.stringify(data).replace(/</g, "\\u003c")
+export const DeploymentDetailPage = ({ data }: { data: DeploymentDetailData }) => {
+  const { t } = useTranslation();
+  return (
+    <AppShell
+      title={t("meta.deploymentTitle", { shortId: data.deployment.shortId, appName: t("common.appName") })}
+      pathname={data.pathname}
+      user={data.user ?? null}
+      sidebarProjects={data.sidebarProjects}
+      sidebarContext={{
+        project: {
+          id: data.project.id,
+          name: data.project.name
+        },
+        deployment: data.sidebarFeaturedDeployment
       }}
-    />
-    <div id="deployment-detail-client-root" />
-  </Layout>
-);
-
-export const renderDeploymentDetailPage = (data: DeploymentDetailData) =>
-  renderToReadableStream(<DeploymentDetailPage data={data} />);
+      breadcrumbs={[
+        { label: t("common.projects"), href: "/projects" },
+        { label: data.project.name, href: `/projects/${data.project.id}` },
+        { label: data.deployment.shortId }
+      ]}
+    >
+      <div id="deployment-detail-client-root">
+        <DeploymentDetailPageClient initialData={data} />
+      </div>
+    </AppShell>
+  );
+};

@@ -1,7 +1,10 @@
 import type { ComponentType } from "react";
-import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "./Layout";
-import { Layout } from "./Layout";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
+import { AppShell } from "./AppShell";
+import { ProjectSettingsPageClient } from "./client/ProjectSettingsPageClient";
 import { FolderKanban, KeyRound, Settings, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,20 +52,34 @@ type SettingsNavItem = {
   danger?: boolean;
 };
 
-const settingsNav: SettingsNavItem[] = [
-  { id: "general", label: "General", icon: Settings, href: (id) => `/projects/${id}/settings` },
-  { id: "env", label: "Environment Variables", icon: KeyRound, href: (id) => `/projects/${id}/settings/env` },
-  { id: "danger", label: "Danger Zone", icon: TriangleAlert, href: (id) => `/projects/${id}/settings/danger`, danger: true }
-];
-
-const ProjectSettingsPage = ({ data }: { data: ProjectSettingsData }) => {
+export const ProjectSettingsPage = ({ data }: { data: ProjectSettingsData }) => {
+  const { t } = useTranslation();
   const { project, activeSection } = data;
 
+  const settingsNav = useMemo<SettingsNavItem[]>(
+    () => [
+      { id: "general", label: t("projectSettings.navGeneral"), icon: Settings, href: (id) => `/projects/${id}/settings` },
+      {
+        id: "env",
+        label: t("projectSettings.navEnv"),
+        icon: KeyRound,
+        href: (id) => `/projects/${id}/settings/env`
+      },
+      {
+        id: "danger",
+        label: t("projectSettings.navDanger"),
+        icon: TriangleAlert,
+        href: (id) => `/projects/${id}/settings/danger`,
+        danger: true
+      }
+    ],
+    [t]
+  );
+
   return (
-    <Layout
-      title={`Settings · ${project.name} · Deployher`}
+    <AppShell
+      title={t("meta.settingsTitle", { name: project.name, appName: t("common.appName") })}
       pathname={data.pathname}
-      scriptSrc="/assets/project-settings-page.js"
       user={data.user ?? null}
       sidebarProjects={data.sidebarProjects}
       sidebarContext={{
@@ -72,45 +89,36 @@ const ProjectSettingsPage = ({ data }: { data: ProjectSettingsData }) => {
         },
         deployment: data.sidebarFeaturedDeployment
       }}
-      csrfToken={data.csrfToken}
       breadcrumbs={[
-        { label: "Projects", href: "/projects" },
+        { label: t("common.projects"), href: "/projects" },
         { label: project.name, href: `/projects/${project.id}` },
-        { label: "Settings" }
+        { label: t("projectSettings.breadcrumbSettings") }
       ]}
     >
-      <script
-        type="application/json"
-        id="project-settings-bootstrap"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(data).replace(/</g, "\\u003c")
-        }}
-      />
-
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <a
-            href={`/projects/${project.id}`}
+          <Link
+            to={`/projects/${project.id}`}
             className="flex items-center gap-1.5 text-sm text-muted-foreground no-underline transition-colors hover:text-foreground hover:no-underline"
-            aria-label={`Back to ${project.name}`}
+            aria-label={t("projectSettings.backToAria", { name: project.name })}
           >
             <FolderKanban className="size-4" aria-hidden />
             <span>{project.name}</span>
-          </a>
+          </Link>
           <span className="text-border/80">/</span>
-          <h1 className="text-sm font-medium text-foreground">Settings</h1>
+          <h1 className="text-sm font-medium text-foreground">{t("projectSettings.heading")}</h1>
         </div>
       </div>
 
       <div id="project-settings" className="scroll-mt-24 flex flex-col gap-8 lg:flex-row lg:gap-10">
-        <nav className="flex shrink-0 flex-row gap-1 lg:w-52 lg:flex-col" aria-label="Settings sections">
+        <nav className="flex shrink-0 flex-row gap-1 lg:w-52 lg:flex-col" aria-label={t("projectSettings.navAria")}>
           {settingsNav.map((item) => {
             const Icon = item.icon;
             const isActive = item.id === activeSection;
             return (
-              <a
+              <Link
                 key={item.id}
-                href={item.href(project.id)}
+                to={item.href(project.id)}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm no-underline transition-colors hover:no-underline",
@@ -123,18 +131,17 @@ const ProjectSettingsPage = ({ data }: { data: ProjectSettingsData }) => {
               >
                 <Icon className={cn("size-4 shrink-0", item.danger && !isActive && "text-destructive/70")} aria-hidden />
                 <span className="truncate">{item.label}</span>
-              </a>
+              </Link>
             );
           })}
         </nav>
 
         <div className="min-w-0 max-w-2xl flex-1">
-          <div id="project-settings-client-root" />
+          <div id="project-settings-client-root">
+            <ProjectSettingsPageClient data={data} />
+          </div>
         </div>
       </div>
-    </Layout>
+    </AppShell>
   );
 };
-
-export const renderProjectSettingsPage = (data: ProjectSettingsData) =>
-  renderToReadableStream(<ProjectSettingsPage data={data} />);

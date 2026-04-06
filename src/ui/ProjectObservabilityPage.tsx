@@ -1,6 +1,8 @@
-import { renderToReadableStream } from "react-dom/server";
-import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "./Layout";
-import { Layout } from "./Layout";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
+import { AppShell } from "./AppShell";
+import { ProjectObservabilityPageClient } from "./client/ProjectObservabilityPageClient";
 import { Activity, FolderKanban } from "lucide-react";
 
 type Project = {
@@ -25,66 +27,56 @@ export type ProjectObservabilityData = {
   runtimeLogs: ProjectRuntimeLogsSsr;
 };
 
-const ProjectObservabilityPage = ({ data }: { data: ProjectObservabilityData }) => {
+export const ProjectObservabilityPage = ({ data }: { data: ProjectObservabilityData }) => {
+  const { t } = useTranslation();
   const { project } = data;
+  const bootstrap = {
+    projectId: project.id,
+    projectName: project.name,
+    runtimeLogs: data.runtimeLogs
+  };
+
   return (
-    <Layout
-      title={`Observability · ${project.name} · Deployher`}
+    <AppShell
+      title={t("meta.observabilityTitle", { name: project.name, appName: t("common.appName") })}
       pathname={data.pathname}
-      scriptSrc="/assets/project-observability-page.js"
       user={data.user ?? null}
       sidebarProjects={data.sidebarProjects}
       sidebarContext={{
         project: { id: project.id, name: project.name },
         deployment: data.sidebarFeaturedDeployment
       }}
-      csrfToken={data.csrfToken}
       breadcrumbs={[
-        { label: "Projects", href: "/projects" },
+        { label: t("common.projects"), href: "/projects" },
         { label: project.name, href: `/projects/${project.id}` },
-        { label: "Observability" }
+        { label: t("projectObservability.pageHeading") }
       ]}
     >
-      <script
-        type="application/json"
-        id="project-observability-bootstrap"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            projectId: project.id,
-            projectName: project.name,
-            runtimeLogs: data.runtimeLogs
-          }).replace(/</g, "\\u003c")
-        }}
-      />
-
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <a
-            href={`/projects/${project.id}`}
+          <Link
+            to={`/projects/${project.id}`}
             className="flex items-center gap-1.5 text-sm text-muted-foreground no-underline transition-colors hover:text-foreground hover:no-underline"
-            aria-label={`Back to ${project.name}`}
+            aria-label={t("projectSettings.backToAria", { name: project.name })}
           >
             <FolderKanban className="size-4" aria-hidden />
             <span>{project.name}</span>
-          </a>
+          </Link>
           <span className="text-border/80">/</span>
           <h1 className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Activity className="size-4" aria-hidden />
-            Observability
+            {t("projectObservability.pageHeading")}
           </h1>
         </div>
       </div>
 
       <p className="mb-6 max-w-2xl text-sm text-muted-foreground">
-        Preview traffic is sampled (see sample rate on the traffic card). Client IPs use the{" "}
-        <span className="font-mono text-xs">X-Forwarded-For</span> header only when{" "}
-        <span className="font-mono text-xs">OBSERVABILITY_TRUST_PROXY</span> is enabled.
+        {t("projectObservability.intro", { header: "X-Forwarded-For", env: "OBSERVABILITY_TRUST_PROXY" })}
       </p>
 
-      <div id="project-observability-root" className="space-y-8" />
-    </Layout>
+      <div id="project-observability-root" className="space-y-8">
+        <ProjectObservabilityPageClient bootstrap={bootstrap} />
+      </div>
+    </AppShell>
   );
 };
-
-export const renderProjectObservabilityPage = (data: ProjectObservabilityData) =>
-  renderToReadableStream(<ProjectObservabilityPage data={data} />);
