@@ -940,7 +940,7 @@
   },
   "repoExplorer": {
     "defaultTitle": "Explorateur de dépôt",
-    "intro": "Comptes de lignes depuis un instantané du dépôt (téléchargement zip). Les gros fichiers binaires sont ignorés.",
+    "intro": "Comptes de lignes depuis un instantané du dépôt (téléchargement zip). Les ressources binaires sous public/ ou static/ sont listées, mais seuls les fichiers texte s’affichent dans le panneau d’aperçu.",
     "lineCountsFailed": "Échec du chargement des comptes de lignes",
     "loadRepoFailed": "Échec du chargement du dépôt",
     "fileLoadFailed": "Échec du chargement du fichier",
@@ -955,7 +955,11 @@
     "noFiles": "Aucun fichier",
     "loading": "Chargement…",
     "linesOfCode": "Lignes de code",
-    "noLanguageBreakdown": "Aucune répartition par langage"
+    "noLanguageBreakdown": "Aucune répartition par langage",
+    "cannotPreviewBinary": "Ce fichier est binaire ou n’est pas décodable en texte.",
+    "cannotPreviewTooLarge": "Ce fichier est trop volumineux pour un aperçu ici.",
+    "openOnGitHub": "Voir sur GitHub",
+    "openOnPreview": "Ouvrir sur la prévisualisation"
   },
   "terminal": {
     "tabBuild": "build",
