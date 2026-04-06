@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Activity, HardDrive, Package, Server } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -20,7 +21,10 @@ const statusBadgeVariant = (status: HealthData["status"]): "default" | "secondar
 };
 
 export const HealthPageClient = ({ initialData }: { initialData: HealthData }): React.ReactElement => {
+  const { t, i18n } = useTranslation();
   const [live, setLive] = React.useState(initialData);
+
+  const locale = i18n.language.startsWith("fr") ? "fr" : "en";
 
   React.useEffect(() => {
     const poll = (): void => {
@@ -40,11 +44,13 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
 
   const { memory } = live;
 
+  const overallStatusLabel = t(`health.overallStatus.${live.status}`);
+
   return (
     <>
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold">System health</h1>
-        <Badge variant={statusBadgeVariant(live.status)}>{live.status.toUpperCase()}</Badge>
+        <h1 className="text-2xl font-semibold">{t("health.pageTitle")}</h1>
+        <Badge variant={statusBadgeVariant(live.status)}>{overallStatusLabel}</Badge>
       </div>
 
       <div className="space-y-6">
@@ -53,7 +59,7 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
             <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2">
               <Server className="h-4 w-4 text-muted-foreground" aria-hidden />
               <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Uptime
+                {t("health.uptime")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -64,7 +70,7 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
             <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2">
               <HardDrive className="h-4 w-4 text-muted-foreground" aria-hidden />
               <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Memory (RSS)
+                {t("health.memoryRss")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -75,7 +81,7 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
             <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2">
               <Activity className="h-4 w-4 text-muted-foreground" aria-hidden />
               <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Pending requests
+                {t("health.pendingRequests")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -86,7 +92,7 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
             <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2">
               <Package className="h-4 w-4 text-muted-foreground" aria-hidden />
               <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Bun version
+                {t("health.bunVersion")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -98,17 +104,17 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Server</CardTitle>
+              <CardTitle className="text-base">{t("health.server")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="w-[140px] font-medium">Environment</TableCell>
+                    <TableCell className="w-[140px] font-medium">{t("health.environment")}</TableCell>
                     <TableCell>{live.environment}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">Hostname</TableCell>
+                    <TableCell className="font-medium">{t("health.hostname")}</TableCell>
                     <TableCell>
                       <code className="text-xs">
                         {live.hostname}:{live.port}
@@ -116,12 +122,12 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">PID</TableCell>
+                    <TableCell className="font-medium">{t("health.pid")}</TableCell>
                     <TableCell>{live.pid}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">Started</TableCell>
-                    <TableCell>{new Date(live.startedAt).toLocaleString()}</TableCell>
+                    <TableCell className="font-medium">{t("health.started")}</TableCell>
+                    <TableCell>{new Date(live.startedAt).toLocaleString(locale)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -130,25 +136,25 @@ export const HealthPageClient = ({ initialData }: { initialData: HealthData }): 
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Memory</CardTitle>
+              <CardTitle className="text-base">{t("health.memory")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="w-[140px] font-medium">RSS</TableCell>
+                    <TableCell className="w-[140px] font-medium">{t("health.rss")}</TableCell>
                     <TableCell>{formatBytes(memory.rss)}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">Heap total</TableCell>
+                    <TableCell className="font-medium">{t("health.heapTotal")}</TableCell>
                     <TableCell>{formatBytes(memory.heapTotal)}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">Heap used</TableCell>
+                    <TableCell className="font-medium">{t("health.heapUsed")}</TableCell>
                     <TableCell>{formatBytes(memory.heapUsed)}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">External</TableCell>
+                    <TableCell className="font-medium">{t("health.external")}</TableCell>
                     <TableCell>{formatBytes(memory.external)}</TableCell>
                   </TableRow>
                 </TableBody>

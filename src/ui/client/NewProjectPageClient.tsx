@@ -1,5 +1,7 @@
 import * as React from "react";
 import { Check, ChevronRight, CircleHelp, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,10 +26,16 @@ import {
   type GitHubRepo,
   reposByFullName
 } from "@/lib/githubRepo";
+import {
+  isAncestorOrEqualPath,
+  normalizeRepoRelativePathString,
+  parseRuntimePortInput
+} from "@/lib/repoRelativePath";
 import { readOpenAfterCreate, readPreferredBranch, readProjectsCreateModeInitial } from "@/lib/userUiPrefs";
 import { cn } from "@/lib/utils";
 import { GitHubMark } from "@/ui/GitHubMark";
 import { fetchWithCsrf } from "./fetchWithCsrf";
+import { NewProjectPathExplorer } from "./NewProjectPathExplorer";
 import type { RepoScanHintsPayload, RepoScanPrimaryFramework } from "./repoScanHintsTypes";
 
 type OwnerRepoGroupProps = {
@@ -49,16 +57,22 @@ const RepoFrameworkGlyph = ({
   hintsError: string | null;
   hints: RepoScanHintsPayload | null;
 }) => {
+  const { t } = useTranslation();
   if (!selectedRepo || repo.fullName !== selectedRepo.fullName) {
     return null;
   }
   if (hintsLoading) {
-    return <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" aria-label="Scanning repository" />;
+    return (
+      <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" aria-label={t("newProject.scanningRepo")} />
+    );
   }
   if (hintsError) {
     return (
       <span title={hintsError}>
-        <CircleHelp className="text-destructive size-4 shrink-0" aria-label={`Scan failed: ${hintsError}`} />
+        <CircleHelp
+          className="text-destructive size-4 shrink-0"
+          aria-label={t("newProject.scanFailed", { message: hintsError })}
+        />
       </span>
     );
   }
@@ -67,18 +81,32 @@ const RepoFrameworkGlyph = ({
   }
   const fw = hints.primaryFramework;
   if (fw) {
-    return <FrameworkLogoThumb fw={fw} title={fw.name} />;
+    return (
+      <span className="flex min-w-0 max-w-40 items-center gap-1.5">
+        <FrameworkLogoThumb fw={fw} title={fw.name} pixelSize={22} />
+        <span className="text-foreground truncate text-xs font-medium">{fw.name}</span>
+      </span>
+    );
   }
   return (
-    <span title="No matching framework preset for this path">
-      <CircleHelp className="text-destructive size-4 shrink-0" aria-label="Framework unknown" />
+    <span title={t("newProject.noFrameworkPreset")}>
+      <CircleHelp className="text-destructive size-4 shrink-0" aria-label={t("newProject.frameworkUnknown")} />
     </span>
   );
 };
 
-const FrameworkLogoThumb = ({ fw, title }: { fw: RepoScanPrimaryFramework; title: string }) => (
+const FrameworkLogoThumb = ({
+  fw,
+  title,
+  pixelSize = 22
+}: {
+  fw: RepoScanPrimaryFramework;
+  title: string;
+  pixelSize?: number;
+}) => (
   <span
-    className="border-border/60 relative inline-flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-background p-0.5"
+    className="border-border/60 relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-background p-0.5"
+    style={{ width: pixelSize + 6, height: pixelSize + 6 }}
     title={title}
   >
     {fw.darkModeLogo ? (
@@ -86,20 +114,22 @@ const FrameworkLogoThumb = ({ fw, title }: { fw: RepoScanPrimaryFramework; title
         <img
           src={fw.logo}
           alt={fw.name}
-          width={22}
-          height={22}
+          width={pixelSize}
+          height={pixelSize}
           loading="lazy"
           referrerPolicy="no-referrer"
-          className="size-[22px] object-contain dark:hidden"
+          className="object-contain dark:hidden"
+          style={{ width: pixelSize, height: pixelSize }}
         />
         <img
           src={fw.darkModeLogo}
           alt=""
-          width={22}
-          height={22}
+          width={pixelSize}
+          height={pixelSize}
           loading="lazy"
           referrerPolicy="no-referrer"
-          className="hidden size-[22px] object-contain dark:block"
+          className="hidden object-contain dark:block"
+          style={{ width: pixelSize, height: pixelSize }}
           aria-hidden
         />
       </>
@@ -107,17 +137,19 @@ const FrameworkLogoThumb = ({ fw, title }: { fw: RepoScanPrimaryFramework; title
       <img
         src={fw.logo}
         alt={fw.name}
-        width={22}
-        height={22}
+        width={pixelSize}
+        height={pixelSize}
         loading="lazy"
         referrerPolicy="no-referrer"
-        className="size-[22px] object-contain"
+        className="object-contain"
+        style={{ width: pixelSize, height: pixelSize }}
       />
     )}
   </span>
 );
 
 const OwnerRepoGroup = ({ owner, repos, renderRepoTrailing }: OwnerRepoGroupProps) => {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(true);
 
   return (
@@ -145,7 +177,7 @@ const OwnerRepoGroup = ({ owner, repos, renderRepoTrailing }: OwnerRepoGroupProp
               >
                 <span className="truncate">{repo.name}</span>
                 <Badge variant={repo.private ? "secondary" : "outline"} className="text-[10px] font-normal">
-                  {repo.private ? "private" : "public"}
+                  {repo.private ? t("newProject.repoPrivate") : t("newProject.repoPublic")}
                 </Badge>
               </Label>
               <div className="flex min-w-7 shrink-0 items-center justify-end">{renderRepoTrailing?.(repo)}</div>
@@ -176,34 +208,35 @@ const showToast = (message: string, variant: "success" | "error"): void => {
   }, 3200);
 };
 
-const fetchRepos = async (): Promise<GitHubRepo[]> => {
+const fetchRepos = async (fallbackError: string): Promise<GitHubRepo[]> => {
   const response = await fetch("/api/github/repos", { headers: { Accept: "application/json" } });
   const data = (await response.json().catch(() => ({}))) as { repos?: GitHubRepo[]; error?: string };
   if (!response.ok) {
-    throw new Error(data.error ?? "Failed to load repositories");
+    throw new Error(data.error ?? fallbackError);
   }
-  return Array.isArray(data.repos) ? data.repos : [];
+  if (!Array.isArray(data.repos)) return [];
+  return data.repos.map((row) => {
+    const db = row.defaultBranch?.trim();
+    return {
+      ...row,
+      defaultBranch: db && db.length > 0 ? db : "main"
+    };
+  });
 };
 
-const fetchBranches = async (owner: string, repo: string): Promise<string[]> => {
+const fetchBranches = async (owner: string, repo: string, fallbackError: string): Promise<string[]> => {
   const params = new URLSearchParams({ owner, repo });
   const response = await fetch("/api/github/branches?" + params.toString(), {
     headers: { Accept: "application/json" }
   });
   const data = (await response.json().catch(() => ({}))) as { branches?: string[]; error?: string };
   if (!response.ok) {
-    throw new Error(data.error ?? "Failed to load branches");
+    throw new Error(data.error ?? fallbackError);
   }
   return Array.isArray(data.branches) ? data.branches : [];
 };
 
-type StepDef = { id: string; label: string };
-
-const STEPS: StepDef[] = [
-  { id: "source", label: "Source" },
-  { id: "paths", label: "Paths" },
-  { id: "build", label: "Build & preview" }
-];
+type StepDef = { id: string; label: string; shortLabel: string };
 
 const SetupStepRail = ({
   activeIndex,
@@ -212,11 +245,20 @@ const SetupStepRail = ({
   activeIndex: number;
   completedThrough: number;
 }) => {
-  const progressPct = Math.round(((completedThrough + 1) / STEPS.length) * 100);
+  const { t } = useTranslation();
+  const steps = React.useMemo<StepDef[]>(
+    () => [
+      { id: "source", label: t("newProject.steps.source"), shortLabel: t("newProject.stepsShort.source") },
+      { id: "paths", label: t("newProject.steps.paths"), shortLabel: t("newProject.stepsShort.paths") },
+      { id: "build", label: t("newProject.steps.build"), shortLabel: t("newProject.stepsShort.build") }
+    ],
+    [t]
+  );
+  const progressPct = Math.round(((completedThrough + 1) / steps.length) * 100);
   return (
     <div className="mb-8 space-y-4">
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3" role="list" aria-label="Setup steps">
-        {STEPS.map((step, i) => {
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3" role="list" aria-label={t("newProject.stepsAria")}>
+        {steps.map((step, i) => {
           const done = i < completedThrough;
           const current = i === activeIndex;
           return (
@@ -249,18 +291,19 @@ const SetupStepRail = ({
                   {done ? <Check className="size-3.5" strokeWidth={2.5} /> : i + 1}
                 </span>
                 <span className="hidden sm:inline">{step.label}</span>
-                <span className="sm:hidden">{step.label.split(" ")[0]}</span>
+                <span className="sm:hidden">{step.shortLabel}</span>
               </div>
             </React.Fragment>
           );
         })}
       </div>
-      <Progress value={progressPct} className="h-1.5" aria-label="Setup progress" />
+      <Progress value={progressPct} className="h-1.5" aria-label={t("newProject.progressAria")} />
     </div>
   );
 };
 
 export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProjectPageClientProps) => {
+  const { t } = useTranslation();
   const [createMode, setCreateMode] = React.useState<"import" | "manual">(() =>
     readProjectsCreateModeInitial(hasRepoAccess)
   );
@@ -296,6 +339,14 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const [repoHintsLoading, setRepoHintsLoading] = React.useState(false);
   const [repoHintsError, setRepoHintsError] = React.useState<string | null>(null);
 
+  const refForHints = React.useMemo(() => {
+    if (!selectedRepo) return "";
+    const chosen = branch.trim();
+    if (chosen) return chosen;
+    const db = selectedRepo.defaultBranch.trim();
+    return db || "main";
+  }, [selectedRepo, branch]);
+
   const filteredRepos = React.useMemo(() => filterReposByQuery(repos, deferredFilter), [repos, deferredFilter]);
   const grouped = React.useMemo(() => groupReposByOwner(filteredRepos), [filteredRepos]);
   const fullNameMap = React.useMemo(() => reposByFullName(repos), [repos]);
@@ -303,7 +354,25 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
   const manualBasicsReady =
     manualName.trim().length > 0 && manualRepoUrl.trim().length > 0 && manualBranch.trim().length > 0;
+  const normalizedWorkspace = React.useMemo(
+    () => normalizeRepoRelativePathString(workspaceRootDir),
+    [workspaceRootDir]
+  );
+  const normalizedProject = React.useMemo(
+    () => normalizeRepoRelativePathString(projectRootDir),
+    [projectRootDir]
+  );
+  const rootsValid =
+    normalizedWorkspace !== null &&
+    normalizedProject !== null &&
+    isAncestorOrEqualPath(normalizedWorkspace, normalizedProject);
+  const portParsed = React.useMemo(() => parseRuntimePortInput(runtimeContainerPort), [runtimeContainerPort]);
+  const portValid = portParsed.ok;
   const importFlowReady = Boolean(selectedRepo && branch.trim());
+  const importCanSubmit = Boolean(
+    selectedRepo && branch.trim() && rootsValid && portValid
+  );
+  const manualCanSubmit = manualBasicsReady && rootsValid && portValid;
   const completedThrough =
     createMode === "import"
       ? importFlowReady
@@ -334,16 +403,16 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     setRepoError(null);
     void (async () => {
       try {
-        const list = await fetchRepos();
+        const list = await fetchRepos(t("newProject.loadReposFailed"));
         if (!cancelled) {
           setRepos(list);
           if (list.length === 0) {
-            setRepoError("No repositories found.");
+            setRepoError(t("newProject.noRepos"));
           }
         }
       } catch (error) {
         if (!cancelled) {
-          setRepoError(error instanceof Error ? error.message : "Failed to load repositories");
+          setRepoError(error instanceof Error ? error.message : t("newProject.loadReposFailed"));
         }
       } finally {
         if (!cancelled) setRepoLoading(false);
@@ -352,10 +421,10 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     return () => {
       cancelled = true;
     };
-  }, [hasRepoAccess]);
+  }, [hasRepoAccess, t]);
 
   React.useEffect(() => {
-    if (createMode !== "import" || !hasRepoAccess || !selectedRepo || !branch.trim()) {
+    if (createMode !== "import" || !hasRepoAccess || !selectedRepo || !refForHints) {
       setRepoHints(null);
       setRepoHintsError(null);
       setRepoHintsLoading(false);
@@ -379,7 +448,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
           const params = new URLSearchParams({
             owner,
             repo: repoName,
-            ref: branch.trim(),
+            ref: refForHints,
             projectRoot: projectRootDir.trim() === "" ? "." : projectRootDir.trim()
           });
           const response = await fetch("/api/github/repo-hints?" + params.toString(), {
@@ -389,7 +458,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
             error?: string;
           };
           if (!response.ok) {
-            throw new Error(data.error ?? "Could not inspect the repository");
+            throw new Error(data.error ?? t("newProject.inspectFailed"));
           }
           if (!cancelled) {
             setRepoHints({
@@ -400,7 +469,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
         } catch (error) {
           if (!cancelled) {
             setRepoHints(null);
-            setRepoHintsError(error instanceof Error ? error.message : "Repository inspection failed");
+            setRepoHintsError(error instanceof Error ? error.message : t("newProject.inspectError"));
           }
         } finally {
           if (!cancelled) {
@@ -414,7 +483,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [createMode, hasRepoAccess, selectedRepo, branch, projectRootDir]);
+  }, [createMode, hasRepoAccess, selectedRepo, refForHints, projectRootDir, t]);
 
   React.useEffect(() => {
     if (selectedRepo && !filteredRepos.some((repo) => repo.id === selectedRepo.id)) {
@@ -436,7 +505,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
       setBranchesError(null);
       setBranch("");
       try {
-        const list = await fetchBranches(owner, repoName);
+        const list = await fetchBranches(owner, repoName, t("newProject.loadBranchesFailed"));
         const preferredName = readPreferredBranch();
         const preferred = list.includes(preferredName)
           ? preferredName
@@ -447,12 +516,12 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
         setBranch(preferred);
       } catch (error) {
         setBranches([]);
-        setBranchesError(error instanceof Error ? error.message : "Failed to load branches");
+        setBranchesError(error instanceof Error ? error.message : t("newProject.loadBranchesFailed"));
       } finally {
         setBranchesLoading(false);
       }
     },
-    []
+    [t]
   );
 
   const handleRepoRadioChange = React.useCallback(
@@ -474,11 +543,12 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     window.location.href = readOpenAfterCreate() ? `/projects/${projectId}` : "/projects";
   };
 
-  const handleApplyRepoHints = () => {
-    if (!repoHints) return;
+  React.useEffect(() => {
+    if (createMode !== "import") return;
+    if (!repoHints || repoHintsLoading) return;
     setFrameworkHint(repoHints.suggestedFrameworkHint);
     setPreviewMode(repoHints.suggestedPreviewMode);
-  };
+  }, [createMode, repoHints, repoHintsLoading]);
 
   const handleGitHubConnect = async () => {
     setConnectLoading(true);
@@ -508,9 +578,9 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
         window.location.href = data.url;
         return;
       }
-      showToast("GitHub linking failed. Please try again.", "error");
+      showToast(t("newProject.linkGithubFailed"), "error");
     } catch {
-      showToast("GitHub linking failed. Please try again.", "error");
+      showToast(t("newProject.linkGithubFailed"), "error");
     } finally {
       setConnectLoading(false);
     }
@@ -518,6 +588,17 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
   const handleImportCreate = async () => {
     if (!selectedRepo || !branch.trim()) return;
+    const ws = normalizeRepoRelativePathString(workspaceRootDir);
+    const pr = normalizeRepoRelativePathString(projectRootDir);
+    if (!ws || !pr || !isAncestorOrEqualPath(ws, pr)) {
+      showToast(t("newProject.validation.pathsInvalid"), "error");
+      return;
+    }
+    const portResult = parseRuntimePortInput(runtimeContainerPort);
+    if (!portResult.ok) {
+      showToast(t("newProject.validation.portInvalid"), "error");
+      return;
+    }
     setCreateLoading(true);
     setBranchesError(null);
     try {
@@ -528,26 +609,26 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
           name: selectedRepo.name,
           repoUrl: selectedRepo.htmlUrl,
           branch: branch.trim(),
-          workspaceRootDir,
-          projectRootDir,
+          workspaceRootDir: ws,
+          projectRootDir: pr,
           frameworkHint,
           previewMode,
           serverPreviewTarget,
           runtimeImageMode,
           dockerfilePath: dockerfilePath.trim() || null,
           dockerBuildTarget: dockerBuildTarget.trim() || null,
-          runtimeContainerPort: Number.parseInt(runtimeContainerPort, 10),
+          runtimeContainerPort: portResult.port,
           skipHostStrategyBuild
         })
       });
       const data = (await response.json()) as { id?: string; error?: string };
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to create project");
+        throw new Error(data.error ?? t("newProject.createFailed"));
       }
-      showToast("Project created.", "success");
+      showToast(t("newProject.projectCreated"), "success");
       finishCreate(data.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create project";
+      const message = error instanceof Error ? error.message : t("newProject.createFailed");
       setBranchesError(message);
       showToast(message, "error");
     } finally {
@@ -558,7 +639,18 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const handleManualCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!manualName.trim() || !manualRepoUrl.trim() || !manualBranch.trim()) {
-      showToast("Please fill in name, repository and branch.", "error");
+      showToast(t("newProject.fillRequired"), "error");
+      return;
+    }
+    const ws = normalizeRepoRelativePathString(workspaceRootDir);
+    const pr = normalizeRepoRelativePathString(projectRootDir);
+    if (!ws || !pr || !isAncestorOrEqualPath(ws, pr)) {
+      showToast(t("newProject.validation.pathsInvalid"), "error");
+      return;
+    }
+    const portResult = parseRuntimePortInput(runtimeContainerPort);
+    if (!portResult.ok) {
+      showToast(t("newProject.validation.portInvalid"), "error");
       return;
     }
 
@@ -571,26 +663,26 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
           name: manualName.trim(),
           repoUrl: manualRepoUrl.trim(),
           branch: manualBranch.trim(),
-          workspaceRootDir,
-          projectRootDir,
+          workspaceRootDir: ws,
+          projectRootDir: pr,
           frameworkHint,
           previewMode,
           serverPreviewTarget,
           runtimeImageMode,
           dockerfilePath: dockerfilePath.trim() || null,
           dockerBuildTarget: dockerBuildTarget.trim() || null,
-          runtimeContainerPort: Number.parseInt(runtimeContainerPort, 10),
+          runtimeContainerPort: portResult.port,
           skipHostStrategyBuild
         })
       });
       const data = (await response.json()) as { id?: string; error?: string };
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to create project");
+        throw new Error(data.error ?? t("newProject.createFailed"));
       }
-      showToast("Project created.", "success");
+      showToast(t("newProject.projectCreated"), "success");
       finishCreate(data.id);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to create project", "error");
+      showToast(error instanceof Error ? error.message : t("newProject.createFailed"), "error");
     } finally {
       setManualCreateLoading(false);
     }
@@ -599,121 +691,152 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const buildOptionsCard = (
     <Card className="dashboard-surface border-border/80 shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Build &amp; preview</CardTitle>
-        <CardDescription>
-          Auto uses the GitHub scan below. Pick a preset only when detection is wrong.
-        </CardDescription>
+        <CardTitle className="text-base">{t("newProject.buildPreviewTitle")}</CardTitle>
+        <CardDescription>{t("newProject.buildPreviewCardDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {createMode === "import" && hasRepoAccess && selectedRepo && branch.trim() && !repoHintsLoading && repoHints ? (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="text-foreground font-medium">GitHub scan</span>
-            {repoHints.primaryFramework ? (
-              <>
-                <FrameworkLogoThumb fw={repoHints.primaryFramework} title={repoHints.primaryFramework.name} />
-                <span className="text-foreground">{repoHints.primaryFramework.name}</span>
-                {repoHints.primaryFramework.detectedVersion ? (
-                  <Badge variant="secondary" className="font-mono text-[10px]">
-                    {repoHints.primaryFramework.detectedVersion}
-                  </Badge>
-                ) : null}
-                <span className="text-muted-foreground">suggested {repoHints.suggestedFrameworkHint}</span>
-              </>
-            ) : repoHints.packageJsonFound ? (
-              <span>No Vercel-style preset match; try another project root or set Framework manually.</span>
-            ) : (
-              <span>No package.json at this path.</span>
-            )}
-          </div>
-        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-framework-hint">Framework hint</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-framework-hint">{t("newProject.frameworkHint")}</Label>
             <Select
               value={frameworkHint}
               onValueChange={(value) => setFrameworkHint(value as "auto" | "nextjs" | "node" | "python" | "static")}
             >
-              <SelectTrigger id="np-framework-hint" aria-label="Framework hint">
-                <SelectValue />
+              <SelectTrigger
+                id="np-framework-hint"
+                aria-describedby="np-framework-hint-help"
+                aria-label={t("newProject.frameworkHintAria")}
+                className="gap-2"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  {createMode === "import" && repoHintsLoading ? (
+                    <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" aria-hidden />
+                  ) : createMode === "import" && repoHints?.primaryFramework ? (
+                    <FrameworkLogoThumb
+                      fw={repoHints.primaryFramework}
+                      title={repoHints.primaryFramework.name}
+                      pixelSize={20}
+                    />
+                  ) : null}
+                  <SelectValue />
+                </div>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto (from scan)</SelectItem>
+                <SelectItem value="auto">{t("newProject.selectAutoScan")}</SelectItem>
                 <SelectItem value="nextjs">Next.js</SelectItem>
-                <SelectItem value="node">Node</SelectItem>
-                <SelectItem value="python">Python</SelectItem>
-                <SelectItem value="static">Static</SelectItem>
+                <SelectItem value="node">{t("projects.framework.node")}</SelectItem>
+                <SelectItem value="python">{t("projects.framework.python")}</SelectItem>
+                <SelectItem value="static">{t("projects.framework.static")}</SelectItem>
               </SelectContent>
             </Select>
+            <p id="np-framework-hint-help" className="text-xs text-muted-foreground">
+              {t("newProject.frameworkHintHelp")}
+            </p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-preview-mode">Preview</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-preview-mode">{t("newProject.preview")}</Label>
             <Select value={previewMode} onValueChange={(value) => setPreviewMode(value as "auto" | "static" | "server")}>
-              <SelectTrigger id="np-preview-mode" aria-label="Preview type">
-                <SelectValue />
+              <SelectTrigger
+                id="np-preview-mode"
+                aria-describedby="np-preview-mode-help"
+                aria-label={t("newProject.previewAria")}
+                className="gap-2"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  {createMode === "import" && repoHintsLoading ? (
+                    <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" aria-hidden />
+                  ) : null}
+                  <SelectValue />
+                </div>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto (from scan)</SelectItem>
-                <SelectItem value="static">Static</SelectItem>
-                <SelectItem value="server">Server</SelectItem>
+                <SelectItem value="auto">{t("newProject.selectAutoScan")}</SelectItem>
+                <SelectItem value="static">{t("newProject.previewModeStatic")}</SelectItem>
+                <SelectItem value="server">{t("newProject.previewModeServer")}</SelectItem>
               </SelectContent>
             </Select>
+            <p id="np-preview-mode-help" className="text-xs text-muted-foreground">
+              {t("newProject.previewHelp")}
+            </p>
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-server-target">Server preview target</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-server-target">{t("newProject.serverPreviewTarget")}</Label>
             <Select
               value={serverPreviewTarget}
               onValueChange={(value) => setServerPreviewTarget(value as "isolated-runner")}
             >
-              <SelectTrigger id="np-server-target" aria-label="Server preview target">
+              <SelectTrigger
+                id="np-server-target"
+                aria-describedby="np-server-target-help"
+                aria-label={t("newProject.serverPreviewTarget")}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="isolated-runner">Isolated runner</SelectItem>
+                <SelectItem value="isolated-runner">{t("newProject.isolatedRunner")}</SelectItem>
               </SelectContent>
             </Select>
+            <p id="np-server-target-help" className="text-xs text-muted-foreground">
+              {t("newProject.serverPreviewTargetHelp")}
+            </p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-runtime-image-mode">Runtime image mode</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-runtime-image-mode">{t("newProject.runtimeImageMode")}</Label>
             <Select
               value={runtimeImageMode}
               onValueChange={(value) => setRuntimeImageMode(value as "auto" | "platform" | "dockerfile")}
             >
-              <SelectTrigger id="np-runtime-image-mode" aria-label="Runtime image mode">
+              <SelectTrigger
+                id="np-runtime-image-mode"
+                aria-describedby="np-runtime-image-mode-help"
+                aria-label={t("newProject.runtimeImageMode")}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto (match project)</SelectItem>
-                <SelectItem value="platform">Platform image</SelectItem>
-                <SelectItem value="dockerfile">Repo Dockerfile</SelectItem>
+                <SelectItem value="auto">{t("newProject.selectAutoProject")}</SelectItem>
+                <SelectItem value="platform">{t("newProject.platformImage")}</SelectItem>
+                <SelectItem value="dockerfile">{t("newProject.repoDockerfile")}</SelectItem>
               </SelectContent>
             </Select>
+            <p id="np-runtime-image-mode-help" className="text-xs text-muted-foreground">
+              {t("newProject.runtimeImageModeHelp")}
+            </p>
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-dockerfile-path">Dockerfile path</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-dockerfile-path">{t("newProject.dockerfilePath")}</Label>
             <Input
               id="np-dockerfile-path"
               value={dockerfilePath}
               onChange={(event) => setDockerfilePath(event.target.value)}
-              placeholder="Dockerfile"
+              placeholder={t("newProject.dockerfilePlaceholder")}
+              aria-describedby="np-dockerfile-path-help"
             />
+            <p id="np-dockerfile-path-help" className="text-xs text-muted-foreground">
+              {t("newProject.dockerfilePathHelp")}
+            </p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-docker-target">Docker target</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-docker-target">{t("newProject.dockerTarget")}</Label>
             <Input
               id="np-docker-target"
               value={dockerBuildTarget}
               onChange={(event) => setDockerBuildTarget(event.target.value)}
-              placeholder="runner"
+              placeholder={t("newProject.dockerTargetPlaceholder")}
+              aria-describedby="np-docker-target-help"
             />
+            <p id="np-docker-target-help" className="text-xs text-muted-foreground">
+              {t("newProject.dockerTargetHelp")}
+            </p>
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-runtime-port">Runtime port</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-runtime-port">{t("newProject.runtimePort")}</Label>
             <Input
               id="np-runtime-port"
               type="number"
@@ -721,27 +844,36 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
               max={65535}
               value={runtimeContainerPort}
               onChange={(event) => setRuntimeContainerPort(event.target.value)}
+              aria-describedby="np-runtime-port-help"
             />
+            <p id="np-runtime-port-help" className="text-xs text-muted-foreground">
+              {t("newProject.runtimePortHelp")}
+            </p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-host-build">Build path</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-host-build">{t("newProject.hostBuild")}</Label>
             <Select
               value={skipHostStrategyBuild ? "skip" : "build"}
               onValueChange={(value) => setSkipHostStrategyBuild(value === "skip")}
             >
-              <SelectTrigger id="np-host-build" aria-label="Build path">
+              <SelectTrigger
+                id="np-host-build"
+                aria-describedby="np-host-build-help"
+                aria-label={t("newProject.hostBuild")}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="build">Run host build</SelectItem>
-                <SelectItem value="skip">Dockerfile only</SelectItem>
+                <SelectItem value="build">{t("newProject.runHostBuild")}</SelectItem>
+                <SelectItem value="skip">{t("newProject.dockerfileOnly")}</SelectItem>
               </SelectContent>
             </Select>
+            <p id="np-host-build-help" className="text-xs text-muted-foreground">
+              {t("newProject.hostBuildHelp")}
+            </p>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Workspace root = install context; project root = app. Dockerfile-only skips host build (server previews).
-        </p>
+        <p className="text-xs text-muted-foreground">{t("newProject.workspaceRootHint")}</p>
       </CardContent>
     </Card>
   );
@@ -753,8 +885,8 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
       <div className="min-w-0 space-y-6">
         <Tabs value={createMode} onValueChange={(value) => setCreateMode(value as "import" | "manual")}>
           <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="import">From GitHub</TabsTrigger>
-            <TabsTrigger value="manual">Manual URL</TabsTrigger>
+            <TabsTrigger value="import">{t("newProject.tabImport")}</TabsTrigger>
+            <TabsTrigger value="manual">{t("newProject.tabManual")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="import" className="mt-6 space-y-6 outline-none">
@@ -768,15 +900,17 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
               <Card className="dashboard-surface border-border/80 shadow-sm">
                 <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-3">
                   <div className="min-w-0 space-y-1">
-                    <CardTitle className="text-base">Repository</CardTitle>
+                    <CardTitle className="text-base">{t("newProject.repoCardTitle")}</CardTitle>
                     <CardDescription>
-                      {hasRepoAccess
-                        ? "Choose a repo, then a branch. Icons show the GitHub scan for the selected row."
-                        : "Link GitHub with repo scope to list repositories."}
+                      {hasRepoAccess ? t("newProject.repoCardDescAccess") : t("newProject.repoCardDescNoAccess")}
                     </CardDescription>
                   </div>
                   <Badge variant={hasRepoAccess ? "default" : "secondary"} className="shrink-0 text-xs">
-                    {hasRepoAccess ? "GitHub ready" : githubLinked ? "Scope needed" : "No GitHub"}
+                    {hasRepoAccess
+                      ? t("newProject.badgeGithubReady")
+                      : githubLinked
+                        ? t("newProject.badgeScopeNeeded")
+                        : t("newProject.badgeNoGithub")}
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -790,36 +924,36 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                       onClick={() => void handleGitHubConnect()}
                     >
                       <GitHubMark className="size-4" />
-                      {connectLoading ? "Redirecting…" : "Connect GitHub"}
+                      {connectLoading ? t("newProject.redirecting") : t("newProject.connectGitHub")}
                     </Button>
                   ) : null}
 
                   {hasRepoAccess ? (
                     <>
                       <div className="space-y-2">
-                        <Label htmlFor="np-repo-search">Find a repository</Label>
+                        <Label htmlFor="np-repo-search">{t("newProject.findRepo")}</Label>
                         <Input
                           id="np-repo-search"
                           type="search"
                           autoComplete="off"
                           spellCheck={false}
-                          placeholder="Filter by owner or name…"
+                          placeholder={t("newProject.filterPlaceholder")}
                           value={filter}
                           onChange={(event) => setFilter(event.target.value)}
-                          aria-label="Filter GitHub repositories"
+                          aria-label={t("newProject.filterReposAria")}
                         />
                       </div>
 
                       <div className="rounded-lg border border-border/80 bg-muted/5">
                         {repoLoading ? (
-                          <p className="p-6 text-center text-sm text-muted-foreground">Loading repositories…</p>
+                          <p className="p-6 text-center text-sm text-muted-foreground">{t("newProject.loadingRepos")}</p>
                         ) : null}
                         {repoError ? (
                           <p className="p-4 text-center text-sm text-destructive">{repoError}</p>
                         ) : null}
                         {!repoLoading && !repoError && filteredRepos.length === 0 ? (
                           <p className="p-6 text-center text-sm text-muted-foreground">
-                            No repositories match your search.
+                            {t("newProject.noRepoMatchSearch")}
                           </p>
                         ) : null}
                         {filteredRepos.length > 0 ? (
@@ -828,7 +962,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                               value={selectedRepo?.fullName}
                               onValueChange={handleRepoRadioChange}
                               className="gap-0"
-                              aria-label="GitHub repositories"
+                              aria-label={t("newProject.reposGroupAria")}
                             >
                               {ownerKeys.map((owner) => (
                                 <OwnerRepoGroup
@@ -853,11 +987,11 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
                       <div className="flex flex-col gap-1.5">
                         <Label htmlFor="np-branch-deploy">
-                          Branch to deploy
+                          {t("newProject.branchDeploy")}
                           {selectedRepo ? <span className="text-destructive"> *</span> : null}
                         </Label>
                         {branchesLoading ? (
-                          <p className="text-sm text-muted-foreground">Loading branches…</p>
+                          <p className="text-sm text-muted-foreground">{t("newProject.loadingBranches")}</p>
                         ) : (
                           <Select
                             value={branch || undefined}
@@ -867,11 +1001,15 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                           >
                             <SelectTrigger
                               id="np-branch-deploy"
-                              aria-label="Branch to deploy"
+                              aria-label={t("newProject.branchDeploy")}
                               aria-required={Boolean(selectedRepo)}
                             >
                               <SelectValue
-                                placeholder={selectedRepo ? "Select branch" : "Select a repository first"}
+                                placeholder={
+                                  selectedRepo
+                                    ? t("newProject.selectBranchPlaceholder")
+                                    : t("newProject.selectRepoFirstPlaceholder")
+                                }
                               />
                             </SelectTrigger>
                             <SelectContent>
@@ -886,21 +1024,21 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                         {branchesError ? <p className="text-sm text-destructive">{branchesError}</p> : null}
                       </div>
 
-                      {selectedRepo && branch.trim() && repoHints && !repoHintsLoading ? (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={handleApplyRepoHints}>
-                              Use scanned framework &amp; preview
-                            </Button>
-                          </div>
-                          {repoHints.warnings.length > 0 ? (
-                            <ul className="text-muted-foreground list-inside list-disc space-y-1 text-xs">
-                              {repoHints.warnings.map((w) => (
-                                <li key={w}>{w}</li>
-                              ))}
-                            </ul>
-                          ) : null}
-                        </div>
+                      {selectedRepo && refForHints && repoHintsError ? (
+                        <p className="text-destructive text-sm" role="alert">
+                          {repoHintsError}
+                        </p>
+                      ) : null}
+                      {selectedRepo &&
+                      refForHints &&
+                      repoHints &&
+                      !repoHintsLoading &&
+                      repoHints.warnings.length > 0 ? (
+                        <ul className="text-muted-foreground list-inside list-disc space-y-1 text-xs">
+                          {repoHints.warnings.map((w) => (
+                            <li key={w}>{w}</li>
+                          ))}
+                        </ul>
                       ) : null}
                     </>
                   ) : null}
@@ -909,35 +1047,63 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
               <Card className="dashboard-surface border-border/80 shadow-sm">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Monorepo paths</CardTitle>
-                  <CardDescription>Lockfiles vs app folder (use . for single-package repos).</CardDescription>
+                  <CardTitle className="text-base">{t("newProject.monorepoTitle")}</CardTitle>
+                  <CardDescription>{t("newProject.monorepoDesc")}</CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-2">
+                <CardContent className="space-y-4">
+                  {selectedRepo && refForHints ? (
+                    (() => {
+                      const slash = selectedRepo.fullName.indexOf("/");
+                      if (slash === -1) return null;
+                      const ghOwner = selectedRepo.fullName.slice(0, slash);
+                      const ghRepo = selectedRepo.fullName.slice(slash + 1);
+                      if (!ghOwner || !ghRepo) return null;
+                      return (
+                        <NewProjectPathExplorer
+                          owner={ghOwner}
+                          repo={ghRepo}
+                          ref={refForHints}
+                          workspaceRootDir={workspaceRootDir}
+                          projectRootDir={projectRootDir}
+                          onWorkspaceRootChange={setWorkspaceRootDir}
+                          onProjectRootChange={setProjectRootDir}
+                        />
+                      );
+                    })()
+                  ) : (
+                    <p className="text-muted-foreground rounded-lg border border-dashed border-border/80 bg-muted/10 px-3 py-4 text-center text-sm">
+                      {t("newProject.pathExplorer.needRepoBranch")}
+                    </p>
+                  )}
+                  <div className="grid gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="np-workspace-root">
-                      Workspace root<span className="text-destructive"> *</span>
+                      {t("newProject.workspaceRootLabel")}
+                      <span className="text-destructive"> *</span>
                     </Label>
                     <Input
                       id="np-workspace-root"
                       value={workspaceRootDir}
                       onChange={(event) => setWorkspaceRootDir(event.target.value)}
-                      placeholder="."
+                      placeholder={t("newProject.placeholderRoot")}
                       required
-                      aria-label="Workspace root"
+                      aria-label={t("newProject.workspaceRootLabel")}
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="np-project-root">
-                      Project root<span className="text-destructive"> *</span>
+                      {t("newProject.projectRootLabel")}
+                      <span className="text-destructive"> *</span>
                     </Label>
                     <Input
                       id="np-project-root"
                       value={projectRootDir}
                       onChange={(event) => setProjectRootDir(event.target.value)}
-                      placeholder="."
+                      placeholder={t("newProject.placeholderRoot")}
                       required
-                      aria-label="Project root"
+                      aria-label={t("newProject.projectRootLabel")}
                     />
+                  </div>
                   </div>
                 </CardContent>
               </Card>
@@ -946,15 +1112,15 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
               <div className="border-border bg-card/80 flex flex-col gap-3 rounded-xl border p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
                 <Button type="button" variant="ghost" asChild className="justify-center sm:justify-start">
-                  <a href="/projects">Cancel</a>
+                  <Link to="/projects">{t("common.cancel")}</Link>
                 </Button>
                 <Button
                   type="submit"
                   size="lg"
                   className="gap-2 shadow-md"
-                  disabled={!selectedRepo || !branch.trim() || createLoading}
+                  disabled={!importCanSubmit || createLoading}
                 >
-                  {createLoading ? "Creating…" : "Create project"}
+                  {createLoading ? t("newProject.creating") : t("newProject.createProjectButton")}
                 </Button>
               </div>
             </form>
@@ -963,29 +1129,31 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
             <TabsContent value="manual" className="mt-6 space-y-6 outline-none">
               <Card className="dashboard-surface border-border/80 shadow-sm">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Repository details</CardTitle>
-                  <CardDescription>Use any GitHub URL you can push to. Branch must exist on the remote.</CardDescription>
+                  <CardTitle className="text-base">{t("newProject.manualRepoTitle")}</CardTitle>
+                  <CardDescription>{t("newProject.manualRepoDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form className="flex flex-col gap-4" onSubmit={(event) => void handleManualCreate(event)}>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="flex flex-col gap-1.5 sm:col-span-2">
                         <Label htmlFor="np-project-name">
-                          Project name<span className="text-destructive"> *</span>
+                          {t("newProject.projectNameLabel")}
+                          <span className="text-destructive"> *</span>
                         </Label>
                         <Input
                           id="np-project-name"
                           autoComplete="off"
-                          placeholder="my-app"
+                          placeholder={t("newProject.placeholderProjectName")}
                           value={manualName}
                           onChange={(event) => setManualName(event.target.value)}
                           required
-                          aria-label="Project name"
+                          aria-label={t("newProject.projectNameLabel")}
                         />
                       </div>
                       <div className="flex flex-col gap-1.5 sm:col-span-2">
                         <Label htmlFor="np-repo-url">
-                          Repository URL<span className="text-destructive"> *</span>
+                          {t("newProject.repositoryUrlLabel")}
+                          <span className="text-destructive"> *</span>
                         </Label>
                         <Input
                           id="np-repo-url"
@@ -993,26 +1161,27 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                           autoComplete="off"
                           inputMode="url"
                           spellCheck={false}
-                          placeholder="https://github.com/owner/repo"
+                          placeholder={t("newProject.placeholderRepoUrl")}
                           value={manualRepoUrl}
                           onChange={(event) => setManualRepoUrl(event.target.value)}
                           required
-                          aria-label="GitHub repository URL"
+                          aria-label={t("newProject.repositoryUrlLabel")}
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
                         <Label htmlFor="np-manual-branch">
-                          Branch<span className="text-destructive"> *</span>
+                          {t("newProject.branchLabel")}
+                          <span className="text-destructive"> *</span>
                         </Label>
                         <Input
                           id="np-manual-branch"
                           autoComplete="off"
                           spellCheck={false}
-                          placeholder="main"
+                          placeholder={t("newProject.placeholderBranch")}
                           value={manualBranch}
                           onChange={(event) => setManualBranch(event.target.value)}
                           required
-                          aria-label="Branch to deploy"
+                          aria-label={t("newProject.branchDeploy")}
                         />
                       </div>
                     </div>
@@ -1022,40 +1191,42 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="flex flex-col gap-1.5">
                         <Label htmlFor="np-manual-workspace-root">
-                          Workspace root<span className="text-destructive"> *</span>
+                          {t("newProject.workspaceRootLabel")}
+                          <span className="text-destructive"> *</span>
                         </Label>
                         <Input
                           id="np-manual-workspace-root"
                           autoComplete="off"
                           spellCheck={false}
-                          placeholder="."
+                          placeholder={t("newProject.placeholderRoot")}
                           value={workspaceRootDir}
                           onChange={(event) => setWorkspaceRootDir(event.target.value)}
                           required
-                          aria-label="Workspace root"
+                          aria-label={t("newProject.workspaceRootLabel")}
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
                         <Label htmlFor="np-manual-project-root">
-                          Project root<span className="text-destructive"> *</span>
+                          {t("newProject.projectRootLabel")}
+                          <span className="text-destructive"> *</span>
                         </Label>
                         <Input
                           id="np-manual-project-root"
                           autoComplete="off"
                           spellCheck={false}
-                          placeholder="."
+                          placeholder={t("newProject.placeholderRoot")}
                           value={projectRootDir}
                           onChange={(event) => setProjectRootDir(event.target.value)}
                           required
-                          aria-label="Project root"
+                          aria-label={t("newProject.projectRootLabel")}
                         />
                       </div>
                     </div>
 
                     {buildOptionsCard}
 
-                    <Button type="submit" disabled={manualCreateLoading} className="w-full sm:w-auto">
-                      {manualCreateLoading ? "Creating…" : "Create project"}
+                    <Button type="submit" disabled={!manualCanSubmit || manualCreateLoading} className="w-full sm:w-auto">
+                      {manualCreateLoading ? t("newProject.creating") : t("newProject.createProjectButton")}
                     </Button>
                   </form>
                 </CardContent>

@@ -1,6 +1,8 @@
 import * as React from "react";
 import type { ReactNode } from "react";
-import { AlertCircle, Loader2, RotateCcw } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { AlertCircle, Loader2, RotateCcw, Server } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,65 +15,27 @@ import { fetchWithCsrf } from "./fetchWithCsrf";
 
 type Deployment = DeploymentDetailData["deployment"];
 
-const PLACEHOLDERS = [
-  "Loading logs...\n",
-  "Connecting to build log stream...\n",
-  "Connecting...\n",
-  "Build queued. Logs will appear when a worker picks up the job.\n",
-  "Streaming build logs...\n"
-];
-
-const isPlaceholder = (text: string): boolean =>
-  PLACEHOLDERS.some((p) => text === p || text.startsWith(p.trim()));
-
-const initialLogText = (d: Deployment): string => {
-  if (d.status === "queued") return "Build queued. Logs will appear when a worker picks up the job.\n";
-  if (d.status === "building") return "Streaming build logs...\n";
-  const active = d.status === "queued" || d.status === "building";
-  if (!active && d.buildLogKey) return "Loading logs...\n";
-  if (!active) return "No logs available yet.\n";
-  return "Connecting...\n";
-};
-
-const previewModeLabel = (mode: Deployment["buildPreviewMode"]): string => {
-  if (mode === "auto") return "Auto-detect";
-  return mode ?? "—";
-};
-
-const serverTargetLabel = (target: Deployment["buildServerPreviewTarget"]): string => {
-  if (target === "isolated-runner") return "Isolated runner";
-  return "—";
-};
-
-const formatDuration = (startIso: string, endIso: string | null): string => {
-  if (!endIso) return "—";
-  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
-  if (ms < 0) return "—";
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const rs = s % 60;
-  if (m > 0) return `${m}m ${rs}s`;
-  return `${rs}s`;
-};
-
-const formatDetailTimestamp = (iso: string): string => {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  });
-};
-
-const statusBadgeLabel = (status: string): string => {
-  const s = status.toLowerCase();
-  if (s === "building") return "Building";
-  if (s === "queued") return "Queued";
-  if (s === "success") return "Live";
-  if (s === "failed") return "Build failed";
-  return status;
-};
+const MetaRow = ({
+  k,
+  children,
+  mono
+}: {
+  k: string;
+  children: ReactNode;
+  mono?: boolean;
+}): React.ReactElement => (
+  <div className="flex items-start justify-between gap-3 border-b border-border/50 py-2.5 last:border-b-0">
+    <span className="text-xs text-muted-foreground">{k}</span>
+    <span
+      className={cn(
+        "max-w-[58%] text-right text-xs font-medium text-foreground",
+        mono && "font-mono text-[0.65rem] leading-snug"
+      )}
+    >
+      {children}
+    </span>
+  </div>
+);
 
 const statusBadgePresentation = (
   status: string
@@ -107,68 +71,84 @@ const statusBadgePresentation = (
   return { variant: "secondary" };
 };
 
-const MetaRow = ({
-  k,
-  children,
-  mono
-}: {
-  k: string;
-  children: ReactNode;
-  mono?: boolean;
-}): React.ReactElement => (
-  <div className="flex items-start justify-between gap-3 border-b border-border/50 py-2.5 last:border-b-0">
-    <span className="text-xs text-muted-foreground">{k}</span>
-    <span
-      className={cn(
-        "max-w-[58%] text-right text-xs font-medium text-foreground",
-        mono && "font-mono text-[0.65rem] leading-snug"
-      )}
-    >
-      {children}
-    </span>
-  </div>
-);
-
-const DeploymentPipeline = ({ status }: { status: string }): React.ReactElement => (
-  <div
-    id="deployment-pipeline"
-    className="flex w-full min-w-0 items-start"
-    role="list"
-    aria-label="Build pipeline"
-    dangerouslySetInnerHTML={{ __html: buildDeploymentPipelineHtml(status) }}
-  />
-);
-
-const StreamIndicator = ({
-  streamState
-}: {
-  streamState: "live" | "reconnecting" | "saved";
-}): React.ReactElement => {
-  const label =
-    streamState === "live" ? "Live stream" : streamState === "reconnecting" ? "Reconnecting" : "Saved log";
-  const dotClass =
-    streamState === "live"
-      ? "bg-emerald-500"
-      : streamState === "reconnecting"
-        ? "bg-amber-500"
-        : "bg-slate-500";
-  return (
-    <>
-      <span className={cn("inline-block h-2 w-2 rounded-full", dotClass)} aria-hidden />
-      <span>{label}</span>
-    </>
-  );
-};
-
 export const DeploymentDetailPageClient = ({
   initialData
 }: {
   initialData: DeploymentDetailData;
 }): React.ReactElement => {
+  const { t, i18n } = useTranslation();
   const data = initialData;
   const deploymentId = data.deployment.id;
   const previewUrlFallback = data.deployment.previewUrl ?? "";
   const deploymentAtMountRef = React.useRef(initialData.deployment);
+
+  const logPlaceholders = React.useMemo(
+    () => [
+      t("deployment.logLoading"),
+      t("deployment.logConnectingStream"),
+      t("deployment.logConnecting"),
+      t("deployment.logQueued"),
+      t("deployment.logStreaming")
+    ],
+    [t]
+  );
+
+  const isPlaceholder = React.useCallback(
+    (text: string): boolean =>
+      logPlaceholders.some((p) => text === p || text.startsWith(p.trim())),
+    [logPlaceholders]
+  );
+
+  const initialLogText = React.useCallback((d: Deployment): string => {
+    if (d.status === "queued") return t("deployment.logQueued");
+    if (d.status === "building") return t("deployment.logStreaming");
+    const active = d.status === "queued" || d.status === "building";
+    if (!active && d.buildLogKey) return t("deployment.logLoading");
+    if (!active) return t("deployment.logNoneYet");
+    return t("deployment.logConnecting");
+  }, [t]);
+
+  const previewModeLabel = (mode: Deployment["buildPreviewMode"]): string => {
+    if (mode === "auto") return t("deployment.previewMode.auto");
+    if (mode === "static") return t("deployment.previewMode.static");
+    if (mode === "server") return t("deployment.previewMode.server");
+    return t("common.emDash");
+  };
+
+  const serverTargetLabel = (target: Deployment["buildServerPreviewTarget"]): string => {
+    if (target === "isolated-runner") return t("deployment.serverTarget.isolated");
+    return t("common.emDash");
+  };
+
+  const formatDuration = (startIso: string, endIso: string | null): string => {
+    if (!endIso) return t("common.emDash");
+    const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+    if (ms < 0) return t("common.emDash");
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    if (m > 0) return `${m}m ${rs}s`;
+    return `${rs}s`;
+  };
+
+  const formatDetailTimestamp = (iso: string): string => {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  };
+
+  const statusBadgeLabel = (status: string): string => {
+    const s = status.toLowerCase();
+    if (s === "building") return t("deployment.status.building");
+    if (s === "queued") return t("deployment.status.queued");
+    if (s === "success") return t("deployment.status.success");
+    if (s === "failed") return t("deployment.status.failed");
+    return status;
+  };
 
   const [status, setStatus] = React.useState(data.deployment.status);
   const [logText, setLogText] = React.useState(() => initialLogText(data.deployment));
@@ -183,6 +163,19 @@ export const DeploymentDetailPageClient = ({
   const [showFinishedRow, setShowFinishedRow] = React.useState(Boolean(data.deployment.finishedAt));
   const [cancelBusy, setCancelBusy] = React.useState(false);
   const [promoteBusy, setPromoteBusy] = React.useState(false);
+  const [ensurePreviewBusy, setEnsurePreviewBusy] = React.useState(false);
+
+  const statusRef = React.useRef(status);
+  React.useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  React.useEffect(() => {
+    setLogText((prev) => {
+      if (!isPlaceholder(prev)) return prev;
+      return initialLogText({ ...data.deployment, status: statusRef.current });
+    });
+  }, [i18n.language, data.deployment, initialLogText, isPlaceholder]);
 
   const logPreRef = React.useRef<HTMLPreElement>(null);
   const logPendingRef = React.useRef("");
@@ -205,6 +198,20 @@ export const DeploymentDetailPageClient = ({
         data.deployment.previewResolution?.code ??
         null)
     : null;
+
+  const streamLabel =
+    streamState === "live"
+      ? t("deployment.stream.live")
+      : streamState === "reconnecting"
+        ? t("deployment.stream.reconnecting")
+        : t("deployment.stream.saved");
+
+  const streamDotClass =
+    streamState === "live"
+      ? "bg-emerald-500"
+      : streamState === "reconnecting"
+        ? "bg-amber-500"
+        : "bg-slate-500";
 
   React.useEffect(() => {
     let eventSource: EventSource | null = null;
@@ -283,8 +290,8 @@ export const DeploymentDetailPageClient = ({
     const setWaitingMessage = (s: string): void => {
       setLogText((prev) => {
         if (!isPlaceholder(prev)) return prev;
-        if (s === "queued") return "Build queued. Logs will appear when a worker picks up the job.\n";
-        if (s === "building") return "Streaming build logs...\n";
+        if (s === "queued") return t("deployment.logQueued");
+        if (s === "building") return t("deployment.logStreaming");
         return prev;
       });
     };
@@ -307,12 +314,12 @@ export const DeploymentDetailPageClient = ({
           credentials: "same-origin"
         });
         if (!response.ok) {
-          setLogText((prev) => (isPlaceholder(prev) ? "No log output.\n" : prev));
+          setLogText((prev) => (isPlaceholder(prev) ? t("deployment.logNoOutput") : prev));
           return;
         }
         const fullLog = await response.text();
         if (!fullLog.trim()) {
-          setLogText((prev) => (isPlaceholder(prev) ? "No log output.\n" : prev));
+          setLogText((prev) => (isPlaceholder(prev) ? t("deployment.logNoOutput") : prev));
           return;
         }
         const normalized = fullLog.endsWith("\n") ? fullLog : `${fullLog}\n`;
@@ -322,7 +329,7 @@ export const DeploymentDetailPageClient = ({
         });
         setStreamState("saved");
       } catch {
-        setLogText((prev) => (isPlaceholder(prev) ? "No log output.\n" : prev));
+        setLogText((prev) => (isPlaceholder(prev) ? t("deployment.logNoOutput") : prev));
       }
     };
 
@@ -376,7 +383,7 @@ export const DeploymentDetailPageClient = ({
             void loadFinalLog();
           } else if (payload.type === "error" && payload.content !== undefined) {
             flushLogPending();
-            appendLog("\n[ERROR] " + payload.content + "\n");
+            appendLog("\n" + t("deployment.placeholderError") + payload.content + "\n");
             flushLogPending();
             es.close();
             eventSource = null;
@@ -419,10 +426,11 @@ export const DeploymentDetailPageClient = ({
     const active = initial === "queued" || initial === "building";
     const terminal = initial === "success" || initial === "failed";
     const startLog = initialLogText(dep);
+    const loadingSnapshot = startLog === t("deployment.logLoading");
 
     if (active) {
       connectSSE();
-    } else if (terminal || startLog.startsWith("Loading logs")) {
+    } else if (terminal || loadingSnapshot) {
       void loadFinalLog();
     }
 
@@ -437,7 +445,7 @@ export const DeploymentDetailPageClient = ({
         logFlushRafRef.current = 0;
       }
     };
-  }, [deploymentId, previewUrlFallback]);
+  }, [deploymentId, previewUrlFallback, initialLogText, isPlaceholder, t]);
 
   const flushForCancel = (): void => {
     if (logFlushRafRef.current !== 0) {
@@ -461,27 +469,49 @@ export const DeploymentDetailPageClient = ({
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to set current deployment");
+        throw new Error(payload.error ?? t("deployment.setCurrentFailed"));
       }
       window.location.reload();
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to set current deployment");
+      window.alert(error instanceof Error ? error.message : t("deployment.setCurrentFailed"));
     } finally {
       setPromoteBusy(false);
     }
   };
 
+  const handleEnsurePreview = async (): Promise<void> => {
+    if (ensurePreviewBusy) return;
+    setEnsurePreviewBusy(true);
+    try {
+      const response = await fetchWithCsrf(`/api/deployments/${deploymentId}/ensure-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? t("deployment.startPreviewContainerFailed"));
+      }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : t("deployment.startPreviewContainerFailed"));
+    } finally {
+      setEnsurePreviewBusy(false);
+    }
+  };
+
   const handleCancel = async (): Promise<void> => {
-    if (!window.confirm("Cancel this build?")) return;
+    if (!window.confirm(t("deployment.cancelBuild"))) return;
     setCancelBusy(true);
     try {
       const response = await fetchWithCsrf(`/deployments/${deploymentId}/cancel`, {
         method: "POST"
       });
       if (!response.ok) {
-        throw new Error("Failed to cancel deployment");
+        throw new Error(t("deployment.cancelFailed"));
       }
-      const line = `\n[${new Date().toISOString()}] Cancellation requested.\n`;
+      const line = t("deployment.cancellationRequested", {
+        time: new Date().toISOString()
+      });
       logPendingRef.current += line;
       flushForCancel();
       setStatus("failed");
@@ -492,11 +522,18 @@ export const DeploymentDetailPageClient = ({
       setShowFinishedRow(true);
     } catch (error) {
       console.error(error);
-      window.alert(error instanceof Error ? error.message : "Failed to cancel deployment");
+      window.alert(error instanceof Error ? error.message : t("deployment.cancelFailed"));
     } finally {
       setCancelBusy(false);
     }
   };
+
+  const resolvedStrategyLabel =
+    data.deployment.serveStrategy === "static"
+      ? t("deployment.previewMode.static")
+      : data.deployment.serveStrategy === "server"
+        ? t("deployment.previewMode.server")
+        : data.deployment.serveStrategy;
 
   return (
     <div className="space-y-6">
@@ -526,7 +563,7 @@ export const DeploymentDetailPageClient = ({
             {isActive ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin text-amber-200/90" aria-hidden />
-                <span>Streaming logs…</span>
+                <span>{t("deployment.streamingLogs")}</span>
               </div>
             ) : null}
           </div>
@@ -534,7 +571,7 @@ export const DeploymentDetailPageClient = ({
             {data.project.name}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Deployment{" "}
+            {t("deployment.deploymentLabel")}{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
               {data.deployment.shortId}
             </code>
@@ -542,13 +579,13 @@ export const DeploymentDetailPageClient = ({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" asChild>
-            <a href={`/projects/${data.project.id}`}>View project</a>
+            <Link to={`/projects/${data.project.id}`}>{t("deployment.viewProject")}</Link>
           </Button>
           <Button variant="secondary" size="sm" className="gap-1.5" asChild>
-            <a href={`/projects/${data.project.id}`}>
+            <Link to={`/projects/${data.project.id}`}>
               <RotateCcw className="size-3.5" aria-hidden />
-              Redeploy
-            </a>
+              {t("deployment.redeploy")}
+            </Link>
           </Button>
           {isActive ? (
             <Button
@@ -558,14 +595,33 @@ export const DeploymentDetailPageClient = ({
               disabled={cancelBusy}
               onClick={() => void handleCancel()}
             >
-              Cancel build
+              {t("deployment.cancelBuildBtn")}
             </Button>
           ) : null}
           {previewHref ? (
             <Button size="sm" asChild>
               <a href={previewHref} target="_blank" rel="noopener noreferrer">
-                Visit preview
+                {t("deployment.visitPreview")}
               </a>
+            </Button>
+          ) : null}
+          {isSuccess && data.previewEnsureAvailable ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={ensurePreviewBusy}
+              aria-busy={ensurePreviewBusy}
+              aria-label={t("deployment.startPreviewContainerAria")}
+              onClick={() => void handleEnsurePreview()}
+            >
+              {ensurePreviewBusy ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Server className="size-3.5" aria-hidden />
+              )}
+              {ensurePreviewBusy ? t("deployment.startPreviewContainerBusy") : t("deployment.startPreviewContainer")}
             </Button>
           ) : null}
           {isSuccess && data.deployment.id !== data.project.currentDeploymentId ? (
@@ -576,11 +632,11 @@ export const DeploymentDetailPageClient = ({
               disabled={promoteBusy}
               onClick={() => void handleSetAsProjectCurrent()}
             >
-              Set as project current
+              {t("deployment.setAsProjectCurrent")}
             </Button>
           ) : null}
           {isSuccess && data.deployment.id === data.project.currentDeploymentId ? (
-            <span className="text-xs text-muted-foreground self-center">Project current</span>
+            <span className="text-xs text-muted-foreground self-center">{t("deployment.projectCurrent")}</span>
           ) : null}
         </div>
       </header>
@@ -596,62 +652,68 @@ export const DeploymentDetailPageClient = ({
             id="deployment-settings"
             className="mb-3 scroll-mt-24 text-xs leading-relaxed text-muted-foreground"
           >
-            This page is for this run only.{" "}
-            <a
-              href={`/projects/${data.project.id}/settings`}
+            {t("deployment.runOnlyHint")}{" "}
+            <Link
+              to={`/projects/${data.project.id}/settings`}
               className="font-medium text-primary no-underline hover:underline"
             >
-              Project settings
-            </a>{" "}
-            cover repo, branch, and environment for new deployments.
+              {t("deployment.projectSettingsLink")}
+            </Link>{" "}
+            {t("deployment.runOnlyHint2")}
           </p>
           <p className="mb-3 text-[0.65rem] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-            Build pipeline
+            {t("deployment.buildPipelineSection")}
           </p>
-          <DeploymentPipeline status={status} />
+          <div
+            id="deployment-pipeline"
+            className="flex w-full min-w-0 items-start"
+            role="list"
+            aria-label={t("deployment.pipelineAria")}
+            dangerouslySetInnerHTML={{ __html: buildDeploymentPipelineHtml(status) }}
+          />
           <Separator className="my-5 bg-border/60" />
           <p className="mb-1 text-[0.65rem] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-            Details
+            {t("deployment.detailsSection")}
           </p>
           <div className="flex flex-col">
-            <MetaRow k="Deployment ID" mono>
+            <MetaRow k={t("deployment.metaDeploymentId")} mono>
               {data.deployment.shortId}
             </MetaRow>
-            <MetaRow k="Project">
-              <a
-                href={`/projects/${data.project.id}`}
+            <MetaRow k={t("deployment.metaProject")}>
+              <Link
+                to={`/projects/${data.project.id}`}
                 className="font-medium text-primary no-underline hover:underline"
               >
                 {data.project.name}
-              </a>
+              </Link>
             </MetaRow>
-            <MetaRow k="Preview type">{previewModeLabel(data.deployment.buildPreviewMode)}</MetaRow>
+            <MetaRow k={t("deployment.metaPreviewType")}>{previewModeLabel(data.deployment.buildPreviewMode)}</MetaRow>
             {showResolvedDetails ? (
-              <MetaRow k="Resolved">
-                {isActive ? "Resolving…" : data.deployment.serveStrategy}
+              <MetaRow k={t("deployment.metaResolved")}>
+                {isActive ? t("deployment.resolving") : resolvedStrategyLabel}
               </MetaRow>
             ) : null}
-            <MetaRow k="Runner">{serverTargetLabel(data.deployment.buildServerPreviewTarget)}</MetaRow>
+            <MetaRow k={t("deployment.metaRunner")}>{serverTargetLabel(data.deployment.buildServerPreviewTarget)}</MetaRow>
             {showResolvedDetails ? (
-              <MetaRow k="Resolution">
+              <MetaRow k={t("deployment.metaResolution")}>
                 {data.deployment.previewResolution?.detail ??
                   data.deployment.previewResolution?.code ??
-                  "—"}
+                  t("common.emDash")}
               </MetaRow>
             ) : null}
-            <MetaRow k="Duration">
+            <MetaRow k={t("deployment.metaDuration")}>
               {formatDuration(data.deployment.createdAt, finishedAtIso)}
             </MetaRow>
-            <MetaRow k="Created" mono>
+            <MetaRow k={t("deployment.metaCreated")} mono>
               {formatDetailTimestamp(data.deployment.createdAt)}
             </MetaRow>
             <div className={cn(!showFinishedRow && "hidden")}>
-              <MetaRow k="Finished" mono>
+              <MetaRow k={t("deployment.metaFinished")} mono>
                 <span>{finishedAtLabel}</span>
               </MetaRow>
             </div>
             {isSuccess && previewHref ? (
-              <MetaRow k="URL" mono>
+              <MetaRow k={t("deployment.metaUrl")} mono>
                 <a
                   href={previewHref}
                   target="_blank"
@@ -676,29 +738,33 @@ export const DeploymentDetailPageClient = ({
             >
               <AlertCircle className="size-4" />
               <AlertTitle className="text-[0.8125rem] font-semibold tracking-wide">
-                {failureSummary || "Build failed"}
+                {failureSummary || t("deployment.buildFailedTitle")}
               </AlertTitle>
               {!failureSummary ? (
-                <AlertDescription className="text-destructive/90">
-                  See the build output below for the full log.
-                </AlertDescription>
+                <AlertDescription className="text-destructive/90">{t("deployment.failureSeeBelow")}</AlertDescription>
               ) : (
-                <AlertDescription className="text-destructive/85">
-                  See the build output below for context and stack traces.
-                </AlertDescription>
+                <AlertDescription className="text-destructive/85">{t("deployment.failureSeeContext")}</AlertDescription>
               )}
             </Alert>
           ) : null}
 
           <div className="space-y-2">
             <p className="px-0.5 text-[0.65rem] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-              Build output
+              {t("deployment.buildOutput")}
             </p>
-            <BuildLogTerminal logPath={`${data.deployment.artifactPrefix}/build.log`} streamSlot={<StreamIndicator streamState={streamState} />}>
+            <BuildLogTerminal
+              logPath={`${data.deployment.artifactPrefix}/build.log`}
+              streamSlot={
+                <>
+                  <span className={cn("inline-block h-2 w-2 rounded-full", streamDotClass)} aria-hidden />
+                  <span>{streamLabel}</span>
+                </>
+              }
+            >
               <pre
                 ref={logPreRef}
                 className={cn(
-                  "kinetic-log-output log-output relative z-1 max-h-[min(24rem,55vh)] min-h-[10rem]",
+                  "kinetic-log-output log-output relative z-1 max-h-[min(24rem,55vh)] min-h-40",
                   "overflow-auto rounded-none border-0 bg-zinc-950/40 px-4 py-3 font-mono text-[0.7rem] leading-[1.75]",
                   "text-zinc-200 selection:bg-primary/30 selection:text-foreground"
                 )}
@@ -712,13 +778,13 @@ export const DeploymentDetailPageClient = ({
           data.deployment.serveStrategy === "server" &&
           status === "success" ? (
             <p className="border-t border-border/60 pt-4 text-sm text-muted-foreground">
-              <a
-                href={`/projects/${data.project.id}/observability#runtime-logs`}
+              <Link
+                to={`/projects/${data.project.id}/observability#runtime-logs`}
                 className="font-medium text-foreground underline-offset-2 hover:underline"
               >
-                Runtime logs
-              </a>{" "}
-              for this preview are on Observability.
+                {t("deployment.runtimeLogsLink")}
+              </Link>{" "}
+              {t("deployment.runtimeObservabilityHint")}
             </p>
           ) : null}
         </section>

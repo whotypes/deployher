@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ export const AccountWorkspacePreferences = ({
 }: {
   hasRepoAccess: boolean;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const [openAfterCreate, setOpenAfterCreate] = React.useState(() => readOpenAfterCreate());
   const [branch, setBranch] = React.useState(() => readPreferredBranch());
   const [createMode, setCreateMode] = React.useState<CreateModePref>(() =>
@@ -45,48 +47,46 @@ export const AccountWorkspacePreferences = ({
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor="pref-open-after-create" className="text-sm font-normal leading-none">
-          Open project after create
+          {t("account.openAfterCreate")}
         </Label>
         <Checkbox
           id="pref-open-after-create"
           checked={openAfterCreate}
           onCheckedChange={(v) => handleOpenChange(v === true)}
-          aria-label="Open project after create"
+          aria-label={t("account.openAfterCreateAria")}
         />
       </div>
       <div className="space-y-2">
         <Label htmlFor="pref-preferred-branch" className="text-sm font-medium leading-none">
-          Preferred branch for new projects
+          {t("account.preferredBranch")}
         </Label>
         <Input
           id="pref-preferred-branch"
           type="text"
           autoComplete="off"
           spellCheck={false}
-          placeholder="main"
+          placeholder={t("newProject.placeholderBranch")}
           value={branch}
           onChange={(e) => handleBranchChange(e.target.value)}
           onBlur={() => writePreferredBranch(branch)}
-          aria-label="Preferred branch for new projects"
+          aria-label={t("account.preferredBranch")}
         />
-        <p className="text-xs text-muted-foreground">
-          When you import from GitHub, this branch is selected if it exists.
-        </p>
+        <p className="text-xs text-muted-foreground">{t("account.preferredBranchHint")}</p>
       </div>
       <fieldset className="space-y-3">
-        <legend className="text-sm font-medium">Default “new project” tab</legend>
-        <p className="text-xs text-muted-foreground">Which tab opens first in the new project dialog.</p>
+        <legend className="text-sm font-medium">{t("account.defaultNewProjectTab")}</legend>
+        <p className="text-xs text-muted-foreground">{t("account.defaultNewProjectTabHint")}</p>
         <RadioGroup value={createMode} onValueChange={handleCreateModeChange} className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2">
             <RadioGroupItem value="import" id="pref-create-mode-import" />
             <Label htmlFor="pref-create-mode-import" className="cursor-pointer text-sm font-normal">
-              Import from GitHub
+              {t("account.importFromGithub")}
             </Label>
           </div>
           <div className="flex items-center gap-2">
             <RadioGroupItem value="manual" id="pref-create-mode-manual" />
             <Label htmlFor="pref-create-mode-manual" className="cursor-pointer text-sm font-normal">
-              Manual URL
+              {t("account.manualUrl")}
             </Label>
           </div>
         </RadioGroup>
@@ -96,12 +96,11 @@ export const AccountWorkspacePreferences = ({
 };
 
 export const AccountDeleteSection = (): React.ReactElement => {
+  const { t } = useTranslation();
   const [pending, setPending] = React.useState(false);
 
   const handleDelete = async (): Promise<void> => {
-    const confirmed = window.confirm(
-      "Delete your account and all data permanently? This cannot be undone."
-    );
+    const confirmed = window.confirm(t("account.deleteConfirm"));
     if (!confirmed) return;
     setPending(true);
     try {
@@ -110,32 +109,30 @@ export const AccountDeleteSection = (): React.ReactElement => {
         credentials: "include"
       });
       if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
+        throw new Error(t("account.deleteRequestFailed", { status: String(response.status) }));
       }
       window.location.href = "/login";
     } catch (err) {
       console.error("Failed to delete account:", err);
-      window.alert("Failed to delete account. Please try again.");
+      window.alert(t("account.deleteFailed"));
       setPending(false);
     }
   };
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Permanently delete your account and all associated data.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("account.deleteIntro")}</p>
       <div className="h-px bg-border" />
       <Button
         type="button"
         variant="destructive"
         disabled={pending}
-        aria-label="Delete account permanently"
+        aria-label={t("account.deleteAccountAria")}
         className={pending ? "pointer-events-none opacity-50" : undefined}
         aria-busy={pending ? true : undefined}
         onClick={() => void handleDelete()}
       >
-        Delete account
+        {t("account.deleteAccount")}
       </Button>
     </div>
   );

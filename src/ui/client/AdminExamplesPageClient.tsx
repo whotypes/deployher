@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,13 +57,20 @@ const notify = (message: string, variant: "success" | "error"): void => {
   showPageToast(el, message, variant);
 };
 
-const fetchExamples = async (): Promise<AdminExampleRow[]> => {
+const fetchExamples = async (loadFailedMessage: string): Promise<AdminExampleRow[]> => {
   const response = await fetch("/api/admin/examples", { headers: { Accept: "application/json" } });
   const data = (await response.json().catch(() => ({}))) as ExamplesResponse;
   if (!response.ok) {
-    throw new Error(data.error ?? "Failed to load examples");
+    throw new Error(data.error ?? loadFailedMessage);
   }
   return Array.isArray(data.examples) ? data.examples : [];
+};
+
+const deploymentRowStatusLabel = (status: string, t: (key: string) => string): string => {
+  if (status === "idle" || status === "queued" || status === "building" || status === "success" || status === "failed") {
+    return t(`admin.rowStatus.${status}`);
+  }
+  return status;
 };
 
 export const AdminExamplesPageClient = ({
@@ -71,6 +80,7 @@ export const AdminExamplesPageClient = ({
   initialExamples: AdminExampleRow[];
   initialBuildSettings: AdminBuildSettings;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const [examples, setExamples] = React.useState(initialExamples);
   const [memory, setMemory] = React.useState(initialBuildSettings.memory);
   const [cpus, setCpus] = React.useState(initialBuildSettings.cpus);
@@ -97,24 +107,24 @@ export const AdminExamplesPageClient = ({
       refreshingRef.current = true;
       setRefreshing(true);
       try {
-        const rows = await fetchExamples();
+        const rows = await fetchExamples(t("admin.loadExamplesFailed"));
         applyExamplesIfChanged(rows);
-        if (showToast) notify("Example statuses updated", "success");
+        if (showToast) notify(t("admin.exampleStatusesUpdated"), "success");
       } catch (err) {
-        notify(err instanceof Error ? err.message : "Failed to load examples", "error");
+        notify(err instanceof Error ? err.message : t("admin.loadExamplesFailed"), "error");
       } finally {
         refreshingRef.current = false;
         setRefreshing(false);
       }
     },
-    [applyExamplesIfChanged]
+    [applyExamplesIfChanged, t]
   );
 
   React.useEffect(() => {
     const id = window.setInterval(() => {
       void (async () => {
         try {
-          const rows = await fetchExamples();
+          const rows = await fetchExamples(t("admin.loadExamplesFailed"));
           applyExamplesIfChanged(rows);
         } catch {
           /* keep last good state */
@@ -122,7 +132,7 @@ export const AdminExamplesPageClient = ({
       })();
     }, 4000);
     return () => window.clearInterval(id);
-  }, [applyExamplesIfChanged]);
+  }, [applyExamplesIfChanged, t]);
 
   const handleSaveBuildSettings = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -150,16 +160,16 @@ export const AdminExamplesPageClient = ({
         error?: string;
       };
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to save build settings");
+        throw new Error(data.error ?? t("admin.saveSettingsFailed"));
       }
-      notify("Build settings saved", "success");
+      notify(t("admin.buildSettingsSaved"), "success");
       if (data.memory !== undefined) setMemory(data.memory);
       if (data.cpus !== undefined) setCpus(data.cpus);
       if (data.accountMaxConcurrent !== undefined) {
         setAccountMaxConcurrent(String(data.accountMaxConcurrent));
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Failed to save build settings", "error");
+      notify(err instanceof Error ? err.message : t("admin.saveSettingsFailed"), "error");
     } finally {
       setSavingSettings(false);
     }
@@ -176,17 +186,17 @@ export const AdminExamplesPageClient = ({
       });
       const data = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to start deployment");
+        throw new Error(data.error ?? t("admin.deployStartFailed"));
       }
-      notify(`Started deployment for ${exampleName}`, "success");
+      notify(t("admin.deployStarted", { name: exampleName }), "success");
       try {
-        const rows = await fetchExamples();
+        const rows = await fetchExamples(t("admin.loadExamplesFailed"));
         applyExamplesIfChanged(rows);
       } catch {
         /* ignore */
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Failed to start deployment", "error");
+      notify(err instanceof Error ? err.message : t("admin.deployStartFailed"), "error");
     } finally {
       setDeployingName(null);
     }
@@ -195,7 +205,7 @@ export const AdminExamplesPageClient = ({
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Admin Test Workflow</h1>
+        <h1 className="text-2xl font-semibold">{t("admin.title")}</h1>
         <Button
           type="button"
           variant="outline"
@@ -204,27 +214,22 @@ export const AdminExamplesPageClient = ({
           aria-busy={refreshing ? true : undefined}
           onClick={() => void refreshRows(true)}
         >
-          Refresh
+          {t("admin.refresh")}
         </Button>
       </div>
 
-      <p className="mb-6 text-sm text-muted-foreground">
-        Run build and deploy for local examples in one click. Open deployment details for logs, or visit preview when
-        ready.
-      </p>
+      <p className="mb-6 text-sm text-muted-foreground">{t("admin.intro")}</p>
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="text-base">Build settings</CardTitle>
+          <CardTitle className="text-base">{t("admin.buildSettings")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Container limits (memory, CPUs) and per-account concurrent build limit.
-          </p>
+          <p className="mb-4 text-sm text-muted-foreground">{t("admin.buildSettingsHint")}</p>
           <form className="flex flex-wrap items-end gap-4" onSubmit={(e) => void handleSaveBuildSettings(e)}>
             <div className="space-y-1.5">
               <Label htmlFor="build-memory" className="text-xs">
-                Memory
+                {t("admin.memory")}
               </Label>
               <Input
                 id="build-memory"
@@ -232,13 +237,13 @@ export const AdminExamplesPageClient = ({
                 value={memory}
                 onChange={(e) => setMemory(e.target.value)}
                 placeholder="1g"
-                aria-label="Build container memory limit"
+                aria-label={t("admin.memoryAria")}
                 className="w-24"
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="build-cpus" className="text-xs">
-                CPUs
+                {t("admin.cpus")}
               </Label>
               <Input
                 id="build-cpus"
@@ -246,13 +251,13 @@ export const AdminExamplesPageClient = ({
                 value={cpus}
                 onChange={(e) => setCpus(e.target.value)}
                 placeholder="0.5"
-                aria-label="Build container CPU limit"
+                aria-label={t("admin.cpusAria")}
                 className="w-24"
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="build-account-max-concurrent" className="text-xs">
-                Max concurrent builds per account
+                {t("admin.maxConcurrent")}
               </Label>
               <Input
                 id="build-account-max-concurrent"
@@ -262,7 +267,7 @@ export const AdminExamplesPageClient = ({
                 value={accountMaxConcurrent}
                 onChange={(e) => setAccountMaxConcurrent(e.target.value)}
                 placeholder="1"
-                aria-label="Max concurrent builds per account"
+                aria-label={t("admin.maxConcurrentAria")}
                 className="w-24"
               />
             </div>
@@ -273,7 +278,7 @@ export const AdminExamplesPageClient = ({
               className={savingSettings ? "pointer-events-none opacity-50" : undefined}
               aria-busy={savingSettings ? true : undefined}
             >
-              Save
+              {t("common.save")}
             </Button>
           </form>
         </CardContent>
@@ -283,11 +288,11 @@ export const AdminExamplesPageClient = ({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Example</TableHead>
-              <TableHead>Latest Deploy</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>{t("admin.tableExample")}</TableHead>
+              <TableHead>{t("admin.tableLatestDeploy")}</TableHead>
+              <TableHead>{t("admin.tableStatus")}</TableHead>
+              <TableHead>{t("admin.tableCreated")}</TableHead>
+              <TableHead>{t("admin.tableActions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -301,21 +306,23 @@ export const AdminExamplesPageClient = ({
                   </TableCell>
                   <TableCell>
                     {deployment ? (
-                      <a
-                        href={`/deployments/${deployment.id}`}
+                      <Link
+                        to={`/deployments/${deployment.id}`}
                         className="font-mono text-sm no-underline hover:underline"
                       >
                         {deployment.shortId}
-                      </a>
+                      </Link>
                     ) : (
-                      <span className="text-sm text-muted-foreground">No deployments</span>
+                      <span className="text-sm text-muted-foreground">{t("admin.noDeployments")}</span>
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(deployment?.status)}>{deployment?.status ?? "idle"}</Badge>
+                    <Badge variant={statusVariant(deployment?.status)}>
+                      {deploymentRowStatusLabel(deployment?.status ?? "idle", t)}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {deployment ? new Date(deployment.createdAt).toLocaleString() : "—"}
+                    {deployment ? new Date(deployment.createdAt).toLocaleString() : t("common.emDash")}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -327,17 +334,17 @@ export const AdminExamplesPageClient = ({
                         aria-busy={busy ? true : undefined}
                         onClick={() => void handleDeploy(example.name)}
                       >
-                        Build & Deploy
+                        {t("admin.buildDeploy")}
                       </Button>
                       {deployment ? (
                         <Button variant="outline" size="sm" asChild>
-                          <a href={`/deployments/${deployment.id}`}>Logs</a>
+                          <Link to={`/deployments/${deployment.id}`}>{t("common.logs")}</Link>
                         </Button>
                       ) : null}
                       {deployment?.status === "success" && deployment.previewUrl ? (
                         <Button variant="outline" size="sm" asChild>
                           <a href={deployment.previewUrl} target="_blank" rel="noopener noreferrer">
-                            Preview
+                            {t("common.preview")}
                           </a>
                         </Button>
                       ) : null}
