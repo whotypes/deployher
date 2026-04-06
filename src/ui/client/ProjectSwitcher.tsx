@@ -14,6 +14,7 @@ import {
     getProjectSwitcherTrigger,
     type ProjectSwitcherInput
 } from "@/lib/projectSwitcherDisplay";
+import { ProjectSiteGlyph } from "@/ui/client/ProjectSiteGlyph";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import * as React from "react";
@@ -31,38 +32,6 @@ const readBootstrap = (): Bootstrap | null => {
   } catch {
     return null;
   }
-};
-
-const ProjectGlyph = ({
-  name,
-  siteIconUrl,
-  letterClassName,
-  imgClassName
-}: {
-  name: string;
-  siteIconUrl: string | null;
-  letterClassName: string;
-  imgClassName: string;
-}): React.ReactElement => {
-  const [imgFailed, setImgFailed] = React.useState(false);
-  const letter = name.trim()[0]?.toUpperCase() ?? "?";
-  const showImg = Boolean(siteIconUrl) && !imgFailed;
-  return showImg ? (
-    <img
-      src={siteIconUrl ?? ""}
-      alt=""
-      className={imgClassName}
-      width={24}
-      height={24}
-      loading="lazy"
-      decoding="async"
-      onError={() => setImgFailed(true)}
-    />
-  ) : (
-    <span className={letterClassName} aria-hidden>
-      {letter}
-    </span>
-  );
 };
 
 export const ProjectSwitcher = ({ input }: { input?: ProjectSwitcherInput | null }) => {
@@ -89,11 +58,13 @@ export const ProjectSwitcher = ({ input }: { input?: ProjectSwitcherInput | null
           aria-expanded={open}
           aria-haspopup="dialog"
         >
-          <ProjectGlyph
+          <ProjectSiteGlyph
             name={trigger.label}
             siteIconUrl={trigger.siteIconUrl}
+            previewUrl={trigger.previewUrl}
+            className="size-6 ring-0"
             imgClassName="size-6 shrink-0 rounded-md object-cover"
-            letterClassName="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/20 text-xs font-semibold text-primary"
+            letterClassName="flex size-6 items-center justify-center rounded-md bg-primary/20 text-xs font-semibold text-primary"
           />
           <span className="min-w-0 truncate">{trigger.label}</span>
           <ChevronsUpDown className="size-4 shrink-0 opacity-45" aria-hidden />
@@ -123,11 +94,13 @@ export const ProjectSwitcher = ({ input }: { input?: ProjectSwitcherInput | null
                       navigate(`/projects/${p.id}`);
                     }}
                   >
-                    <ProjectGlyph
+                    <ProjectSiteGlyph
                       name={p.name}
                       siteIconUrl={p.siteIconUrl}
+                      previewUrl={p.previewUrl ?? null}
+                      className="size-6 ring-0"
                       imgClassName="size-6 shrink-0 rounded-md object-cover"
-                      letterClassName="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-foreground"
+                      letterClassName="flex size-6 items-center justify-center rounded-md bg-muted text-xs font-semibold text-foreground"
                     />
                     <span className="min-w-0 flex-1 truncate">{p.name}</span>
                     {p.id === selectedId ? (
