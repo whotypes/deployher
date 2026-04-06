@@ -2,11 +2,15 @@ import { describe, expect, it, mock } from "bun:test";
 
 mock.module("../config", () => ({
   config: {
+    env: "development",
     devDomain: "localhost",
     prodDomain: "deployher.example.com",
     devProtocol: "http",
     prodProtocol: "https",
     port: 3001,
+    auth: {
+      url: undefined as string | undefined
+    },
     build: {
       workers: 2,
       accountMaxConcurrent: 1,
@@ -28,7 +32,15 @@ mock.module("../config", () => ({
   },
   getDevBaseUrl: () => "http://localhost:3001",
   getProdBaseUrl: () => "https://deployher.example.com",
-  buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`
+  getAuthBaseUrl: () => "http://localhost:3001",
+  getTrustedAppOrigins: () => ["http://localhost:3001", "https://deployher.example.com"],
+  getDevProjectUrlPattern: () => "http://{project}.localhost:3001",
+  getProdProjectUrlPattern: () => "https://{project}.deployher.example.com",
+  buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`,
+  resolveProjectDomains: (project: { id: string; name: string }) => ({
+    dev: `http://${project.id}.localhost:3001`,
+    prod: `https://${project.id}.deployher.example.com`
+  })
 }));
 
 const {
