@@ -20,11 +20,15 @@ const mockBuildConfig = {
 
 mock.module("../config", () => ({
   config: {
+    env: "development",
     devDomain: "localhost",
     prodDomain: "localhost",
     devProtocol: "http",
     prodProtocol: "https",
     port: 3001,
+    auth: {
+      url: undefined as string | undefined
+    },
     build: mockBuildConfig,
     preview: {
       assetBaseUrl: "https://assets.example.test"
@@ -38,7 +42,17 @@ mock.module("../config", () => ({
       url: undefined
     }
   },
-  buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`
+  getDevBaseUrl: () => "http://localhost:3001",
+  getProdBaseUrl: () => "http://localhost:3000",
+  getAuthBaseUrl: () => "http://localhost:3001",
+  getTrustedAppOrigins: () => ["http://localhost:3001"],
+  getDevProjectUrlPattern: () => "http://{project}.localhost:3001",
+  getProdProjectUrlPattern: () => "https://{project}.localhost",
+  buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`,
+  resolveProjectDomains: (project: { id: string; name: string }) => ({
+    dev: `http://${project.id}.localhost:3001`,
+    prod: `https://${project.id}.localhost`
+  })
 }));
 
 mock.module("../db/db", () => ({
