@@ -270,7 +270,11 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <ProjectSiteGlyph name={project.name} siteIconUrl={project.siteIconUrl} />
+              <ProjectSiteGlyph
+                name={project.name}
+                siteIconUrl={project.siteIconUrl}
+                previewUrl={dep?.previewUrl ?? null}
+              />
               <span className="truncate text-base font-semibold text-foreground">{project.name}</span>
             </div>
             <a
