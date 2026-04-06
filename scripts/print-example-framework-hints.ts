@@ -43,6 +43,10 @@ const main = async (): Promise<void> => {
     const pnpmLockYaml = read("pnpm-lock.yaml");
     const yarnLock = read("yarn.lock");
     const packageLockJson = read("package-lock.json");
+    const indexHtml = read("index.html");
+    const publicIndexHtml = read("public/index.html");
+    const distIndexHtml = read("dist/index.html");
+    const buildIndexHtml = read("build/index.html");
 
     const hints = await inferMergedRepoHintsFromScanFiles({
       packageJsonRaw,
@@ -53,7 +57,11 @@ const main = async (): Promise<void> => {
       bunLock,
       pnpmLockYaml,
       yarnLock,
-      packageLockJson
+      packageLockJson,
+      indexHtml,
+      publicIndexHtml,
+      distIndexHtml,
+      buildIndexHtml
     });
 
     console.log(`${dir}`);
