@@ -12,7 +12,15 @@ export type RunnerEnsurePreviewInput = {
   runtimeImagePullRef?: string;
   runtimeImageArtifactKey?: string;
   runtimeConfig: DeploymentRuntimeConfig | null;
+  onLogLine?: (line: string) => void;
 };
+
+const parsedEnsure = Number.parseInt(process.env.PREVIEW_ENSURE_HTTP_TIMEOUT_MS ?? "", 10);
+/** App → runner HTTP wait for /internal/ensure-preview (docker pull + container boot). */
+export const PREVIEW_ENSURE_HTTP_TIMEOUT_MS =
+  Number.isFinite(parsedEnsure) && parsedEnsure >= 30_000
+    ? Math.min(parsedEnsure, 60 * 60 * 1000)
+    : 10 * 60 * 1000;
 
 const normalizeRuntimeConfigForRunner = (
   raw: DeploymentRuntimeConfig | null
@@ -37,6 +45,63 @@ const normalizeRuntimeConfigForRunner = (
   return { port, command, ...(workingDir ? { workingDir } : {}), ...(framework ? { framework } : {}) };
 };
 
+const consumeEnsurePreviewNdjsonStream = async (
+  res: Response,
+  onLogLine?: (line: string) => void
+): Promise<void> => {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    throw new Error("runner returned no response body");
+  }
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const raw of lines) {
+      if (!raw.trim()) continue;
+      let obj: { kind?: string; message?: string };
+      try {
+        obj = JSON.parse(raw) as { kind?: string; message?: string };
+      } catch {
+        throw new Error(`invalid preview stream line: ${raw.slice(0, 160)}`);
+      }
+      if (obj.kind === "log" && typeof obj.message === "string" && onLogLine) {
+        onLogLine(obj.message);
+      }
+      if (obj.kind === "done") {
+        return;
+      }
+      if (obj.kind === "error") {
+        throw new Error(typeof obj.message === "string" ? obj.message : "preview runner error");
+      }
+    }
+  }
+  const tail = buf.trim();
+  if (!tail) {
+    throw new Error("preview runner stream ended without completion");
+  }
+  let obj: { kind?: string; message?: string };
+  try {
+    obj = JSON.parse(tail) as { kind?: string; message?: string };
+  } catch {
+    throw new Error(`invalid preview stream tail: ${tail.slice(0, 160)}`);
+  }
+  if (obj.kind === "log" && typeof obj.message === "string" && onLogLine) {
+    onLogLine(obj.message);
+  }
+  if (obj.kind === "done") {
+    return;
+  }
+  if (obj.kind === "error") {
+    throw new Error(typeof obj.message === "string" ? obj.message : "preview runner error");
+  }
+  throw new Error("preview runner stream ended without completion");
+};
+
 export const requestRunnerEnsurePreview = async (input: RunnerEnsurePreviewInput): Promise<void> => {
   const runnerBase = (config.runner.url ?? "").trim().replace(/\/+$/, "");
   if (!runnerBase || !config.runner.previewEnabled) {
@@ -51,7 +116,10 @@ export const requestRunnerEnsurePreview = async (input: RunnerEnsurePreviewInput
     return;
   }
 
-  const headers = new Headers({ "Content-Type": "application/json" });
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    Accept: "application/x-ndjson"
+  });
   const secret = (config.runner.sharedSecret ?? "").trim();
   if (secret) {
     headers.set("x-deployher-runner-secret", secret);
@@ -69,12 +137,22 @@ export const requestRunnerEnsurePreview = async (input: RunnerEnsurePreviewInput
     method: "POST",
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000)
+    signal: AbortSignal.timeout(PREVIEW_ENSURE_HTTP_TIMEOUT_MS)
   });
-  if (!res.ok && res.status !== 202) {
+  if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`runner ensure-preview returned ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
   }
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("x-ndjson")) {
+    await consumeEnsurePreviewNdjsonStream(res, input.onLogLine);
+    return;
+  }
+  const data = (await res.json()) as { ok?: boolean; error?: string };
+  if (data.ok) {
+    return;
+  }
+  throw new Error(data.error ?? "runner ensure-preview failed");
 };
 
 const collectPrewarmPullRefs = async (): Promise<string[]> => {

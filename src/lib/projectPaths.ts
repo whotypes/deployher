@@ -1,18 +1,11 @@
 import path from "path";
+import { normalizeRepoRelativePathString } from "./repoRelativePath";
 
 export type RuntimeImageMode = "auto" | "platform" | "dockerfile";
 
 export const parseRepoRelativePath = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
-  const raw = value.trim() || ".";
-  if (path.isAbsolute(raw)) return null;
-  const segments: string[] = [];
-  for (const part of raw.replace(/\\/g, "/").split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") return null;
-    segments.push(part);
-  }
-  return segments.length === 0 ? "." : segments.join("/");
+  return normalizeRepoRelativePathString(value);
 };
 
 export const sanitizeRelativeWorkdir = (value: string): string => {
