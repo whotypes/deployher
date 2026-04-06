@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { buildDevSubdomainUrl } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
-import { fetchSiteMetadata } from "./siteMetadata";
+import { clearSiteMetadataFetchCacheForProject, fetchSiteMetadata } from "./siteMetadata";
 
 export type RefreshProjectSiteMetadataOptions = {
   /** When set (e.g. right after deploy), avoids a DB read for the preview URL. */
@@ -61,6 +61,7 @@ export const refreshProjectSiteMetadata = async (
   const result = await fetchSiteMetadata(previewPageUrl);
 
   if (result.ok) {
+    clearSiteMetadataFetchCacheForProject(projectId);
     await db
       .update(schema.projects)
       .set({
