@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { preferPreviewOriginForExternalAsset } from "./previewAssetUrl";
 
 export type SiteMetadataFetchResult =
   | { ok: true; iconUrl: string | null; ogImageUrl: string | null }
@@ -256,9 +257,139 @@ export const parseSiteMetadataFromHtml = (
   const iconUrl = extractIconFromHtml(html, docBase);
   const ogImageUrl = extractOgImageFromHtml(html, docBase);
   return {
-    iconUrl: rebaseAssetUrlOntoPreviewOrigin(iconUrl, deploymentPreviewBaseHref),
-    ogImageUrl: rebaseAssetUrlOntoPreviewOrigin(ogImageUrl, deploymentPreviewBaseHref)
+    iconUrl: rebaseAssetUrlOntoPreviewOrigin(
+      preferPreviewOriginForExternalAsset(iconUrl, deploymentPreviewBaseHref),
+      deploymentPreviewBaseHref
+    ),
+    ogImageUrl: rebaseAssetUrlOntoPreviewOrigin(
+      preferPreviewOriginForExternalAsset(ogImageUrl, deploymentPreviewBaseHref),
+      deploymentPreviewBaseHref
+    )
   };
+};
+
+export type FetchPreviewDeploymentAssetOptions = {
+  /**
+   * Favicons (.ico) and some icons are served as `application/octet-stream`; use a broad Accept for
+   * `kind=icon` proxy fetches. OG images typically stay image/*-friendly.
+   */
+  accept?: string;
+};
+
+/**
+ * Fetch a binary asset from a preview deployment URL using the same loopback / Host-header
+ * fallbacks as {@link fetchSiteMetadata}, so server-side fetches reach tenant *.localhost previews
+ * from Docker and dev environments.
+ */
+export const fetchPreviewDeploymentAsset = async (
+  absoluteUrl: string,
+  options?: FetchPreviewDeploymentAssetOptions
+): Promise<Response> => {
+  const accept =
+    options?.accept ??
+    "image/avif,image/webp,image/apng,image/svg+xml,image/x-icon,image/png,image/*,*/*;q=0.8";
+  const attempts = buildSiteMetaFetchAttempts(absoluteUrl, config.siteMetadata.fetchOrigin);
+  if ("error" in attempts) {
+    throw new Error(attempts.error);
+  }
+  const multi = attempts.length > 1;
+  let lastError = "fetch failed";
+
+  for (let i = 0; i < attempts.length; i += 1) {
+    const attempt = attempts[i];
+    if (!attempt) continue;
+    const { url, hostHeader } = attempt;
+    const headers = new Headers({
+      Accept: accept,
+      "User-Agent": BROWSER_UA
+    });
+    headers.set("Host", hostHeader);
+
+    try {
+      const r = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        signal: AbortSignal.timeout(config.siteMetadata.fetchTimeoutMs),
+        headers
+      });
+      if (!r.ok) {
+        lastError = `HTTP ${r.status}`;
+        if (multi && i < attempts.length - 1) {
+          continue;
+        }
+        throw new Error(lastError);
+      }
+      return r;
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : "fetch failed";
+      if (i < attempts.length - 1) {
+        continue;
+      }
+      throw new Error(lastError);
+    }
+  }
+
+  throw new Error(lastError);
+};
+
+const COMMON_PREVIEW_ICON_PATHS = [
+  "/apple-touch-icon.png",
+  "/favicon.ico",
+  "/favicon.svg",
+  "/icon.png"
+] as const;
+
+/**
+ * Candidate URLs for the site icon proxy: parsed meta URL first, then usual `public/` → site-root
+ * paths on the preview (same origin as `resolved`).
+ */
+export const buildPreviewIconCandidateUrls = (resolved: string, previewBase: string): string[] => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (href: string): void => {
+    const t = href.trim();
+    if (!t) return;
+    const key = (t.split("#")[0] ?? t).split("?")[0] ?? t;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(t);
+  };
+
+  push(resolved);
+
+  let origin: string;
+  try {
+    origin = new URL(resolved).origin;
+  } catch {
+    try {
+      origin = new URL(previewBase).origin;
+    } catch {
+      return out;
+    }
+  }
+
+  for (const p of COMMON_PREVIEW_ICON_PATHS) {
+    push(`${origin}${p}`);
+  }
+
+  return out;
+};
+
+export const fetchPreviewDeploymentAssetTryUrls = async (
+  urls: string[],
+  options?: FetchPreviewDeploymentAssetOptions
+): Promise<Response> => {
+  let lastError = "fetch failed";
+  for (const u of urls) {
+    const t = u.trim();
+    if (!t) continue;
+    try {
+      return await fetchPreviewDeploymentAsset(t, options);
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : "fetch failed";
+    }
+  }
+  throw new Error(lastError);
 };
 
 const readResponseTextWithCap = async (response: Response, maxBytes: number): Promise<string> => {
@@ -299,7 +430,9 @@ export const fetchSiteMetadata = async (publicPreviewUrl: string): Promise<SiteM
   let response: Response | null = null;
 
   for (let i = 0; i < attempts.length; i += 1) {
-    const { url, hostHeader } = attempts[i];
+    const attempt = attempts[i];
+    if (!attempt) continue;
+    const { url, hostHeader } = attempt;
     const headers = new Headers({
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
@@ -360,4 +493,46 @@ export const fetchSiteMetadata = async (publicPreviewUrl: string): Promise<SiteM
   } catch {
     return { ok: false, error: "Failed to parse HTML" };
   }
+};
+
+const SITE_META_FETCH_CACHE_TTL_MS = 5 * 60 * 1000;
+const siteMetadataFetchCache = new Map<string, { value: SiteMetadataFetchResult; expires: number }>();
+const siteMetadataFetchInflight = new Map<string, Promise<SiteMetadataFetchResult>>();
+
+export const clearSiteMetadataFetchCacheForProject = (projectId: string): void => {
+  const prefix = `${projectId}:`;
+  for (const k of [...siteMetadataFetchCache.keys()]) {
+    if (k.startsWith(prefix)) siteMetadataFetchCache.delete(k);
+  }
+  for (const k of [...siteMetadataFetchInflight.keys()]) {
+    if (k.startsWith(prefix)) siteMetadataFetchInflight.delete(k);
+  }
+};
+
+/** Deduped + short TTL so hero OG/icon proxies can fill in when DB fields are empty without refetching HTML on every pixel request. */
+export const fetchSiteMetadataCachedForDeployment = async (
+  projectId: string,
+  deploymentId: string,
+  publicPreviewUrl: string
+): Promise<SiteMetadataFetchResult> => {
+  const key = `${projectId}:${deploymentId}`;
+  const cached = siteMetadataFetchCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.value;
+  const inflight = siteMetadataFetchInflight.get(key);
+  if (inflight) return inflight;
+  const p = fetchSiteMetadata(publicPreviewUrl)
+    .then((meta) => {
+      if (meta.ok) {
+        siteMetadataFetchCache.set(key, {
+          value: meta,
+          expires: Date.now() + SITE_META_FETCH_CACHE_TTL_MS
+        });
+      }
+      return meta;
+    })
+    .finally(() => {
+      siteMetadataFetchInflight.delete(key);
+    });
+  siteMetadataFetchInflight.set(key, p);
+  return p;
 };
