@@ -19,6 +19,7 @@ import { getText, getTextFromOffset, isStorageConfigured } from "../storage";
 import { generateShortId } from "../utils/shortId";
 import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
 import { formatRunnerRuntimeLogError } from "./runtimeLogFormatting";
+import { requestRunnerEnsurePreview } from "../lib/previewRunnerRehydrate";
 
 const getProjectForUser = async (projectId: string, userId: string) => {
   const [project] = await db
@@ -713,4 +714,57 @@ export const streamDeploymentRuntimeLog = async (req: RequestWithParamsAndSessio
       Connection: "keep-alive"
     }
   });
+};
+
+export const ensureDeploymentPreview = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Deployment not found");
+  }
+  const userId = req.session.user.id;
+  const [deployment] = await db
+    .select()
+    .from(schema.deployments)
+    .where(eq(schema.deployments.id, id))
+    .limit(1);
+
+  if (!deployment) {
+    return notFound("Deployment not found");
+  }
+
+  const project = await getProjectForUser(deployment.projectId, userId);
+  if (!project) {
+    return notFound("Deployment not found");
+  }
+
+  if (deployment.status !== "success") {
+    return badRequest("Only successful deployments can start a preview container");
+  }
+  if (deployment.serveStrategy !== "server") {
+    return badRequest("Preview container applies only to server deployments");
+  }
+
+  const pull = deployment.runtimeImagePullRef?.trim() ?? "";
+  const artifact = deployment.runtimeImageArtifactKey?.trim() ?? "";
+  if (!pull && !artifact) {
+    return badRequest("This deployment has no runtime image for preview");
+  }
+
+  if (!config.runner.previewEnabled || !config.runner.url?.trim()) {
+    return json({ error: "Preview runner is not configured" }, { status: 503 });
+  }
+
+  try {
+    await requestRunnerEnsurePreview({
+      deploymentId: deployment.id,
+      projectId: deployment.projectId,
+      runtimeImagePullRef: pull || undefined,
+      runtimeImageArtifactKey: artifact || undefined,
+      runtimeConfig: deployment.runtimeConfig
+    });
+    return json({ ok: true as const });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return json({ error: message }, { status: 502 });
+  }
 };

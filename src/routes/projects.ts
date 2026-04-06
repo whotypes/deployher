@@ -5,11 +5,11 @@ import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { normalizeGitHubRepoUrl } from "../github";
 import { badRequest, json, notFound, parseJson } from "../http/helpers";
-import { parseRepoRelativePath, parseRuntimeImageMode } from "../lib/projectPaths";
-import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
-import { pickFeaturedDeploymentFromSortedDesc } from "../lib/sidebarFeaturedDeployment";
 import { parseProjectCommandForStorage } from "../lib/parseProjectCommandLine";
+import { parseRepoRelativePath, parseRuntimeImageMode } from "../lib/projectPaths";
 import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
+import { pickFeaturedDeploymentFromSortedDesc } from "../lib/sidebarFeaturedDeployment";
+import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
 
 type Project = typeof schema.projects.$inferSelect;
 type ProjectEnv = typeof schema.projectEnvs.$inferSelect;

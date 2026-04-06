@@ -23,6 +23,7 @@ type GitHubRepo = {
   private: boolean;
   description: string | null;
   updatedAt: string | null;
+  defaultBranch: string;
 };
 
 type GitHubRepoApiRow = {
@@ -33,20 +34,25 @@ type GitHubRepoApiRow = {
   private: boolean;
   description: string | null;
   updated_at: string | null;
+  default_branch?: string | null;
 };
 
 const USER_REPOS_PER_PAGE = 100;
 const USER_REPOS_MAX_PAGES = 100;
 
-const mapRepoRow = (repo: GitHubRepoApiRow): GitHubRepo => ({
-  id: repo.id,
-  name: repo.name,
-  fullName: repo.full_name,
-  htmlUrl: repo.html_url,
-  private: repo.private,
-  description: repo.description ?? null,
-  updatedAt: repo.updated_at ?? null
-});
+const mapRepoRow = (repo: GitHubRepoApiRow): GitHubRepo => {
+  const db = repo.default_branch?.trim();
+  return {
+    id: repo.id,
+    name: repo.name,
+    fullName: repo.full_name,
+    htmlUrl: repo.html_url,
+    private: repo.private,
+    description: repo.description ?? null,
+    updatedAt: repo.updated_at ?? null,
+    defaultBranch: db && db.length > 0 ? db : "main"
+  };
+};
 
 export const listRepos = async (req: RequestWithParamsAndSession) => {
   const userId = req.session.user.id;
@@ -264,6 +270,10 @@ export const repoHints = async (req: RequestWithParamsAndSession) => {
   const pnpmLockYamlRaw = pickText(6);
   const yarnLockRaw = pickText(7);
   const packageLockJsonRaw = pickText(8);
+  const indexHtmlRaw = pickText(9);
+  const publicIndexHtmlRaw = pickText(10);
+  const distIndexHtmlRaw = pickText(11);
+  const buildIndexHtmlRaw = pickText(12);
 
   let packageJsonFound = false;
   if (packageJsonRaw) {
@@ -284,7 +294,11 @@ export const repoHints = async (req: RequestWithParamsAndSession) => {
     bunLock: bunLockRaw,
     pnpmLockYaml: pnpmLockYamlRaw,
     yarnLock: yarnLockRaw,
-    packageLockJson: packageLockJsonRaw
+    packageLockJson: packageLockJsonRaw,
+    indexHtml: indexHtmlRaw,
+    publicIndexHtml: publicIndexHtmlRaw,
+    distIndexHtml: distIndexHtmlRaw,
+    buildIndexHtml: buildIndexHtmlRaw
   });
 
   return json({
