@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Pause, Play, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,12 +25,6 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-
-const PLACEHOLDER_CONNECT = "Connecting to runtime log stream...\n";
-const PLACEHOLDER_RECONNECT = "Reconnecting to runtime log stream...\n";
-
-const isPlaceholder = (t: string): boolean =>
-  t === PLACEHOLDER_CONNECT || t === PLACEHOLDER_RECONNECT;
 
 const dockerTsLine = /^(\d{4}-\d{2}-\d{2}T\S+)\s+(.*)$/;
 
@@ -59,7 +55,7 @@ type ParsedLine = {
   level: LogLevel;
 };
 
-const parseLogText = (text: string): ParsedLine[] => {
+const parseLogText = (text: string, emDash: string): ParsedLine[] => {
   const lines = text.split("\n");
   const out: ParsedLine[] = [];
   let i = 0;
@@ -67,7 +63,7 @@ const parseLogText = (text: string): ParsedLine[] => {
     if (line.length === 0 && out.length > 0) continue;
     const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
     const m = trimmed.match(dockerTsLine);
-    let displayTime = "—";
+    let displayTime = emDash;
     let message = trimmed;
     let ts: number | null = null;
     if (m) {
@@ -96,28 +92,6 @@ const parseLogText = (text: string): ParsedLine[] => {
   return out;
 };
 
-const levelBadge = (level: LogLevel): React.ReactElement => {
-  if (level === "error") {
-    return (
-      <Badge className="rounded px-1.5 py-0 font-mono text-[0.65rem] tabular-nums border-0 bg-red-500/15 text-red-200 ring-1 ring-red-500/30">
-        ERR
-      </Badge>
-    );
-  }
-  if (level === "warning") {
-    return (
-      <Badge className="rounded px-1.5 py-0 font-mono text-[0.65rem] tabular-nums border-0 bg-amber-500/15 text-amber-100 ring-1 ring-amber-500/25">
-        WRN
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="secondary" className="rounded px-1.5 py-0 font-mono text-[0.65rem] tabular-nums">
-      LOG
-    </Badge>
-  );
-};
-
 export type ProjectRuntimeLogsBootstrap = {
   available: boolean;
   deploymentId: string | null;
@@ -132,7 +106,44 @@ export const ProjectRuntimeLogsPanel = ({
   projectId: string;
   runtime: ProjectRuntimeLogsBootstrap;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const { available, deploymentId, deploymentShortId, eligible } = runtime;
+  const emDash = t("common.emDash");
+
+  const placeholders = React.useMemo(
+    () => ({
+      connect: t("runtimeLogs.placeholderConnect"),
+      reconnect: t("runtimeLogs.placeholderReconnect")
+    }),
+    [t]
+  );
+
+  const isPlaceholderText = React.useCallback(
+    (text: string): boolean => text === placeholders.connect || text === placeholders.reconnect,
+    [placeholders]
+  );
+
+  const levelBadge = (level: LogLevel): React.ReactElement => {
+    if (level === "error") {
+      return (
+        <Badge className="rounded px-1.5 py-0 font-mono text-[0.65rem] tabular-nums border-0 bg-red-500/15 text-red-200 ring-1 ring-red-500/30">
+          {t("runtimeLogs.badgeErr")}
+        </Badge>
+      );
+    }
+    if (level === "warning") {
+      return (
+        <Badge className="rounded px-1.5 py-0 font-mono text-[0.65rem] tabular-nums border-0 bg-amber-500/15 text-amber-100 ring-1 ring-amber-500/25">
+          {t("runtimeLogs.badgeWrn")}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="secondary" className="rounded px-1.5 py-0 font-mono text-[0.65rem] tabular-nums">
+        {t("runtimeLogs.badgeLog")}
+      </Badge>
+    );
+  };
 
   const [rawLog, setRawLog] = React.useState("");
   const [live, setLive] = React.useState(true);
@@ -143,7 +154,7 @@ export const ProjectRuntimeLogsPanel = ({
   const [selected, setSelected] = React.useState<ParsedLine | null>(null);
   const [refreshBusy, setRefreshBusy] = React.useState(false);
 
-  const parsed = React.useMemo(() => parseLogText(rawLog), [rawLog]);
+  const parsed = React.useMemo(() => parseLogText(rawLog, emDash), [rawLog, emDash]);
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     return parsed.filter((row) => {
@@ -162,14 +173,14 @@ export const ProjectRuntimeLogsPanel = ({
       const r = await fetch(`/deployments/${deploymentId}/runtime-log?tail=3000`, {
         credentials: "same-origin"
       });
-      const t = await r.text();
-      setRawLog(t.trim() ? (t.endsWith("\n") ? t : `${t}\n`) : "");
+      const text = await r.text();
+      setRawLog(text.trim() ? (text.endsWith("\n") ? text : `${text}\n`) : "");
     } catch {
-      setRawLog("Could not load runtime log snapshot.\n");
+      setRawLog(t("runtimeLogs.snapshotFailed"));
     } finally {
       setRefreshBusy(false);
     }
-  }, [deploymentId]);
+  }, [deploymentId, t]);
 
   React.useEffect(() => {
     if (!eligible || !deploymentId) return;
@@ -193,7 +204,7 @@ export const ProjectRuntimeLogsPanel = ({
     const append = (content: string): void => {
       if (!content) return;
       setRawLog((prev) => {
-        if (prev.trim().length === 0 || isPlaceholder(prev)) return content;
+        if (prev.trim().length === 0 || isPlaceholderText(prev)) return content;
         return prev + content;
       });
     };
@@ -206,7 +217,7 @@ export const ProjectRuntimeLogsPanel = ({
         eventSource = null;
       }
       setRawLog((prev) =>
-        prev.trim().length === 0 || isPlaceholder(prev) ? PLACEHOLDER_CONNECT : prev
+        prev.trim().length === 0 || isPlaceholderText(prev) ? placeholders.connect : prev
       );
       const es = new EventSource(`/deployments/${deploymentId}/runtime-log/stream`);
       eventSource = es;
@@ -217,7 +228,7 @@ export const ProjectRuntimeLogsPanel = ({
           if (payload.type === "log" && payload.content !== undefined) {
             append(payload.content);
           } else if (payload.type === "error" && payload.content !== undefined) {
-            append(`\n[ERROR] ${payload.content}\n`);
+            append(t("runtimeLogs.errorAppend", { content: payload.content }));
           }
         } catch {
           /* ignore */
@@ -227,7 +238,7 @@ export const ProjectRuntimeLogsPanel = ({
         if (cancelled) return;
         es.close();
         eventSource = null;
-        setRawLog((prev) => (isPlaceholder(prev) ? PLACEHOLDER_RECONNECT : prev));
+        setRawLog((prev) => (isPlaceholderText(prev) ? placeholders.reconnect : prev));
         reconnectTimer = setTimeout(connect, 2500);
       };
     };
@@ -242,17 +253,14 @@ export const ProjectRuntimeLogsPanel = ({
         eventSource = null;
       }
     };
-  }, [eligible, deploymentId, live]);
+  }, [eligible, deploymentId, live, isPlaceholderText, placeholders.connect, placeholders.reconnect, t]);
 
   if (!available) {
     return (
       <Card id="runtime-logs">
         <CardHeader>
-          <CardTitle>Runtime logs</CardTitle>
-          <CardDescription>
-            Preview runner is not configured. Runtime logs require a reachable runner (
-            <span className="font-mono text-xs">RUNNER_URL</span>).
-          </CardDescription>
+          <CardTitle>{t("runtimeLogs.title")}</CardTitle>
+          <CardDescription>{t("runtimeLogs.runnerNotConfigured", { runnerVar: "RUNNER_URL" })}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -262,10 +270,8 @@ export const ProjectRuntimeLogsPanel = ({
     return (
       <Card id="runtime-logs">
         <CardHeader>
-          <CardTitle>Runtime logs</CardTitle>
-          <CardDescription>
-            Set a <strong>current deployment</strong> on the project to attach logs to a preview container.
-          </CardDescription>
+          <CardTitle>{t("runtimeLogs.title")}</CardTitle>
+          <CardDescription>{t("runtimeLogs.setCurrentDeployment")}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -275,20 +281,19 @@ export const ProjectRuntimeLogsPanel = ({
     return (
       <Card id="runtime-logs">
         <CardHeader>
-          <CardTitle>Runtime logs</CardTitle>
+          <CardTitle>{t("runtimeLogs.title")}</CardTitle>
           <CardDescription>
-            Runtime logs apply to the <strong>current</strong> deployment when it is a{" "}
-            <strong>successful server</strong> preview.{" "}
-            <a href={`/projects/${projectId}`} className="text-foreground underline underline-offset-2">
-              Project overview
-            </a>{" "}
+            {t("runtimeLogs.notEligible")}{" "}
+            <Link to={`/projects/${projectId}`} className="text-foreground underline underline-offset-2">
+              {t("runtimeLogs.projectOverview")}
+            </Link>{" "}
             ·{" "}
-            <a
-              href={`/deployments/${deploymentId}`}
+            <Link
+              to={`/deployments/${deploymentId}`}
               className="text-foreground underline underline-offset-2"
             >
-              Deployment {deploymentShortId}
-            </a>
+              {t("runtimeLogs.deploymentLink", { shortId: deploymentShortId })}
+            </Link>
           </CardDescription>
         </CardHeader>
       </Card>
@@ -301,16 +306,16 @@ export const ProjectRuntimeLogsPanel = ({
         <CardHeader className="border-b border-border/60 pb-4">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle>Runtime logs</CardTitle>
+              <CardTitle>{t("runtimeLogs.title")}</CardTitle>
               <CardDescription>
-                Container stdout/stderr from the isolated runner (deployment{" "}
-                <a
-                  href={`/deployments/${deploymentId}`}
+                {t("runtimeLogs.mainDescriptionBefore")}
+                <Link
+                  to={`/deployments/${deploymentId}`}
                   className="font-mono text-xs text-foreground underline-offset-2 hover:underline"
                 >
                   {deploymentShortId}
-                </a>
-                ). Open the preview if the stream is idle (cold start or TTL).
+                </Link>
+                {t("runtimeLogs.mainDescriptionAfter")}
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -323,7 +328,7 @@ export const ProjectRuntimeLogsPanel = ({
                 aria-pressed={live}
               >
                 {live ? <Pause className="size-3.5" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
-                {live ? "Live" : "Paused"}
+                {live ? t("runtimeLogs.live") : t("runtimeLogs.paused")}
               </Button>
               <Button
                 type="button"
@@ -334,7 +339,7 @@ export const ProjectRuntimeLogsPanel = ({
                 onClick={() => void loadSnapshot()}
               >
                 <RefreshCw className={cn("size-3.5", refreshBusy && "animate-spin")} aria-hidden />
-                Refresh
+                {t("common.refresh")}
               </Button>
             </div>
           </div>
@@ -347,24 +352,24 @@ export const ProjectRuntimeLogsPanel = ({
               />
               <Input
                 className="h-9 pl-9 font-mono text-xs"
-                placeholder="Search logs…"
+                placeholder={t("runtimeLogs.searchPlaceholder")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                aria-label="Search log messages"
+                aria-label={t("runtimeLogs.searchAria")}
               />
             </div>
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <label className="flex cursor-pointer items-center gap-2">
                 <Checkbox checked={showError} onCheckedChange={(v) => setShowError(v === true)} />
-                <span>Error</span>
+                <span>{t("runtimeLogs.levelError")}</span>
               </label>
               <label className="flex cursor-pointer items-center gap-2">
                 <Checkbox checked={showWarning} onCheckedChange={(v) => setShowWarning(v === true)} />
-                <span>Warning</span>
+                <span>{t("runtimeLogs.levelWarning")}</span>
               </label>
               <label className="flex cursor-pointer items-center gap-2">
                 <Checkbox checked={showInfo} onCheckedChange={(v) => setShowInfo(v === true)} />
-                <span>Info</span>
+                <span>{t("runtimeLogs.levelInfo")}</span>
               </label>
             </div>
           </div>
@@ -375,9 +380,9 @@ export const ProjectRuntimeLogsPanel = ({
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-36 font-mono text-xs">Time</TableHead>
-                    <TableHead className="w-16 text-center text-xs">Level</TableHead>
-                    <TableHead className="text-xs">Message</TableHead>
+                    <TableHead className="w-36 font-mono text-xs">{t("runtimeLogs.tableTime")}</TableHead>
+                    <TableHead className="w-16 text-center text-xs">{t("runtimeLogs.tableLevel")}</TableHead>
+                    <TableHead className="text-xs">{t("runtimeLogs.tableMessage")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -386,9 +391,9 @@ export const ProjectRuntimeLogsPanel = ({
                       <TableCell colSpan={3} className="h-24 text-center text-sm text-muted-foreground">
                         {parsed.length === 0
                           ? live
-                            ? "Waiting for log lines…"
-                            : "No snapshot yet. Turn on Live or click Refresh."
-                          : "No lines match filters."}
+                            ? t("runtimeLogs.emptyWaiting")
+                            : t("runtimeLogs.emptyNoSnapshot")
+                          : t("runtimeLogs.emptyNoFilter")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -408,7 +413,7 @@ export const ProjectRuntimeLogsPanel = ({
                           }
                         }}
                         tabIndex={0}
-                        aria-label={`Log line ${row.displayTime}`}
+                        aria-label={t("runtimeLogs.lineAria", { time: row.displayTime })}
                       >
                         <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
                           {row.displayTime}
@@ -430,9 +435,12 @@ export const ProjectRuntimeLogsPanel = ({
       <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
           <SheetHeader>
-            <SheetTitle className="font-mono text-sm">Log line</SheetTitle>
+            <SheetTitle className="font-mono text-sm">{t("runtimeLogs.sheetTitle")}</SheetTitle>
             <SheetDescription>
-              Deployment {deploymentShortId} · {selected?.displayTime ?? ""}
+              {t("runtimeLogs.sheetDescription", {
+                shortId: deploymentShortId,
+                time: selected?.displayTime ?? ""
+              })}
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4 space-y-3">

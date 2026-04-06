@@ -1,8 +1,9 @@
-import * as React from "react";
 import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
+import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { fetchWithCsrf } from "./fetchWithCsrf";
 import { showPageToast } from "./pageNotifications";
-import { RefreshCw } from "lucide-react";
 
 export type ProjectDetailSiteMetaBootstrap = {
   siteIconUrl: string | null;
@@ -30,7 +31,6 @@ export type ProjectDetailBootstrap = {
   /** true if this project has at least one deployment that finished successfully */
   hasSuccessfulDeployment: boolean;
   siteMeta: ProjectDetailSiteMetaBootstrap | null;
-  deployments?: ProjectDeploymentRowBootstrap[];
   currentDeploymentId?: string | null;
 };
 
@@ -54,6 +54,7 @@ export const ProjectDetailSetCurrentRoot = ({
 }: {
   projectId: string;
 }): React.ReactElement | null => {
+  const { t } = useTranslation();
   const [pendingDeploymentId, setPendingDeploymentId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -75,14 +76,14 @@ export const ProjectDetailSetCurrentRoot = ({
           });
           const payload = (await response.json().catch(() => ({}))) as { error?: string };
           if (!response.ok) {
-            throw new Error(payload.error ?? "Failed to update current deployment");
+            throw new Error(payload.error ?? t("projectDetail.updateCurrentFailed"));
           }
-          notify("This deployment is now the project current.", "success");
+          notify(t("projectDetail.setCurrentSuccess"), "success");
           window.setTimeout(() => {
             window.location.reload();
           }, 400);
         } catch (err) {
-          notify(err instanceof Error ? err.message : "Failed to set current deployment", "error");
+          notify(err instanceof Error ? err.message : t("projectDetail.setCurrentFailed"), "error");
         } finally {
           setPendingDeploymentId(null);
         }
@@ -90,7 +91,7 @@ export const ProjectDetailSetCurrentRoot = ({
     };
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
-  }, [projectId]);
+  }, [projectId, t]);
 
   React.useEffect(() => {
     document.querySelectorAll<HTMLElement>("[data-set-current-deployment]").forEach((node) => {
@@ -117,6 +118,7 @@ export const ProjectDetailHeroSitePreview = ({
   previewUrl: string;
   initial: ProjectDetailSiteMetaBootstrap;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const [siteIconUrl, setSiteIconUrl] = React.useState<string | null>(initial.siteIconUrl);
   const [siteOgImageUrl, setSiteOgImageUrl] = React.useState<string | null>(initial.siteOgImageUrl);
   const [siteMetaFetchedAt, setSiteMetaFetchedAt] = React.useState<string | null>(initial.siteMetaFetchedAt);
@@ -131,7 +133,8 @@ export const ProjectDetailHeroSitePreview = ({
       });
       const raw = (await response.json().catch(() => ({}))) as SiteMetadataRefreshOk | ApiErrorBody;
       if (!response.ok) {
-        const message = "error" in raw && typeof raw.error === "string" ? raw.error : "Refresh failed";
+        const message =
+          "error" in raw && typeof raw.error === "string" ? raw.error : t("projectDetail.siteMetaRefreshFailed");
         setSiteMetaError(message);
         return;
       }
@@ -142,11 +145,11 @@ export const ProjectDetailHeroSitePreview = ({
         setSiteMetaError(null);
       }
     } catch {
-      setSiteMetaError("Refresh failed");
+      setSiteMetaError(t("projectDetail.siteMetaRefreshFailed"));
     } finally {
       setRefreshing(false);
     }
-  }, [projectId]);
+  }, [projectId, t]);
 
   React.useEffect(() => {
     void runRefresh();
@@ -158,7 +161,7 @@ export const ProjectDetailHeroSitePreview = ({
         href={previewUrl}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Open live preview"
+        aria-label={t("projectDetail.openLivePreview")}
         className="group relative flex size-full overflow-hidden rounded-lg border border-border/80 bg-muted/25 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
       >
         {siteOgImageUrl ? (
@@ -171,7 +174,7 @@ export const ProjectDetailHeroSitePreview = ({
           />
         ) : (
           <div className="flex size-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
-            {refreshing ? "Fetching preview image…" : "No Open Graph image yet"}
+            {refreshing ? t("projectDetail.fetchingPreviewImage") : t("projectDetail.noOgImage")}
           </div>
         )}
       </a>
@@ -193,8 +196,8 @@ export const ProjectDetailHeroSitePreview = ({
         disabled={refreshing}
         onClick={() => void runRefresh()}
         className="absolute right-2 top-2 z-20 size-9 border border-border/80 bg-background/90 shadow-sm backdrop-blur-sm"
-        aria-label={refreshing ? "Refreshing preview metadata" : "Refresh preview image from live site"}
-        title="Refresh preview image"
+        aria-label={refreshing ? t("projectDetail.refreshingSiteMeta") : t("projectDetail.refreshSiteMeta")}
+        title={t("projectDetail.refreshSiteMeta")}
       >
         <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden />
       </Button>
@@ -205,7 +208,7 @@ export const ProjectDetailHeroSitePreview = ({
       ) : null}
       {siteMetaFetchedAt && !siteMetaError ? (
         <p className="mt-1.5 text-[0.65rem] text-muted-foreground tabular-nums">
-          Updated {new Date(siteMetaFetchedAt).toLocaleString()}
+          {t("projectDetail.siteMetaUpdated", { time: new Date(siteMetaFetchedAt).toLocaleString() })}
         </p>
       ) : null}
     </div>
@@ -221,6 +224,7 @@ export const ProjectDetailDeployTrigger = ({
   label: string;
   className?: string;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const [pending, setPending] = React.useState(false);
 
   const handleDeploy = async (): Promise<void> => {
@@ -234,14 +238,14 @@ export const ProjectDetailDeployTrigger = ({
       });
       const data = (await response.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to create deployment");
+        throw new Error(data.error ?? t("projectDetail.deployCreateFailed"));
       }
-      notify("Deployment started!", "success");
+      notify(t("projectDetail.deploymentStartedToast"), "success");
       window.setTimeout(() => {
         window.location.href = `/deployments/${data.id ?? ""}`;
       }, 500);
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Failed to create deployment", "error");
+      notify(err instanceof Error ? err.message : t("projectDetail.deployCreateFailed"), "error");
     } finally {
       setPending(false);
     }

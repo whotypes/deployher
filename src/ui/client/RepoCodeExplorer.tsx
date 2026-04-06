@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronRight, FileCode, Folder, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,9 +84,11 @@ export const RepoCodeExplorer = ({
   repo,
   ref,
   projectRoot,
-  title = "Repository browser",
+  title,
   className
 }: RepoCodeExplorerProps): React.ReactElement => {
+  const { t } = useTranslation();
+  const displayTitle = title ?? t("repoExplorer.defaultTitle");
   const [filter, setFilter] = React.useState("");
   const debouncedFilter = useDebouncedValue(filter, 500);
   const [path, setPath] = React.useState<string[]>([]);
@@ -132,14 +135,14 @@ export const RepoCodeExplorer = ({
         });
         const data = (await response.json().catch(() => ({}))) as RepoLocsApiResponse & { error?: string };
         if (!response.ok) {
-          throw new Error(data.error ?? "Failed to load line counts");
+          throw new Error(data.error ?? t("repoExplorer.lineCountsFailed"));
         }
         if (!cancelled) {
           setLocsRes(data);
         }
       } catch (e) {
         if (!cancelled) {
-          setLocsError(e instanceof Error ? e.message : "Failed to load repository");
+          setLocsError(e instanceof Error ? e.message : t("repoExplorer.loadRepoFailed"));
         }
       } finally {
         if (!cancelled) setLocsLoading(false);
@@ -148,7 +151,7 @@ export const RepoCodeExplorer = ({
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, ref, projectRoot, debouncedFilter]);
+  }, [owner, repo, ref, projectRoot, debouncedFilter, t]);
 
   const relFilePath = path.length ? path.join("/") : "";
 
@@ -178,14 +181,14 @@ export const RepoCodeExplorer = ({
         });
         const data = (await response.json().catch(() => ({}))) as RepoFileApiResponse & { error?: string };
         if (!response.ok) {
-          throw new Error(data.error ?? "Failed to load file");
+          throw new Error(data.error ?? t("repoExplorer.fileLoadFailed"));
         }
         if (!cancelled) {
           setFileContent(data.content);
         }
       } catch (e) {
         if (!cancelled) {
-          setFileError(e instanceof Error ? e.message : "Failed to load file");
+          setFileError(e instanceof Error ? e.message : t("repoExplorer.fileLoadFailed"));
         }
       } finally {
         if (!cancelled) setFileLoading(false);
@@ -194,7 +197,7 @@ export const RepoCodeExplorer = ({
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, ref, projectRoot, isFile, relFilePath]);
+  }, [owner, repo, ref, projectRoot, isFile, relFilePath, t]);
 
   const prismBlock = React.useMemo(() => {
     if (!isFile || fileContent === null || relFilePath === "") {
@@ -206,10 +209,10 @@ export const RepoCodeExplorer = ({
     } catch (e) {
       return {
         ok: false as const,
-        error: e instanceof Error ? e.message : "Syntax highlighting failed"
+        error: e instanceof Error ? e.message : t("repoExplorer.syntaxHighlightFailed")
       };
     }
-  }, [fileContent, isFile, relFilePath]);
+  }, [fileContent, isFile, relFilePath, t]);
 
   const totalSiblingLocs: number =
     displayChildren !== undefined
@@ -250,24 +253,22 @@ export const RepoCodeExplorer = ({
 
       <div className="space-y-3 p-3">
         <div className="flex flex-col gap-1">
-          <h3 className="text-foreground text-sm font-semibold">{title}</h3>
-          <p className="text-muted-foreground text-xs">
-            Line counts from a snapshot of the repo (zip download). Large or binary files are skipped.
-          </p>
+          <h3 className="text-foreground text-sm font-semibold">{displayTitle}</h3>
+          <p className="text-muted-foreground text-xs">{t("repoExplorer.intro")}</p>
         </div>
 
         <Input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter paths (e.g. .ts,.tsx or ^src/)"
+          placeholder={t("repoExplorer.pathFilterPlaceholder")}
           className="font-mono text-xs"
-          aria-label="Path filter"
+          aria-label={t("repoExplorer.pathFilterAria")}
         />
 
         {locsLoading ? (
           <div className="text-muted-foreground flex items-center gap-2 py-8 text-sm">
             <Loader2 className="size-4 animate-spin" aria-hidden />
-            Scanning repository…
+            {t("repoExplorer.scanning")}
           </div>
         ) : locsError ? (
           <p className="text-destructive text-sm" role="alert">
@@ -277,7 +278,9 @@ export const RepoCodeExplorer = ({
           <>
             {locsRes?.truncated ? (
               <p className="border-amber-500/30 bg-amber-500/5 text-amber-800 dark:text-amber-200 rounded-md border px-2 py-1.5 text-xs">
-                Partial results: {locsRes.truncatedReason ?? "limits reached"}.
+                {t("repoExplorer.partialResults", {
+                  reason: locsRes.truncatedReason ?? t("repoExplorer.limitsReached")
+                })}
               </p>
             ) : null}
 
@@ -309,7 +312,7 @@ export const RepoCodeExplorer = ({
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="flex min-h-[220px] flex-col gap-1">
-                <p className="text-muted-foreground text-xs font-medium">Files</p>
+                <p className="text-muted-foreground text-xs font-medium">{t("repoExplorer.files")}</p>
                 <ScrollArea className="border-border/70 h-[min(22rem,50vh)] rounded-md border">
                   <ul className="divide-border/60 divide-y p-0">
                     {displayChildren && totalSiblingLocs !== undefined
@@ -321,8 +324,11 @@ export const RepoCodeExplorer = ({
                           const rowActive = folder ? false : selectedFileName === name;
                           let langBar = 0;
                           if (selectedLang && folder && isFolder(child) && currentLocs?.locByLangs?.[selectedLang]) {
-                            const t = currentLocs.locByLangs[selectedLang]!;
-                            langBar = t > 0 ? ((child.locByLangs?.[selectedLang] ?? 0) / t) * 100 : 0;
+                            const langTotalForBar = currentLocs.locByLangs[selectedLang]!;
+                            langBar =
+                              langTotalForBar > 0
+                                ? ((child.locByLangs?.[selectedLang] ?? 0) / langTotalForBar) * 100
+                                : 0;
                           }
                           return (
                             <li key={name}>
@@ -362,7 +368,7 @@ export const RepoCodeExplorer = ({
                         })
                       : null}
                     {!displayChildren || Object.keys(displayChildren).length === 0 ? (
-                      <li className="text-muted-foreground px-3 py-6 text-center text-xs">No files</li>
+                      <li className="text-muted-foreground px-3 py-6 text-center text-xs">{t("repoExplorer.noFiles")}</li>
                     ) : null}
                   </ul>
                 </ScrollArea>
@@ -371,7 +377,7 @@ export const RepoCodeExplorer = ({
               <div className="flex min-h-[220px] flex-col gap-1">
                 {isFile ? (
                   <>
-                    <p className="text-muted-foreground text-xs font-medium">Preview</p>
+                    <p className="text-muted-foreground text-xs font-medium">{t("repoExplorer.preview")}</p>
                     <div className="border-border/70 bg-background flex h-[min(22rem,50vh)] flex-col overflow-hidden rounded-md border">
                       <div className="border-border/60 border-b px-2 py-1.5 font-mono text-xs text-muted-foreground">
                         {relFilePath}
@@ -379,7 +385,7 @@ export const RepoCodeExplorer = ({
                       {fileLoading ? (
                         <div className="text-muted-foreground flex flex-1 items-center justify-center gap-2 text-xs">
                           <Loader2 className="size-4 animate-spin" />
-                          Loading…
+                          {t("repoExplorer.loading")}
                         </div>
                       ) : fileError ? (
                         <p className="text-destructive p-3 text-xs">{fileError}</p>
@@ -426,7 +432,7 @@ export const RepoCodeExplorer = ({
                 ) : (
                   <>
                     <p className="text-muted-foreground text-xs font-medium">
-                      Lines of code
+                      {t("repoExplorer.linesOfCode")}
                       {currentLocs !== null && currentLocs.loc !== undefined
                         ? ` (${formatNumber(currentLocs.loc)})`
                         : ""}
@@ -454,7 +460,7 @@ export const RepoCodeExplorer = ({
                         ))}
                         {langEntries.length === 0 ? (
                           <li className="text-muted-foreground px-3 py-6 text-center text-xs">
-                            No language breakdown
+                            {t("repoExplorer.noLanguageBreakdown")}
                           </li>
                         ) : null}
                       </ul>

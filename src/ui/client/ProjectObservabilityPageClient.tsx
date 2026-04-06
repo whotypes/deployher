@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,8 +72,8 @@ type RuleRow = {
   updatedAt: string;
 };
 
-const formatDuration = (sec: number | null): string => {
-  if (sec === null || !Number.isFinite(sec)) return "—";
+const formatDuration = (sec: number | null, emDash: string): string => {
+  if (sec === null || !Number.isFinite(sec)) return emDash;
   if (sec < 60) return `${Math.round(sec)}s`;
   if (sec < 3600) return `${(sec / 60).toFixed(1)}m`;
   return `${(sec / 3600).toFixed(1)}h`;
@@ -87,17 +88,26 @@ const formatAxisDate = (iso: string, bucket: string): string => {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 
-const deployChartConfig = {
-  success: { label: "Success", color: "hsl(142, 76%, 36%)" },
-  failed: { label: "Failed", color: "hsl(0, 84%, 60%)" }
-} satisfies ChartConfig;
-
-const trafficChartConfig = {
-  count: { label: "Samples", color: "hsl(221, 83%, 53%)" }
-} satisfies ChartConfig;
-
 export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: ProjectObservabilityBootstrap }) => {
+  const { t } = useTranslation();
   const { projectId, projectName, runtimeLogs } = bootstrap;
+
+  const deployChartConfig = useMemo(
+    () =>
+      ({
+        success: { label: t("projectObservability.chartLegendSuccess"), color: "hsl(142, 76%, 36%)" },
+        failed: { label: t("projectObservability.chartLegendFailed"), color: "hsl(0, 84%, 60%)" }
+      }) satisfies ChartConfig,
+    [t]
+  );
+
+  const trafficChartConfig = useMemo(
+    () =>
+      ({
+        count: { label: t("projectObservability.chartLegendSamples"), color: "hsl(221, 83%, 53%)" }
+      }) satisfies ChartConfig,
+    [t]
+  );
   const [rangeDays, setRangeDays] = useState<7 | 30>(7);
   const [metricsBucket, setMetricsBucket] = useState<"hour" | "day">("day");
   const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
@@ -119,37 +129,37 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
       `/api/projects/${projectId}/observability/metrics?rangeDays=${rangeDays}&bucket=${metricsBucket}`,
       { credentials: "same-origin" }
     );
-    if (!res.ok) throw new Error("Failed to load metrics");
+    if (!res.ok) throw new Error(t("projectObservability.loadMetricsFailed"));
     setMetrics((await res.json()) as MetricsPayload);
-  }, [projectId, rangeDays, metricsBucket]);
+  }, [projectId, rangeDays, metricsBucket, t]);
 
   const loadTraffic = useCallback(async () => {
     const res = await fetch(
       `/api/projects/${projectId}/observability/traffic?rangeDays=${rangeDays}`,
       { credentials: "same-origin" }
     );
-    if (!res.ok) throw new Error("Failed to load traffic");
+    if (!res.ok) throw new Error(t("projectObservability.loadTrafficFailed"));
     setTraffic((await res.json()) as TrafficPayload);
-  }, [projectId, rangeDays]);
+  }, [projectId, rangeDays, t]);
 
   const loadAlerts = useCallback(async () => {
     const [dRes, rRes] = await Promise.all([
       fetch(`/api/projects/${projectId}/observability/alerts/destinations`, { credentials: "same-origin" }),
       fetch(`/api/projects/${projectId}/observability/alerts/rules`, { credentials: "same-origin" })
     ]);
-    if (!dRes.ok || !rRes.ok) throw new Error("Failed to load alerts");
+    if (!dRes.ok || !rRes.ok) throw new Error(t("projectObservability.loadAlertsFailed"));
     setDestinations((await dRes.json()) as DestinationRow[]);
     setRules((await rRes.json()) as RuleRow[]);
-  }, [projectId]);
+  }, [projectId, t]);
 
   const refreshAll = useCallback(async () => {
     setLoadError(null);
     try {
       await Promise.all([loadMetrics(), loadTraffic(), loadAlerts()]);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load");
+      setLoadError(e instanceof Error ? e.message : t("common.fetchFailed"));
     }
-  }, [loadAlerts, loadMetrics, loadTraffic]);
+  }, [loadAlerts, loadMetrics, loadTraffic, t]);
 
   useEffect(() => {
     void refreshAll();
@@ -164,7 +174,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
     });
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setLoadError(j.error ?? "Failed to add destination");
+      setLoadError(j.error ?? t("projectObservability.addDestinationFailed"));
       return;
     }
     setNewWebhookUrl("");
@@ -177,7 +187,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
       { method: "DELETE" }
     );
     if (!res.ok) {
-      setLoadError("Failed to delete destination");
+      setLoadError(t("projectObservability.deleteDestinationFailed"));
       return;
     }
     await loadAlerts();
@@ -185,12 +195,12 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
 
   const handleAddRule = async () => {
     if (!ruleDestinationId || ruleDestinationId === "__none__") {
-      setLoadError("Pick a webhook destination");
+      setLoadError(t("projectObservability.pickWebhook"));
       return;
     }
     const threshold = Number.parseInt(ruleThreshold, 10);
     if (!Number.isFinite(threshold)) {
-      setLoadError("Invalid threshold");
+      setLoadError(t("projectObservability.invalidThreshold"));
       return;
     }
     const res = await fetchWithCsrf(`/api/projects/${projectId}/observability/alerts/rules`, {
@@ -204,7 +214,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
     });
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setLoadError(j.error ?? "Failed to create rule");
+      setLoadError(j.error ?? t("projectObservability.createRuleFailed"));
       return;
     }
     setLoadError(null);
@@ -216,7 +226,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
       method: "DELETE"
     });
     if (!res.ok) {
-      setLoadError("Failed to delete rule");
+      setLoadError(t("projectObservability.deleteRuleFailed"));
       return;
     }
     await loadAlerts();
@@ -229,7 +239,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
       body: JSON.stringify({ enabled: !rule.enabled })
     });
     if (!res.ok) {
-      setLoadError("Failed to update rule");
+      setLoadError(t("projectObservability.updateRuleFailed"));
       return;
     }
     await loadAlerts();
@@ -249,7 +259,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
       bodyPreview?: string;
     };
     if (res.ok && j.ok) {
-      setTestResult(`OK HTTP ${j.status ?? "?"}`);
+      setTestResult(t("projectObservability.testWebhookOk", { status: String(j.status ?? "?") }));
     } else {
       setTestResult(j.error ?? `HTTP ${j.status ?? res.status} ${j.bodyPreview ?? ""}`);
     }
@@ -279,7 +289,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
 
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-2">
-          <Label htmlFor="obs-range">Range</Label>
+          <Label htmlFor="obs-range">{t("projectObservability.range")}</Label>
           <Select
             value={String(rangeDays)}
             onValueChange={(v) => setRangeDays(v === "30" ? 30 : 7)}
@@ -288,13 +298,13 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="7">Last 7 days</SelectItem>
-              <SelectItem value="30">Last 30 days</SelectItem>
+              <SelectItem value="7">{t("projectObservability.last7Days")}</SelectItem>
+              <SelectItem value="30">{t("projectObservability.last30Days")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="obs-bucket">Deploy chart bucket</Label>
+          <Label htmlFor="obs-bucket">{t("projectObservability.deployChartBucket")}</Label>
           <Select
             value={metricsBucket}
             onValueChange={(v) => setMetricsBucket(v === "hour" ? "hour" : "day")}
@@ -303,67 +313,73 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="day">Daily</SelectItem>
-              <SelectItem value="hour">Hourly</SelectItem>
+              <SelectItem value="day">{t("projectObservability.bucketDaily")}</SelectItem>
+              <SelectItem value="hour">{t("projectObservability.bucketHourly")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <Button type="button" variant="outline" onClick={() => void refreshAll()}>
-          Refresh
+          {t("common.refresh")}
         </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Success rate</CardTitle>
-            <CardDescription>Finished builds in range</CardDescription>
+            <CardTitle className="text-sm font-medium">{t("projectObservability.successRate")}</CardTitle>
+            <CardDescription>{t("projectObservability.finishedBuildsInRange")}</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              {metrics?.successRate != null ? `${(metrics.successRate * 100).toFixed(1)}%` : "—"}
+              {metrics?.successRate != null ? `${(metrics.successRate * 100).toFixed(1)}%` : t("common.emDash")}
             </p>
             <p className="text-xs text-muted-foreground">
-              {metrics ? `${metrics.terminalInRange.success} ok · ${metrics.terminalInRange.failed} failed` : ""}
+              {metrics
+                ? t("projectObservability.okFailedCounts", {
+                    ok: metrics.terminalInRange.success,
+                    failed: metrics.terminalInRange.failed
+                  })
+                : ""}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Build duration</CardTitle>
-            <CardDescription>p50 / p95 (finished)</CardDescription>
+            <CardTitle className="text-sm font-medium">{t("projectObservability.buildDuration")}</CardTitle>
+            <CardDescription>{t("projectObservability.p50p95")}</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              {formatDuration(metrics?.buildDurationSeconds.p50 ?? null)} /{" "}
-              {formatDuration(metrics?.buildDurationSeconds.p95 ?? null)}
+              {formatDuration(metrics?.buildDurationSeconds.p50 ?? null, t("common.emDash"))} /{" "}
+              {formatDuration(metrics?.buildDurationSeconds.p95 ?? null, t("common.emDash"))}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Backlog</CardTitle>
-            <CardDescription>Queued / building</CardDescription>
+            <CardTitle className="text-sm font-medium">{t("projectObservability.backlog")}</CardTitle>
+            <CardDescription>{t("projectObservability.queuedBuilding")}</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              {metrics ? `${metrics.backlog.queued} / ${metrics.backlog.building}` : "—"}
+              {metrics ? `${metrics.backlog.queued} / ${metrics.backlog.building}` : t("common.emDash")}
             </p>
             {metrics?.backlog.oldestQueuedAt ? (
               <p className="text-xs text-muted-foreground">
-                Oldest queued: {new Date(metrics.backlog.oldestQueuedAt).toLocaleString()}
+                {t("projectObservability.oldestQueued")}{" "}
+                {new Date(metrics.backlog.oldestQueuedAt).toLocaleString()}
               </p>
             ) : null}
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Preview samples</CardTitle>
-            <CardDescription>Traffic logging rate</CardDescription>
+            <CardTitle className="text-sm font-medium">{t("projectObservability.previewSamples")}</CardTitle>
+            <CardDescription>{t("projectObservability.trafficLoggingRate")}</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              {traffic != null ? `${(traffic.sampleRate * 100).toFixed(1)}%` : "—"}
+              {traffic != null ? `${(traffic.sampleRate * 100).toFixed(1)}%` : t("common.emDash")}
             </p>
           </CardContent>
         </Card>
@@ -371,8 +387,12 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
 
       <Card>
         <CardHeader>
-          <CardTitle>Deployments over time</CardTitle>
-          <CardDescription>Counts by {metrics?.bucket ?? "bucket"} in the selected range</CardDescription>
+          <CardTitle>{t("projectObservability.deploymentsOverTime")}</CardTitle>
+          <CardDescription>
+            {t("projectObservability.countsByBucket", {
+              bucket: metrics?.bucket ?? t("projectObservability.bucket")
+            })}
+          </CardDescription>
         </CardHeader>
         <CardContent className="pl-0">
           {bucketChartData.length > 0 ? (
@@ -399,7 +419,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
               </LineChart>
             </ChartContainer>
           ) : (
-            <p className="text-sm text-muted-foreground">No deployment data in this range.</p>
+            <p className="text-sm text-muted-foreground">{t("projectObservability.noDeployData")}</p>
           )}
         </CardContent>
       </Card>
@@ -407,8 +427,8 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Preview traffic (sampled)</CardTitle>
-            <CardDescription>Requests per day (sampled rows only)</CardDescription>
+            <CardTitle>{t("projectObservability.previewTrafficSampled")}</CardTitle>
+            <CardDescription>{t("projectObservability.requestsPerDay")}</CardDescription>
           </CardHeader>
           <CardContent className="pl-0">
             {trafficChartData.length > 0 ? (
@@ -422,23 +442,23 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                 </BarChart>
               </ChartContainer>
             ) : (
-              <p className="text-sm text-muted-foreground">No preview samples in this range.</p>
+              <p className="text-sm text-muted-foreground">{t("projectObservability.noPreviewSamples")}</p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Top client IPs</CardTitle>
-            <CardDescription>From sampled preview requests</CardDescription>
+            <CardTitle>{t("projectObservability.topClientIps")}</CardTitle>
+            <CardDescription>{t("projectObservability.fromSampledPreview")}</CardDescription>
           </CardHeader>
           <CardContent>
             {traffic && traffic.topIps.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>IP</TableHead>
-                    <TableHead className="text-right">Samples</TableHead>
+                    <TableHead>{t("projectObservability.ipCol")}</TableHead>
+                    <TableHead className="text-right">{t("projectObservability.samplesCol")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -451,7 +471,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-sm text-muted-foreground">No IP data yet.</p>
+              <p className="text-sm text-muted-foreground">{t("projectObservability.noIpData")}</p>
             )}
           </CardContent>
         </Card>
@@ -460,14 +480,14 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
       {traffic && traffic.byStatus.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Response status (preview)</CardTitle>
+            <CardTitle>{t("projectObservability.responseStatusPreview")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Samples</TableHead>
+                  <TableHead>{t("projectObservability.statusCol")}</TableHead>
+                  <TableHead className="text-right">{t("projectObservability.samplesCol")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -485,15 +505,12 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
 
       <Card>
         <CardHeader>
-          <CardTitle>Webhook alerts</CardTitle>
-          <CardDescription>
-            We POST JSON to your URL when rules fire ({projectName}). Same payload shape as the test
-            below.
-          </CardDescription>
+          <CardTitle>{t("projectObservability.webhookAlerts")}</CardTitle>
+          <CardDescription>{t("projectObservability.webhookAlertsDesc", { projectName })}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
           <div className="space-y-3">
-            <Label htmlFor="test-webhook">Test webhook URL</Label>
+            <Label htmlFor="test-webhook">{t("projectObservability.testWebhookUrl")}</Label>
             <div className="flex flex-wrap gap-2">
               <Input
                 id="test-webhook"
@@ -504,14 +521,14 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                 autoComplete="off"
               />
               <Button type="button" variant="secondary" onClick={() => void handleTestWebhook()}>
-                Send test
+                {t("projectObservability.sendTest")}
               </Button>
             </div>
             {testResult ? <p className="text-sm text-muted-foreground">{testResult}</p> : null}
           </div>
 
           <div className="space-y-3">
-            <Label htmlFor="new-dest">Add webhook destination</Label>
+            <Label htmlFor="new-dest">{t("projectObservability.addWebhookDestination")}</Label>
             <div className="flex flex-wrap gap-2">
               <Input
                 id="new-dest"
@@ -522,7 +539,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                 autoComplete="off"
               />
               <Button type="button" onClick={() => void handleAddDestination()}>
-                Add
+                {t("projectObservability.add")}
               </Button>
             </div>
             {destinations.length > 0 ? (
@@ -539,29 +556,29 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                       size="sm"
                       onClick={() => void handleDeleteDestination(d.id)}
                     >
-                      Remove
+                      {t("projectObservability.remove")}
                     </Button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No destinations yet.</p>
+              <p className="text-sm text-muted-foreground">{t("projectObservability.noDestinationsYet")}</p>
             )}
           </div>
 
           <div className="space-y-3 border-t border-border/60 pt-6">
-            <h3 className="text-sm font-medium">Rules</h3>
+            <h3 className="text-sm font-medium">{t("projectObservability.rulesHeading")}</h3>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 md:items-end">
               <div className="space-y-2">
-                <Label>Destination</Label>
+                <Label>{t("projectObservability.destination")}</Label>
                 <Select value={ruleDestinationId} onValueChange={setRuleDestinationId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select…" />
+                    <SelectValue placeholder={t("projectObservability.selectPlaceholder")} />
                   </SelectTrigger>
                   <SelectContent>
                     {destinations.length === 0 ? (
                       <SelectItem value="__none__" disabled>
-                        Add a destination first
+                        {t("projectObservability.addDestinationFirst")}
                       </SelectItem>
                     ) : (
                       destinations.map((d) => (
@@ -575,7 +592,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Type</Label>
+                <Label>{t("projectObservability.type")}</Label>
                 <Select
                   value={ruleType}
                   onValueChange={(v) =>
@@ -586,14 +603,18 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="consecutive_failures">Consecutive failures</SelectItem>
-                    <SelectItem value="queue_stall">Queue stall (seconds)</SelectItem>
+                    <SelectItem value="consecutive_failures">
+                      {t("projectObservability.ruleConsecutiveFailures")}
+                    </SelectItem>
+                    <SelectItem value="queue_stall">{t("projectObservability.ruleQueueStall")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rule-threshold">
-                  {ruleType === "consecutive_failures" ? "Failure count" : "Max queue age (sec)"}
+                  {ruleType === "consecutive_failures"
+                    ? t("projectObservability.failureCount")
+                    : t("projectObservability.maxQueueAge")}
                 </Label>
                 <Input
                   id="rule-threshold"
@@ -603,7 +624,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                 />
               </div>
               <Button type="button" onClick={() => void handleAddRule()}>
-                Add rule
+                {t("projectObservability.addRule")}
               </Button>
             </div>
 
@@ -611,17 +632,21 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Threshold</TableHead>
-                    <TableHead>Webhook</TableHead>
-                    <TableHead>Enabled</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t("projectObservability.type")}</TableHead>
+                    <TableHead>{t("projectObservability.threshold")}</TableHead>
+                    <TableHead>{t("projectObservability.webhookCol")}</TableHead>
+                    <TableHead>{t("projectObservability.enabled")}</TableHead>
+                    <TableHead className="text-right">{t("projectObservability.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rules.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell>{r.ruleType}</TableCell>
+                      <TableCell>
+                        {r.ruleType === "consecutive_failures"
+                          ? t("projectObservability.ruleConsecutiveFailures")
+                          : t("projectObservability.ruleQueueStall")}
+                      </TableCell>
                       <TableCell>{r.threshold}</TableCell>
                       <TableCell className="max-w-[200px] truncate font-mono text-xs">
                         {r.destinationWebhookUrl}
@@ -633,7 +658,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                           size="sm"
                           onClick={() => void handleToggleRule(r)}
                         >
-                          {r.enabled ? "On" : "Off"}
+                          {r.enabled ? t("projectObservability.on") : t("projectObservability.off")}
                         </Button>
                       </TableCell>
                       <TableCell className="text-right">
@@ -643,7 +668,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                           size="sm"
                           onClick={() => void handleDeleteRule(r.id)}
                         >
-                          Delete
+                          {t("projectObservability.delete")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -651,7 +676,7 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-sm text-muted-foreground">No rules yet.</p>
+              <p className="text-sm text-muted-foreground">{t("projectObservability.noRulesYet")}</p>
             )}
           </div>
         </CardContent>

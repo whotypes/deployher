@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -93,6 +95,7 @@ const GeneralSection = ({
   projectId: string;
   onToast: (message: string, variant: "success" | "error" | "warning") => void;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     const get = (id: string): string => {
@@ -143,7 +146,7 @@ const GeneralSection = ({
     body.buildCommand = buildCommand;
 
     if (Object.keys(body).length === 0) {
-      onToast("No changes to save", "warning");
+      onToast(t("projectSettings.noChanges"), "warning");
       return;
     }
 
@@ -154,12 +157,12 @@ const GeneralSection = ({
         body: JSON.stringify(body)
       });
       if (!response.ok) {
-        throw new Error(await parseApiError(response, "Failed to update project"));
+        throw new Error(await parseApiError(response, t("projectSettings.updateFailed")));
       }
-      onToast("Project updated!", "success");
+      onToast(t("projectSettings.updated"), "success");
       window.setTimeout(() => window.location.reload(), 500);
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Failed to update project", "error");
+      onToast(err instanceof Error ? err.message : t("projectSettings.updateFailed"), "error");
     }
   };
 
@@ -169,199 +172,214 @@ const GeneralSection = ({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">General</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Manage your project name, repository, and build configuration.
-        </p>
+        <h2 className="text-lg font-semibold">{t("projectSettings.general.sectionHeading")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t("projectSettings.general.sectionIntro")}</p>
       </div>
       <Separator />
       <form className="space-y-5" onSubmit={(e) => void handleSubmit(e)}>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-name">Project Name</Label>
-          <Input id="edit-name" type="text" placeholder={project.name} defaultValue={project.name} aria-label="Project name" />
+          <Label htmlFor="edit-name">{t("projectSettings.general.projectName")}</Label>
+          <Input
+            id="edit-name"
+            type="text"
+            placeholder={project.name}
+            defaultValue={project.name}
+            aria-label={t("projectSettings.general.ariaProjectName")}
+          />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-repo-url">Repository URL</Label>
+          <Label htmlFor="edit-repo-url">{t("projectSettings.general.repoUrl")}</Label>
           <Input
             id="edit-repo-url"
             type="url"
             placeholder={project.repoUrl}
             defaultValue={project.repoUrl}
-            aria-label="GitHub repository URL"
+            aria-label={t("projectSettings.general.ariaRepoUrl")}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-branch">Branch</Label>
-          <Input id="edit-branch" type="text" placeholder={project.branch} defaultValue={project.branch} aria-label="Branch to deploy" />
+          <Label htmlFor="edit-branch">{t("projectSettings.general.branch")}</Label>
+          <Input
+            id="edit-branch"
+            type="text"
+            placeholder={project.branch}
+            defaultValue={project.branch}
+            aria-label={t("projectSettings.general.ariaBranch")}
+          />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-workspace-root-dir">Workspace Root</Label>
+          <Label htmlFor="edit-workspace-root-dir">{t("projectSettings.general.workspaceRoot")}</Label>
           <Input
             id="edit-workspace-root-dir"
             type="text"
             placeholder="."
             defaultValue={project.workspaceRootDir}
-            aria-label="Workspace root directory inside the repository"
+            aria-label={t("projectSettings.general.ariaWorkspaceRoot")}
           />
           <p className="text-xs text-muted-foreground">
-            Install and lockfile detection run here. Set this to the monorepo workspace root, such as <code>apps</code> or{" "}
-            <code>.</code>.
+            {t("projectSettings.general.workspaceRootHint", { apps: "apps", dot: "." })}
           </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-project-root-dir">Project Root</Label>
+          <Label htmlFor="edit-project-root-dir">{t("projectSettings.general.projectRoot")}</Label>
           <Input
             id="edit-project-root-dir"
             type="text"
             placeholder="."
             defaultValue={project.projectRootDir}
-            aria-label="Project root directory inside the repository"
+            aria-label={t("projectSettings.general.ariaProjectRoot")}
           />
           <p className="text-xs text-muted-foreground">
-            Strategy detection and app build run here. This must stay inside the workspace root, for example <code>apps/web</code>.
+            {t("projectSettings.general.projectRootHint", { example: "apps/web" })}
           </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-runtime-image-mode">Runtime Image Mode</Label>
-          <select id="edit-runtime-image-mode" defaultValue={project.runtimeImageMode} aria-label="Runtime image mode" className={selectClass}>
-            <option value="auto">Auto</option>
-            <option value="platform">Platform image</option>
-            <option value="dockerfile">Repo Dockerfile</option>
+          <Label htmlFor="edit-runtime-image-mode">{t("projectSettings.general.runtimeImageMode")}</Label>
+          <select
+            id="edit-runtime-image-mode"
+            defaultValue={project.runtimeImageMode}
+            aria-label={t("projectSettings.general.ariaRuntimeImageMode")}
+            className={selectClass}
+          >
+            <option value="auto">{t("projectSettings.general.runtimeImageAuto")}</option>
+            <option value="platform">{t("projectSettings.general.runtimeImagePlatform")}</option>
+            <option value="dockerfile">{t("projectSettings.general.runtimeImageDockerfile")}</option>
           </select>
-          <p className="text-xs text-muted-foreground">
-            Auto prefers your repo Dockerfile when present. Platform always uses a Deployher-generated runtime image.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("projectSettings.general.runtimeImageHint")}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-dockerfile-path">Dockerfile Path (optional)</Label>
+          <Label htmlFor="edit-dockerfile-path">{t("projectSettings.general.dockerfilePath")}</Label>
           <Input
             id="edit-dockerfile-path"
             type="text"
             placeholder="Dockerfile"
             defaultValue={project.dockerfilePath ?? ""}
-            aria-label="Dockerfile path relative to the repository root"
+            aria-label={t("projectSettings.general.ariaDockerfilePath")}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-docker-build-target">Docker Build Target (optional)</Label>
+          <Label htmlFor="edit-docker-build-target">{t("projectSettings.general.dockerBuildTarget")}</Label>
           <Input
             id="edit-docker-build-target"
             type="text"
             placeholder="runner"
             defaultValue={project.dockerBuildTarget ?? ""}
-            aria-label="Docker build target"
+            aria-label={t("projectSettings.general.ariaDockerBuildTarget")}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-runtime-container-port">Runtime Container Port</Label>
+          <Label htmlFor="edit-runtime-container-port">{t("projectSettings.general.runtimeContainerPort")}</Label>
           <Input
             id="edit-runtime-container-port"
             type="number"
             min={1}
             max={65535}
             defaultValue={String(project.runtimeContainerPort)}
-            aria-label="Runtime container port"
+            aria-label={t("projectSettings.general.ariaRuntimePort")}
           />
-          <p className="text-xs text-muted-foreground">
-            Used for server previews when Deployher runs your built image. This is especially important for Dockerfile-first deploys.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("projectSettings.general.runtimeContainerPortHint")}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-skip-host-strategy-build">Host Build Strategy</Label>
+          <Label htmlFor="edit-skip-host-strategy-build">{t("projectSettings.general.hostBuildStrategy")}</Label>
           <select
             id="edit-skip-host-strategy-build"
             defaultValue={project.skipHostStrategyBuild ? "skip" : "build"}
-            aria-label="Skip host strategy build"
+            aria-label={t("projectSettings.general.ariaSkipHostBuild")}
             className={selectClass}
           >
-            <option value="build">Run host build strategy</option>
-            <option value="skip">Dockerfile-only server build</option>
+            <option value="build">{t("projectSettings.general.hostBuildRun")}</option>
+            <option value="skip">{t("projectSettings.general.hostBuildSkip")}</option>
           </select>
-          <p className="text-xs text-muted-foreground">
-            Dockerfile-only skips host install/build and uploads only the image built from your repo. Server previews only.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("projectSettings.general.hostBuildHint")}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-framework-hint">Framework</Label>
-          <select id="edit-framework-hint" defaultValue={project.frameworkHint} aria-label="Framework hint" className={selectClass}>
-            <option value="auto">Auto-detect</option>
-            <option value="nextjs">Next.js</option>
-            <option value="node">Node server</option>
-            <option value="python">Python</option>
-            <option value="static">Static site</option>
+          <Label htmlFor="edit-framework-hint">{t("projectSettings.general.framework")}</Label>
+          <select
+            id="edit-framework-hint"
+            defaultValue={project.frameworkHint}
+            aria-label={t("projectSettings.general.ariaFramework")}
+            className={selectClass}
+          >
+            <option value="auto">{t("projectSettings.general.frameworkAuto")}</option>
+            <option value="nextjs">{t("projectSettings.general.frameworkNextjs")}</option>
+            <option value="node">{t("projectSettings.general.frameworkNode")}</option>
+            <option value="python">{t("projectSettings.general.frameworkPython")}</option>
+            <option value="static">{t("projectSettings.general.frameworkStatic")}</option>
           </select>
-          <p className="text-xs text-muted-foreground">
-            Use a framework hint when auto-detect keeps picking the wrong output for this repository.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("projectSettings.general.frameworkHint")}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-preview-mode">Preview Type</Label>
-          <select id="edit-preview-mode" defaultValue={project.previewMode} aria-label="Preview type" className={selectClass}>
-            <option value="auto">Auto-detect</option>
-            <option value="static">Static</option>
-            <option value="server">Server</option>
+          <Label htmlFor="edit-preview-mode">{t("projectSettings.general.previewType")}</Label>
+          <select
+            id="edit-preview-mode"
+            defaultValue={project.previewMode}
+            aria-label={t("projectSettings.general.ariaPreviewMode")}
+            className={selectClass}
+          >
+            <option value="auto">{t("projectSettings.general.previewAuto")}</option>
+            <option value="static">{t("projectSettings.general.previewStatic")}</option>
+            <option value="server">{t("projectSettings.general.previewServer")}</option>
           </select>
-          <p className="text-xs text-muted-foreground">
-            This is your requested preview mode. The deployment detail page shows the final resolved output after the build.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("projectSettings.general.previewHint")}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-server-preview-target">Server preview</Label>
-          <select id="edit-server-preview-target" defaultValue="isolated-runner" aria-label="Server preview target" className={selectClass}>
-            <option value="isolated-runner">Isolated runner</option>
+          <Label htmlFor="edit-server-preview-target">{t("projectSettings.general.serverPreview")}</Label>
+          <select
+            id="edit-server-preview-target"
+            defaultValue="isolated-runner"
+            aria-label={t("projectSettings.general.ariaServerPreviewTarget")}
+            className={selectClass}
+          >
+            <option value="isolated-runner">{t("projectSettings.general.serverPreviewIsolated")}</option>
           </select>
-          <p className="text-xs text-muted-foreground">
-            Server previews are proxied to RUNNER_URL; the preview-runner loads runtime-image.tar from S3 and runs a bounded container.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("projectSettings.general.serverPreviewHint")}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-install-command">Install command (optional)</Label>
+          <Label htmlFor="edit-install-command">{t("projectSettings.general.installCommand")}</Label>
           <Textarea
             id="edit-install-command"
             rows={2}
             placeholder="npm ci --legacy-peer-deps"
             defaultValue={project.installCommand ?? ""}
-            aria-label="Custom dependency install command for Node.js builds"
+            aria-label={t("projectSettings.general.ariaInstallCommand")}
             className="min-h-[72px] resize-y font-mono text-sm"
           />
           <p className="text-xs text-muted-foreground">
-            For Node.js builds only, replaces the auto-detected install command. No shell — use a single command line (examples:{" "}
-            <code className="text-xs">npm ci --legacy-peer-deps</code>, <code className="text-xs">pnpm install --frozen-lockfile</code>
-            ). Runs in the workspace root inside the build container.
+            {t("projectSettings.general.installCommandHint", {
+              ex1: "npm ci --legacy-peer-deps",
+              ex2: "pnpm install --frozen-lockfile"
+            })}
           </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="edit-build-command">Build command (optional)</Label>
+          <Label htmlFor="edit-build-command">{t("projectSettings.general.buildCommand")}</Label>
           <Textarea
             id="edit-build-command"
             rows={2}
             placeholder="npm run build"
             defaultValue={project.buildCommand ?? ""}
-            aria-label="Custom build command for Node.js builds"
+            aria-label={t("projectSettings.general.ariaBuildCommand")}
             className="min-h-[72px] resize-y font-mono text-sm"
           />
           <p className="text-xs text-muted-foreground">
-            When set, runs this instead of the default package-manager build for Node.js. Leave empty to keep using{" "}
-            <code className="text-xs">package.json</code> behavior (including skipping build when there is no build script).
+            {t("projectSettings.general.buildCommandHint", { pkg: "package.json" })}
           </p>
         </div>
         <div className="pt-1">
-          <Button type="submit">Save Changes</Button>
+          <Button type="submit">{t("projectSettings.general.saveChanges")}</Button>
         </div>
       </form>
 
       <Separator className="my-8" />
       <div className="space-y-2">
-        <h3 className="text-lg font-semibold">Repository browser</h3>
-        <p className="text-muted-foreground text-sm">
-          Browse files and line counts for the configured branch and project root.
-        </p>
+        <h3 className="text-lg font-semibold">{t("projectSettings.general.repoBrowserHeading")}</h3>
+        <p className="text-muted-foreground text-sm">{t("projectSettings.general.repoBrowserIntro")}</p>
         {(() => {
           const spec = parseGitHubRepoUrl(project.repoUrl);
           if (!spec) {
             return (
               <p className="text-muted-foreground text-sm">
-                Repository browser requires an <code className="text-xs">https://github.com/…</code> URL.
+                {t("projectSettings.general.repoBrowserGithubOnly", { url: "https://github.com/…" })}
               </p>
             );
           }
@@ -369,7 +387,7 @@ const GeneralSection = ({
             <React.Suspense
               fallback={
                 <p className="text-muted-foreground text-sm" role="status">
-                  Loading repository browser…
+                  {t("projectSettings.general.loadingRepoBrowser")}
                 </p>
               }
             >
@@ -394,6 +412,7 @@ const EnvSection = ({
   projectId: string;
   onToast: (message: string, variant: "success" | "error" | "warning") => void;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const [rows, setRows] = React.useState<EnvRowModel[]>([]);
   const [baselineSerialized, setBaselineSerialized] = React.useState("");
   const [envLoaded, setEnvLoaded] = React.useState(false);
@@ -442,7 +461,7 @@ const EnvSection = ({
     try {
       const response = await fetch(`/api/projects/${projectId}/env`);
       if (!response.ok) {
-        throw new Error(await parseApiError(response, "Failed to load environment variables"));
+        throw new Error(await parseApiError(response, t("projectSettings.env.loadFailed")));
       }
       const list = (await response.json()) as ProjectEnv[];
       const mapped = mapApiToRows(list);
@@ -450,9 +469,9 @@ const EnvSection = ({
       setBaselineSerialized(serializeEnvRows(mapped));
       setEnvLoaded(true);
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Failed to load environment variables", "error");
+      onToast(err instanceof Error ? err.message : t("projectSettings.env.loadFailed"), "error");
     }
-  }, [projectId, onToast]);
+  }, [projectId, onToast, t]);
 
   React.useEffect(() => {
     void reloadEnvFromApi();
@@ -501,16 +520,16 @@ const EnvSection = ({
     try {
       const response = await fetchWithCsrf(`/api/projects/${projectId}/env/${row.serverId}`, { method: "DELETE" });
       if (!response.ok) {
-        throw new Error(await parseApiError(response, "Failed to delete environment variable"));
+        throw new Error(await parseApiError(response, t("projectSettings.env.deleteFailed")));
       }
       setRows((prev) => {
         const next = prev.filter((r) => r.rowId !== row.rowId);
         setBaselineSerialized(serializeEnvRows(next));
         return next;
       });
-      onToast("Environment variable deleted", "success");
+      onToast(t("projectSettings.env.deleted"), "success");
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Failed to delete environment variable", "error");
+      onToast(err instanceof Error ? err.message : t("projectSettings.env.deleteFailed"), "error");
     }
   };
 
@@ -538,13 +557,13 @@ const EnvSection = ({
       setCopyAllFlash(true);
       window.setTimeout(() => setCopyAllFlash(false), 1500);
     } catch {
-      onToast("Could not copy to clipboard", "warning");
+      onToast(t("projectSettings.env.copyFailed"), "warning");
     }
   };
 
   const handleDiscard = (): void => {
     if (!dirty) return;
-    if (!window.confirm("Discard all unsaved changes to environment variables?")) return;
+    if (!window.confirm(t("projectSettings.env.discardConfirm"))) return;
     void reloadEnvFromApi();
   };
 
@@ -558,15 +577,15 @@ const EnvSection = ({
       const isPublic = effectivePublic(row);
       if (!key && !value) continue;
       if (!key) {
-        onToast("Environment variable key is required", "warning");
+        onToast(t("projectSettings.env.keyRequired"), "warning");
         return;
       }
       if (!ENV_KEY_REGEX.test(key)) {
-        onToast(`Invalid env key: ${key}`, "warning");
+        onToast(t("projectSettings.env.invalidKey", { key }), "warning");
         return;
       }
       if (seenKeys.has(key)) {
-        onToast(`Duplicate env key: ${key}`, "warning");
+        onToast(t("projectSettings.env.duplicateKey", { key }), "warning");
         return;
       }
       seenKeys.add(key);
@@ -587,13 +606,13 @@ const EnvSection = ({
           body: JSON.stringify(payload)
         });
         if (!response.ok) {
-          throw new Error(await parseApiError(response, "Failed to save environment variables"));
+          throw new Error(await parseApiError(response, t("projectSettings.env.saveFailed")));
         }
       }
       await reloadEnvFromApi();
-      onToast("Environment variables saved", "success");
+      onToast(t("projectSettings.env.saved"), "success");
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Failed to save environment variables", "error");
+      onToast(err instanceof Error ? err.message : t("projectSettings.env.saveFailed"), "error");
     } finally {
       setSaveBusy(false);
     }
@@ -609,16 +628,21 @@ const EnvSection = ({
 
   const readFileEnv = async (file: File): Promise<void> => {
     if (file.size > MAX_ENV_FILE_BYTES) {
-      onToast(`.env file is too large (${file.size} bytes). Max is ${MAX_ENV_FILE_BYTES} bytes.`, "warning");
+      onToast(t("projectSettings.env.fileTooLarge", { size: file.size, max: MAX_ENV_FILE_BYTES }), "warning");
       return;
     }
     try {
       const text = await file.text();
       const parsed = parseEnvFileContent(text);
       const n = mergeParsed(parsed);
-      onToast(n > 0 ? `Merged ${n} variable(s) from file` : "No valid variables in file", n > 0 ? "success" : "warning");
+      onToast(
+        n > 0
+          ? t("projectSettings.env.mergedFromFile", { count: n })
+          : t("projectSettings.env.noValidInFile"),
+        n > 0 ? "success" : "warning"
+      );
     } catch {
-      onToast("Failed to read file", "error");
+      onToast(t("projectSettings.env.readFileFailed"), "error");
     }
   };
 
@@ -635,7 +659,10 @@ const EnvSection = ({
     if (!text) return;
     const parsed = parseEnvFileContent(text);
     const n = mergeParsed(parsed);
-    onToast(n > 0 ? `Merged ${n} variable(s) from drop` : "No valid variables in drop", n > 0 ? "success" : "warning");
+    onToast(
+      n > 0 ? t("projectSettings.env.mergedFromDrop", { count: n }) : t("projectSettings.env.noValidInDrop"),
+      n > 0 ? "success" : "warning"
+    );
   };
 
   const handlePasteArea = (e: React.ClipboardEvent): void => {
@@ -645,18 +672,24 @@ const EnvSection = ({
     const parsed = parseEnvFileContent(text);
     const n = mergeParsed(parsed);
     if (pasteRef.current) pasteRef.current.value = "";
-    onToast(n > 0 ? `Merged ${n} variable(s) from clipboard` : "No valid variables in paste", n > 0 ? "success" : "warning");
+    onToast(
+      n > 0 ? t("projectSettings.env.mergedFromClipboard", { count: n }) : t("projectSettings.env.noValidInPaste"),
+      n > 0 ? "success" : "warning"
+    );
   };
 
   const handleTablePaste = (e: React.ClipboardEvent): void => {
-    const t = e.target;
-    if (!(t instanceof HTMLInputElement)) return;
+    const target = e.target;
+    if (!(target instanceof HTMLInputElement)) return;
     const text = e.clipboardData.getData("text/plain");
     if (!looksLikeEnvPaste(text)) return;
     e.preventDefault();
     const parsed = parseEnvFileContent(text);
     const n = mergeParsed(parsed);
-    onToast(n > 0 ? `Merged ${n} variable(s) from clipboard` : "No valid variables in paste", n > 0 ? "success" : "warning");
+    onToast(
+      n > 0 ? t("projectSettings.env.mergedFromClipboard", { count: n }) : t("projectSettings.env.noValidInPaste"),
+      n > 0 ? "success" : "warning"
+    );
   };
 
   const handleMergePasteClick = (): void => {
@@ -664,44 +697,36 @@ const EnvSection = ({
     const parsed = parseEnvFileContent(text);
     const n = mergeParsed(parsed);
     if (pasteRef.current) pasteRef.current.value = "";
-    onToast(n > 0 ? `Merged ${n} variable(s)` : "No valid variables in paste", n > 0 ? "success" : "warning");
+    onToast(
+      n > 0 ? t("projectSettings.env.mergedGeneric", { count: n }) : t("projectSettings.env.noValidInPaste"),
+      n > 0 ? "success" : "warning"
+    );
   };
 
   return (
     <div className="space-y-6 pb-4">
       <div>
-        <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Environment variables</h2>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          Values are saved with the project and applied on deploy—no per-deploy <code className="text-foreground/90">.env</code> upload. Keys
-          starting with <code className="text-foreground/90">NEXT_PUBLIC_</code> or <code className="text-foreground/90">PD_PUBLIC_</code>{" "}
-          default to <span className="text-foreground/90">Build</span>; others default to <span className="text-foreground/90">Runtime</span>.
-          Click a scope badge to override.
-        </p>
+        <h2 className="text-[15px] font-semibold tracking-tight text-foreground">{t("projectSettings.env.sectionHeading")}</h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{t("projectSettings.env.intro")}</p>
         <p className="mt-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-          <strong className="font-medium text-foreground/90">Install and build commands</strong> live under{" "}
-          <a href={`/projects/${projectId}/settings`} className="font-medium text-primary underline-offset-2 hover:underline">
-            General
-          </a>
-          . Saving variables here does not update those fields—open General and click Save Changes after editing them.
+          <strong className="font-medium text-foreground/90">{t("projectSettings.env.generalLinkStrong")}</strong>{" "}
+          {t("projectSettings.env.generalLinkBefore")}{" "}
+          <Link to={`/projects/${projectId}/settings`} className="font-medium text-primary underline-offset-2 hover:underline">
+            {t("projectSettings.navGeneral")}
+          </Link>
+          {t("projectSettings.env.generalLinkAfter")}
         </p>
         <details className="mt-4 rounded-lg border border-border/80 bg-muted/15 px-4 py-3 text-sm open:shadow-sm">
           <summary className="flex cursor-pointer list-none items-center gap-2 select-none font-medium text-foreground [&::-webkit-details-marker]:hidden">
             <span className="text-xs text-muted-foreground" aria-hidden>
               ▸
             </span>
-            How this works
+            {t("projectSettings.env.howThisWorks")}
           </summary>
           <div className="mt-3 space-y-2 border-t border-border/50 pt-3 text-xs leading-relaxed text-muted-foreground">
-            <p>
-              <strong className="font-medium text-foreground/90">Build</strong> variables are passed into the build step (install, compile).
-              Use for anything the build must read; treat them as sensitive if logs or artifacts could expose them.
-            </p>
-            <p>
-              <strong className="font-medium text-foreground/90">Runtime</strong> variables are kept out of the build step and injected only
-              into the running server preview container. Use this scope for server-only secrets like database URLs, API keys, and Next.js
-              server action encryption keys.
-            </p>
-            <p>Only project owners can read or change these values via the API.</p>
+            <p>{t("projectSettings.env.howBuildP")}</p>
+            <p>{t("projectSettings.env.howRuntimeP")}</p>
+            <p>{t("projectSettings.env.howOwnersP")}</p>
           </div>
         </details>
       </div>
@@ -709,13 +734,19 @@ const EnvSection = ({
       <div className="overflow-hidden rounded-[10px] border border-border/80 bg-card shadow-sm">
         <div className="flex flex-col gap-4 border-b border-border/50 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h3 className="text-[15px] font-semibold tracking-tight text-foreground">Variables</h3>
+            <h3 className="text-[15px] font-semibold tracking-tight text-foreground">{t("projectSettings.env.variablesHeading")}</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {rows.length === 0 ? "No variables yet" : `${rows.length} variable${rows.length === 1 ? "" : "s"}`}
+              {rows.length === 0
+                ? t("projectSettings.env.noVarsYet")
+                : rows.length === 1
+                  ? t("projectSettings.env.varCountOne")
+                  : t("projectSettings.env.varCount", { count: rows.length })}
             </p>
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Parser matches deployment builds (comments, <code className="text-[0.7rem]">export</code>, quoted values). Merge from paste or
-              file, then <strong className="font-medium text-foreground/80">Save</strong> when the bar appears.
+              {t("projectSettings.env.parserHint", {
+                export: "export",
+                save: t("projectSettings.env.saveStrong")
+              })}
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
@@ -729,7 +760,7 @@ const EnvSection = ({
                     onClick={() => setValuesRevealed((v) => !v)}
                   >
                     {valuesRevealed ? <EyeOff className="size-3.5 shrink-0" aria-hidden /> : <Eye className="size-3.5 shrink-0" aria-hidden />}
-                    {valuesRevealed ? "Hide values" : "Reveal values"}
+                    {valuesRevealed ? t("projectSettings.env.hideValues") : t("projectSettings.env.revealValues")}
                   </button>
                   <button type="button" className={cn(envPillBtn, "shrink-0")} onClick={() => void handleCopyAll()}>
                     {copyAllFlash ? (
@@ -737,7 +768,7 @@ const EnvSection = ({
                     ) : (
                       <Copy className="size-3.5 shrink-0" aria-hidden />
                     )}
-                    {copyAllFlash ? "Copied" : "Copy all"}
+                    {copyAllFlash ? t("projectSettings.env.copied") : t("projectSettings.env.copyAll")}
                   </button>
                 </div>
               </div>
@@ -749,13 +780,13 @@ const EnvSection = ({
                 }}
               >
                 <Plus className="size-3.5 shrink-0" aria-hidden />
-                Add
+                {t("projectSettings.env.add")}
               </button>
             </div>
             <Input
               type="search"
-              placeholder="Filter by key…"
-              aria-label="Filter environment variables by key"
+              placeholder={t("projectSettings.env.filterPlaceholder")}
+              aria-label={t("projectSettings.env.filterAria")}
               autoComplete="off"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -768,7 +799,7 @@ const EnvSection = ({
           <details className="group/import rounded-[10px] border border-dashed border-border/80 bg-muted/10 px-4 py-4 transition-colors open:border-border hover:bg-muted/12 open:bg-muted/15">
             <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
               <Plus className="size-3.5 opacity-70" aria-hidden />
-              Import from <code className="font-mono text-[0.7rem]">.env</code> (paste, file, or drop)
+              {t("projectSettings.env.importSummary")}
             </summary>
             <div
               className={cn(
@@ -787,21 +818,18 @@ const EnvSection = ({
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => void handleDrop(e)}
             >
-              <p className="text-center text-xs text-muted-foreground">
-                Paste a <code className="rounded bg-muted px-1.5 py-px font-mono text-[0.65rem]">.env</code> or drag a file here. Matching keys
-                update rows; new keys append.
-              </p>
+              <p className="text-center text-xs text-muted-foreground">{t("projectSettings.env.importDropHint")}</p>
               <Textarea
                 ref={pasteRef}
                 rows={4}
-                placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=sk-...\nNEXT_PUBLIC_URL=https://..."}
-                aria-label="Paste .env content to merge into the table"
+                placeholder={t("projectSettings.env.pastePlaceholder")}
+                aria-label={t("projectSettings.env.pasteAria")}
                 className="resize-y border-border/80 bg-muted/20 font-mono text-xs leading-relaxed"
                 onPaste={handlePasteArea}
               />
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="secondary" size="sm" className="text-xs" onClick={handleMergePasteClick}>
-                  Parse paste
+                  {t("projectSettings.env.parsePaste")}
                 </Button>
                 <label className="inline-flex cursor-pointer">
                   <Input
@@ -814,7 +842,7 @@ const EnvSection = ({
                       if (f) void readFileEnv(f);
                     }}
                   />
-                  <span className={cn(envPillBtn, "cursor-pointer text-xs")}>Choose file</span>
+                  <span className={cn(envPillBtn, "cursor-pointer text-xs")}>{t("projectSettings.env.chooseFile")}</span>
                 </label>
               </div>
             </div>
@@ -826,30 +854,29 @@ const EnvSection = ({
                 <thead>
                   <tr className="bg-muted/25">
                     <th className="w-[40%] border-b border-r border-border/50 px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Key
+                      {t("projectSettings.env.colKey")}
                     </th>
                     <th className="min-w-32 border-b border-border/50 px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Value
+                      {t("projectSettings.env.colValue")}
                     </th>
                     <th className="w-24 whitespace-nowrap border-b border-border/50 px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Scope
+                      {t("projectSettings.env.colScope")}
                     </th>
-                    <th className="w-22 border-b border-border/50 px-2 py-2.5" aria-label="Row actions" />
+                    <th className="w-22 border-b border-border/50 px-2 py-2.5" aria-label={t("projectSettings.env.rowActionsAria")} />
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                        No variables yet. Use <span className="font-medium text-foreground/80">Add</span> or import a{" "}
-                        <code className="font-mono text-xs">.env</code>.
+                        {t("projectSettings.env.emptyTable", { add: t("projectSettings.env.addStrong") })}
                       </td>
                     </tr>
                   ) : null}
                   {showFilterEmpty ? (
                     <tr>
                       <td colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                        No keys match this filter.
+                        {t("projectSettings.env.filterNoMatch")}
                       </td>
                     </tr>
                   ) : null}
@@ -858,7 +885,7 @@ const EnvSection = ({
                       return null;
                     }
                     const pub = effectivePublic(row);
-                    const scopeLabel = pub ? "Build" : "Runtime";
+                    const scopeLabel = pub ? t("projectSettings.env.scopeBuild") : t("projectSettings.env.scopeRuntime");
                     return (
                       <tr
                         key={row.rowId}
@@ -876,7 +903,7 @@ const EnvSection = ({
                             }}
                             placeholder="API_BASE_URL"
                             maxLength={128}
-                            aria-label="Environment variable key"
+                            aria-label={t("projectSettings.env.envKeyAria")}
                             className="h-12 w-full min-w-0 rounded-none border-0 bg-transparent py-3 font-mono text-[13px] text-foreground shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
                           />
                         </td>
@@ -888,10 +915,10 @@ const EnvSection = ({
                               const v = e.target.value;
                               setRows((prev) => prev.map((r) => (r.rowId === row.rowId ? { ...r, value: v } : r)));
                             }}
-                            placeholder="value"
+                            placeholder={t("projectSettings.env.valuePlaceholder")}
                             autoComplete="off"
                             title={row.value.length > 0 ? row.value : undefined}
-                            aria-label="Environment variable value"
+                            aria-label={t("projectSettings.env.envValueAria")}
                             className="h-12 w-full min-w-0 truncate rounded-none border-0 bg-transparent py-3 font-mono text-[13px] text-foreground shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
                           />
                         </td>
@@ -900,18 +927,16 @@ const EnvSection = ({
                             type="button"
                             aria-pressed={pub}
                             aria-label={
-                              pub
-                                ? "Scope: included in build. Click to mark runtime-only."
-                                : "Scope: runtime-only. Click to include in build."
+                              pub ? t("projectSettings.env.scopeAriaBuild") : t("projectSettings.env.scopeAriaRuntime")
                             }
                             title={
                               row.manualScope === null
                                 ? pub
-                                  ? "Default: public prefix. Click to force runtime-only."
-                                  : "Default: no public prefix. Click to force build."
+                                  ? t("projectSettings.env.scopeTitleDefaultBuild")
+                                  : t("projectSettings.env.scopeTitleDefaultRuntime")
                                 : pub
-                                  ? "Manually set to build. Click to use runtime-only."
-                                  : "Manually set to runtime. Click to use build."
+                                  ? t("projectSettings.env.scopeTitleManualBuild")
+                                  : t("projectSettings.env.scopeTitleManualRuntime")
                             }
                             onClick={() => handleScopeToggle(row.rowId)}
                             className={cn(
@@ -931,8 +956,8 @@ const EnvSection = ({
                               size="icon"
                               variant="ghost"
                               className="size-7 shrink-0"
-                              aria-label="Copy value"
-                              title="Copy value"
+                              aria-label={t("projectSettings.env.copyValueAria")}
+                              title={t("projectSettings.env.copyValueTitle")}
                               onClick={() => void handleCopyValue(row.rowId)}
                             >
                               <Copy className="size-3.5" aria-hidden />
@@ -942,8 +967,8 @@ const EnvSection = ({
                               size="icon"
                               variant="ghost"
                               className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                              aria-label="Remove variable"
-                              title="Remove"
+                              aria-label={t("projectSettings.env.removeVarAria")}
+                              title={t("projectSettings.env.removeTitle")}
                               onClick={() => void handleRemoveRow(row)}
                             >
                               <Trash2 className="size-3.5" aria-hidden />
@@ -964,7 +989,7 @@ const EnvSection = ({
               }}
             >
               <Plus className="size-3.5 shrink-0 opacity-70" aria-hidden />
-              Add variable
+              {t("projectSettings.env.addVariable")}
             </button>
           </div>
         </div>
@@ -972,7 +997,7 @@ const EnvSection = ({
 
       <div
         role="region"
-        aria-label="Save environment variables"
+        aria-label={t("projectSettings.env.saveBarAria")}
         className={cn(
           "fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/92 px-4 py-3 shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md",
           !dirty && "hidden"
@@ -980,14 +1005,14 @@ const EnvSection = ({
       >
         <div className="mx-auto flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
-            {dirty ? "You have unsaved changes—save before you leave this page." : ""}
+            {dirty ? t("projectSettings.env.unsavedHint") : ""}
           </p>
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <Button type="button" variant="outline" size="sm" disabled={saveBusy} onClick={handleDiscard}>
-              Discard
+              {t("projectSettings.env.discard")}
             </Button>
             <Button type="button" size="sm" disabled={saveBusy} onClick={() => void handleSave()}>
-              Save
+              {t("projectSettings.env.save")}
             </Button>
           </div>
         </div>
@@ -1005,22 +1030,23 @@ const DangerSection = ({
   projectId: string;
   onToast: (message: string, variant: "success" | "error" | "warning") => void;
 }): React.ReactElement => {
+  const { t } = useTranslation();
   const [busy, setBusy] = React.useState(false);
 
   const handleDelete = async (): Promise<void> => {
-    if (!window.confirm("Are you sure you want to delete this project? This action cannot be undone.")) return;
+    if (!window.confirm(t("projectSettings.danger.deleteConfirm"))) return;
     setBusy(true);
     try {
       const response = await fetchWithCsrf(`/projects/${projectId}`, { method: "DELETE" });
       if (!response.ok) {
-        throw new Error(await parseApiError(response, "Failed to delete project"));
+        throw new Error(await parseApiError(response, t("projectSettings.danger.deleteFailed")));
       }
-      onToast("Project deleted", "success");
+      onToast(t("projectSettings.danger.deleted"), "success");
       window.setTimeout(() => {
         window.location.href = "/projects";
       }, 500);
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Failed to delete project", "error");
+      onToast(err instanceof Error ? err.message : t("projectSettings.danger.deleteFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -1029,20 +1055,18 @@ const DangerSection = ({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-destructive">Danger Zone</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Irreversible actions. Proceed with caution.</p>
+        <h2 className="text-lg font-semibold text-destructive">{t("projectSettings.danger.heading")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t("projectSettings.danger.intro")}</p>
       </div>
       <Separator className="border-destructive/30" />
       <Card className="border-destructive/40">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Delete Project</CardTitle>
-          <CardDescription>
-            Permanently delete <strong className="text-foreground">{project.name}</strong> and all its deployments. This cannot be undone.
-          </CardDescription>
+          <CardTitle className="text-base">{t("projectSettings.danger.deleteTitle")}</CardTitle>
+          <CardDescription>{t("projectSettings.danger.deleteDesc", { name: project.name })}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button type="button" variant="destructive" disabled={busy} onClick={() => void handleDelete()}>
-            Delete Project
+            {t("projectSettings.danger.deleteButton")}
           </Button>
         </CardContent>
       </Card>

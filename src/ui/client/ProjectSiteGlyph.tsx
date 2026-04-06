@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
 import { cn } from "@/lib/utils";
+import { useState, type ReactElement } from "react";
 
 export const ProjectSiteGlyph = ({
   name,
