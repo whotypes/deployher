@@ -65,7 +65,7 @@ services:
       PREVIEW_RUNTIME_IMAGE_NAME: ${PREVIEW_RUNTIME_IMAGE_NAME:-deployher-preview-runtime}
       PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS: ${PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS:-900000}
       PREVIEW_RUNNER_IMAGE_MAX_AGE_MS: ${PREVIEW_RUNNER_IMAGE_MAX_AGE_MS:-604800000}
-      # Ask the app to prewarm images + start preview containers for each project current server deployment (retries if app is still booting).
+      # Ask the app to prewarm images + start preview containers (retries until app listens; unset if runner is not on the compose network).
       PREVIEW_REHYDRATE_TRIGGER_URL: http://app:3000/internal/trigger-preview-rehydrate
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

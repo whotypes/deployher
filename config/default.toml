@@ -47,6 +47,11 @@ PREVIEW_ASSET_BASE_URL = ""
 PREVIEW_TTL_MS = 1800000
 PREVIEW_MEMORY_BYTES = 1073741824
 PREVIEW_NANO_CPUS = 1
+# Runner: bound docker pull / S3 load so ensure-preview cannot hang forever (ms).
+PREVIEW_PULL_TIMEOUT_MS = 600000
+PREVIEW_IMAGE_LOAD_TIMEOUT_MS = 600000
+# App build worker → runner /internal/ensure-preview HTTP timeout (ms). Min 30000 when set via env.
+PREVIEW_ENSURE_HTTP_TIMEOUT_MS = 600000
 # Preview runtime images: pushed to Docker registry (Nexus docker-hosted by default). Empty PREVIEW_RUNTIME_REGISTRY falls back to NEXUS_REGISTRY.
 PREVIEW_RUNTIME_REGISTRY = ""
 PREVIEW_RUNTIME_DOCKER_REPO = "docker-hosted"
