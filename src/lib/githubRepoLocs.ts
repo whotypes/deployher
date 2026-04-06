@@ -209,6 +209,13 @@ const pathHasSkipSegment = (relPath: string): boolean => {
   return segments.some((s) => SKIP_DIR_NAMES.has(s));
 };
 
+const isStaticAssetPath = (treeRel: string): boolean => {
+  const segments = treeRel.split("/").filter(Boolean);
+  if (segments.length === 0) return false;
+  const first = segments[0]!.toLowerCase();
+  return first === "public" || first === "static";
+};
+
 const getExtension = (filename: string): string => {
   const i = filename.lastIndexOf(".");
   if (i <= 0 || i === filename.length - 1) return "";
@@ -406,6 +413,18 @@ export const computeRepoLocsFromZipBuffer = (
 
     const baseName = treeRel.split("/").pop() ?? treeRel;
     const ext = getExtension(baseName);
+
+    if (BINARY_EXTENSIONS.has(ext) && isStaticAssetPath(treeRel)) {
+      scanned++;
+      if (scanned > MAX_FILES_SCANNED) {
+        truncated = true;
+        truncatedReason = `Stopped after ${MAX_FILES_SCANNED} files`;
+        break;
+      }
+      addFileToTree(root, treeRel, 0, "Asset");
+      continue;
+    }
+
     if (BINARY_EXTENSIONS.has(ext)) continue;
 
     if (data.length > MAX_FILE_BYTES) {
