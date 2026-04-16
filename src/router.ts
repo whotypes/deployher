@@ -243,6 +243,10 @@ const protectedRoutes: ProtectedRoute[] = [
   { pattern: "/api/github/repo-file", methods: { GET: github.repoFile } },
   { pattern: "/api/projects", methods: { GET: projects.listProjects, POST: projects.createProject } },
   {
+    pattern: "/api/projects/agent-create",
+    methods: { POST: projects.createAgentProject }
+  },
+  {
     pattern: "/api/projects/:id",
     methods: {
       GET: projects.getProject,

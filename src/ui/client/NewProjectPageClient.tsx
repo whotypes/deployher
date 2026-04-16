@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   filterReposByQuery,
   groupReposByOwner,
@@ -237,22 +238,64 @@ const fetchBranches = async (owner: string, repo: string, fallbackError: string)
 };
 
 type StepDef = { id: string; label: string; shortLabel: string };
+type CreateMode = "import" | "manual" | "agent";
+type FrameworkHintValue = "auto" | "nextjs" | "node" | "python" | "static";
+type PreviewModeValue = "auto" | "static" | "server";
+type RuntimeImageModeValue = "auto" | "platform" | "dockerfile";
+
+type AgentProjectCreateResponse = {
+  requestId: string;
+  status: "queued";
+  createdAt: string;
+  placeholder: boolean;
+  message: string;
+  draft: {
+    name: string | null;
+    prompt: string;
+    frameworkHint: FrameworkHintValue;
+    previewMode: PreviewModeValue;
+    runtimeImageMode: RuntimeImageModeValue;
+  };
+};
+
+const MAX_AGENT_PROMPT_LENGTH = 8_000;
 
 const SetupStepRail = ({
+  mode,
   activeIndex,
   completedThrough
 }: {
+  mode: CreateMode;
   activeIndex: number;
   completedThrough: number;
 }) => {
   const { t } = useTranslation();
   const steps = React.useMemo<StepDef[]>(
-    () => [
-      { id: "source", label: t("newProject.steps.source"), shortLabel: t("newProject.stepsShort.source") },
-      { id: "paths", label: t("newProject.steps.paths"), shortLabel: t("newProject.stepsShort.paths") },
-      { id: "build", label: t("newProject.steps.build"), shortLabel: t("newProject.stepsShort.build") }
-    ],
-    [t]
+    () =>
+      mode === "agent"
+        ? [
+            {
+              id: "brief",
+              label: t("newProject.stepsAgent.brief"),
+              shortLabel: t("newProject.stepsAgentShort.brief")
+            },
+            {
+              id: "defaults",
+              label: t("newProject.stepsAgent.defaults"),
+              shortLabel: t("newProject.stepsAgentShort.defaults")
+            },
+            {
+              id: "request",
+              label: t("newProject.stepsAgent.request"),
+              shortLabel: t("newProject.stepsAgentShort.request")
+            }
+          ]
+        : [
+            { id: "source", label: t("newProject.steps.source"), shortLabel: t("newProject.stepsShort.source") },
+            { id: "paths", label: t("newProject.steps.paths"), shortLabel: t("newProject.stepsShort.paths") },
+            { id: "build", label: t("newProject.steps.build"), shortLabel: t("newProject.stepsShort.build") }
+          ],
+    [mode, t]
   );
   const progressPct = Math.round(((completedThrough + 1) / steps.length) * 100);
   return (
@@ -304,7 +347,7 @@ const SetupStepRail = ({
 
 export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProjectPageClientProps) => {
   const { t } = useTranslation();
-  const [createMode, setCreateMode] = React.useState<"import" | "manual">(() =>
+  const [createMode, setCreateMode] = React.useState<CreateMode>(() =>
     readProjectsCreateModeInitial(hasRepoAccess)
   );
   const [repos, setRepos] = React.useState<GitHubRepo[]>([]);
@@ -319,18 +362,20 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const [branchesError, setBranchesError] = React.useState<string | null>(null);
   const [createLoading, setCreateLoading] = React.useState(false);
   const [manualCreateLoading, setManualCreateLoading] = React.useState(false);
+  const [agentCreateLoading, setAgentCreateLoading] = React.useState(false);
   const [connectLoading, setConnectLoading] = React.useState(false);
   const [manualName, setManualName] = React.useState("");
   const [manualRepoUrl, setManualRepoUrl] = React.useState("");
   const [manualBranch, setManualBranch] = React.useState(() => readPreferredBranch());
+  const [agentProjectName, setAgentProjectName] = React.useState("");
+  const [agentPrompt, setAgentPrompt] = React.useState("");
+  const [agentRequest, setAgentRequest] = React.useState<AgentProjectCreateResponse | null>(null);
   const [workspaceRootDir, setWorkspaceRootDir] = React.useState(".");
   const [projectRootDir, setProjectRootDir] = React.useState(".");
-  const [frameworkHint, setFrameworkHint] = React.useState<
-    "auto" | "nextjs" | "node" | "python" | "static"
-  >("auto");
-  const [previewMode, setPreviewMode] = React.useState<"auto" | "static" | "server">("auto");
+  const [frameworkHint, setFrameworkHint] = React.useState<FrameworkHintValue>("auto");
+  const [previewMode, setPreviewMode] = React.useState<PreviewModeValue>("auto");
   const [serverPreviewTarget, setServerPreviewTarget] = React.useState<"isolated-runner">("isolated-runner");
-  const [runtimeImageMode, setRuntimeImageMode] = React.useState<"auto" | "platform" | "dockerfile">("auto");
+  const [runtimeImageMode, setRuntimeImageMode] = React.useState<RuntimeImageModeValue>("auto");
   const [dockerfilePath, setDockerfilePath] = React.useState("");
   const [dockerBuildTarget, setDockerBuildTarget] = React.useState("");
   const [runtimeContainerPort, setRuntimeContainerPort] = React.useState("3000");
@@ -373,8 +418,16 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     selectedRepo && branch.trim() && rootsValid && portValid
   );
   const manualCanSubmit = manualBasicsReady && rootsValid && portValid;
+  const agentPromptTrimmed = agentPrompt.trim();
+  const agentCanSubmit = agentPromptTrimmed.length > 0 && agentPromptTrimmed.length <= MAX_AGENT_PROMPT_LENGTH;
   const completedThrough =
-    createMode === "import"
+    createMode === "agent"
+      ? agentRequest
+        ? 2
+        : agentPromptTrimmed.length > 0 || agentProjectName.trim().length > 0
+          ? 1
+          : 0
+      : createMode === "import"
       ? importFlowReady
         ? 2
         : selectedRepo
@@ -688,6 +741,47 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     }
   };
 
+  const handleAgentCreate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!agentPromptTrimmed) {
+      showToast(t("newProject.agentValidationPrompt"), "error");
+      return;
+    }
+    if (agentPromptTrimmed.length > MAX_AGENT_PROMPT_LENGTH) {
+      showToast(t("newProject.agentValidationPromptLength", { count: MAX_AGENT_PROMPT_LENGTH }), "error");
+      return;
+    }
+
+    setAgentCreateLoading(true);
+    try {
+      const response = await fetchWithCsrf("/api/projects/agent-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: agentProjectName.trim() || null,
+          prompt: agentPromptTrimmed,
+          frameworkHint,
+          previewMode,
+          runtimeImageMode
+        })
+      });
+      const data = (await response.json()) as
+        | AgentProjectCreateResponse
+        | {
+            error?: string;
+          };
+      if (!response.ok) {
+        throw new Error(("error" in data && data.error) || t("newProject.agentCreateFailed"));
+      }
+      setAgentRequest(data as AgentProjectCreateResponse);
+      showToast(t("newProject.agentQueued"), "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t("newProject.agentCreateFailed"), "error");
+    } finally {
+      setAgentCreateLoading(false);
+    }
+  };
+
   const buildOptionsCard = (
     <Card className="dashboard-surface border-border/80 shadow-sm">
       <CardHeader className="pb-3">
@@ -878,15 +972,91 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     </Card>
   );
 
+  const agentDefaultsCard = (
+    <Card className="dashboard-surface border-border/80 shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{t("newProject.agentDefaultsTitle")}</CardTitle>
+        <CardDescription>{t("newProject.agentDefaultsDesc")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="np-agent-framework-hint">{t("newProject.frameworkHint")}</Label>
+            <Select value={frameworkHint} onValueChange={(value) => setFrameworkHint(value as FrameworkHintValue)}>
+              <SelectTrigger
+                id="np-agent-framework-hint"
+                aria-describedby="np-agent-framework-hint-help"
+                aria-label={t("newProject.frameworkHintAria")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">{t("newProject.selectAutoProject")}</SelectItem>
+                <SelectItem value="nextjs">Next.js</SelectItem>
+                <SelectItem value="node">{t("projects.framework.node")}</SelectItem>
+                <SelectItem value="python">{t("projects.framework.python")}</SelectItem>
+                <SelectItem value="static">{t("projects.framework.static")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p id="np-agent-framework-hint-help" className="text-xs text-muted-foreground">
+              {t("newProject.agentFrameworkHintHelp")}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="np-agent-preview-mode">{t("newProject.preview")}</Label>
+            <Select value={previewMode} onValueChange={(value) => setPreviewMode(value as PreviewModeValue)}>
+              <SelectTrigger
+                id="np-agent-preview-mode"
+                aria-describedby="np-agent-preview-mode-help"
+                aria-label={t("newProject.previewAria")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">{t("newProject.selectAutoProject")}</SelectItem>
+                <SelectItem value="static">{t("newProject.previewModeStatic")}</SelectItem>
+                <SelectItem value="server">{t("newProject.previewModeServer")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p id="np-agent-preview-mode-help" className="text-xs text-muted-foreground">
+              {t("newProject.agentPreviewHelp")}
+            </p>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="np-agent-runtime-image-mode">{t("newProject.runtimeImageMode")}</Label>
+          <Select value={runtimeImageMode} onValueChange={(value) => setRuntimeImageMode(value as RuntimeImageModeValue)}>
+            <SelectTrigger
+              id="np-agent-runtime-image-mode"
+              aria-describedby="np-agent-runtime-image-mode-help"
+              aria-label={t("newProject.runtimeImageMode")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">{t("newProject.selectAutoProject")}</SelectItem>
+              <SelectItem value="platform">{t("newProject.platformImage")}</SelectItem>
+              <SelectItem value="dockerfile">{t("newProject.repoDockerfile")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p id="np-agent-runtime-image-mode-help" className="text-xs text-muted-foreground">
+            {t("newProject.agentRuntimeImageModeHelp")}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <>
-      <SetupStepRail activeIndex={activeIndex} completedThrough={completedThrough} />
+      <SetupStepRail mode={createMode} activeIndex={activeIndex} completedThrough={completedThrough} />
 
       <div className="min-w-0 space-y-6">
-        <Tabs value={createMode} onValueChange={(value) => setCreateMode(value as "import" | "manual")}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+        <Tabs value={createMode} onValueChange={(value) => setCreateMode(value as CreateMode)}>
+          <TabsList className="grid w-full max-w-xl grid-cols-3">
             <TabsTrigger value="import">{t("newProject.tabImport")}</TabsTrigger>
             <TabsTrigger value="manual">{t("newProject.tabManual")}</TabsTrigger>
+            <TabsTrigger value="agent">{t("newProject.tabAgent")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="import" className="mt-6 space-y-6 outline-none">
@@ -1126,113 +1296,211 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
             </form>
           </TabsContent>
 
-            <TabsContent value="manual" className="mt-6 space-y-6 outline-none">
+          <TabsContent value="manual" className="mt-6 space-y-6 outline-none">
+            <Card className="dashboard-surface border-border/80 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t("newProject.manualRepoTitle")}</CardTitle>
+                <CardDescription>{t("newProject.manualRepoDesc")}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="flex flex-col gap-4" onSubmit={(event) => void handleManualCreate(event)}>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label htmlFor="np-project-name">
+                        {t("newProject.projectNameLabel")}
+                        <span className="text-destructive"> *</span>
+                      </Label>
+                      <Input
+                        id="np-project-name"
+                        autoComplete="off"
+                        placeholder={t("newProject.placeholderProjectName")}
+                        value={manualName}
+                        onChange={(event) => setManualName(event.target.value)}
+                        required
+                        aria-label={t("newProject.projectNameLabel")}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label htmlFor="np-repo-url">
+                        {t("newProject.repositoryUrlLabel")}
+                        <span className="text-destructive"> *</span>
+                      </Label>
+                      <Input
+                        id="np-repo-url"
+                        type="url"
+                        autoComplete="off"
+                        inputMode="url"
+                        spellCheck={false}
+                        placeholder={t("newProject.placeholderRepoUrl")}
+                        value={manualRepoUrl}
+                        onChange={(event) => setManualRepoUrl(event.target.value)}
+                        required
+                        aria-label={t("newProject.repositoryUrlLabel")}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="np-manual-branch">
+                        {t("newProject.branchLabel")}
+                        <span className="text-destructive"> *</span>
+                      </Label>
+                      <Input
+                        id="np-manual-branch"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={t("newProject.placeholderBranch")}
+                        value={manualBranch}
+                        onChange={(event) => setManualBranch(event.target.value)}
+                        required
+                        aria-label={t("newProject.branchDeploy")}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="np-manual-workspace-root">
+                        {t("newProject.workspaceRootLabel")}
+                        <span className="text-destructive"> *</span>
+                      </Label>
+                      <Input
+                        id="np-manual-workspace-root"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={t("newProject.placeholderRoot")}
+                        value={workspaceRootDir}
+                        onChange={(event) => setWorkspaceRootDir(event.target.value)}
+                        required
+                        aria-label={t("newProject.workspaceRootLabel")}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="np-manual-project-root">
+                        {t("newProject.projectRootLabel")}
+                        <span className="text-destructive"> *</span>
+                      </Label>
+                      <Input
+                        id="np-manual-project-root"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={t("newProject.placeholderRoot")}
+                        value={projectRootDir}
+                        onChange={(event) => setProjectRootDir(event.target.value)}
+                        required
+                        aria-label={t("newProject.projectRootLabel")}
+                      />
+                    </div>
+                  </div>
+
+                  {buildOptionsCard}
+
+                  <Button type="submit" disabled={!manualCanSubmit || manualCreateLoading} className="w-full sm:w-auto">
+                    {manualCreateLoading ? t("newProject.creating") : t("newProject.createProjectButton")}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="agent" className="mt-6 space-y-6 outline-none">
+            <form className="space-y-6" onSubmit={(event) => void handleAgentCreate(event)}>
               <Card className="dashboard-surface border-border/80 shadow-sm">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{t("newProject.manualRepoTitle")}</CardTitle>
-                  <CardDescription>{t("newProject.manualRepoDesc")}</CardDescription>
+                  <CardTitle className="text-base">{t("newProject.agentCardTitle")}</CardTitle>
+                  <CardDescription>{t("newProject.agentCardDesc")}</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <form className="flex flex-col gap-4" onSubmit={(event) => void handleManualCreate(event)}>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="flex flex-col gap-1.5 sm:col-span-2">
-                        <Label htmlFor="np-project-name">
-                          {t("newProject.projectNameLabel")}
-                          <span className="text-destructive"> *</span>
-                        </Label>
-                        <Input
-                          id="np-project-name"
-                          autoComplete="off"
-                          placeholder={t("newProject.placeholderProjectName")}
-                          value={manualName}
-                          onChange={(event) => setManualName(event.target.value)}
-                          required
-                          aria-label={t("newProject.projectNameLabel")}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5 sm:col-span-2">
-                        <Label htmlFor="np-repo-url">
-                          {t("newProject.repositoryUrlLabel")}
-                          <span className="text-destructive"> *</span>
-                        </Label>
-                        <Input
-                          id="np-repo-url"
-                          type="url"
-                          autoComplete="off"
-                          inputMode="url"
-                          spellCheck={false}
-                          placeholder={t("newProject.placeholderRepoUrl")}
-                          value={manualRepoUrl}
-                          onChange={(event) => setManualRepoUrl(event.target.value)}
-                          required
-                          aria-label={t("newProject.repositoryUrlLabel")}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="np-manual-branch">
-                          {t("newProject.branchLabel")}
-                          <span className="text-destructive"> *</span>
-                        </Label>
-                        <Input
-                          id="np-manual-branch"
-                          autoComplete="off"
-                          spellCheck={false}
-                          placeholder={t("newProject.placeholderBranch")}
-                          value={manualBranch}
-                          onChange={(event) => setManualBranch(event.target.value)}
-                          required
-                          aria-label={t("newProject.branchDeploy")}
-                        />
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label htmlFor="np-agent-project-name">{t("newProject.projectNameLabel")}</Label>
+                      <Input
+                        id="np-agent-project-name"
+                        autoComplete="off"
+                        placeholder={t("newProject.placeholderProjectName")}
+                        value={agentProjectName}
+                        onChange={(event) => setAgentProjectName(event.target.value)}
+                        aria-label={t("newProject.projectNameLabel")}
+                      />
+                      <p className="text-xs text-muted-foreground">{t("newProject.agentProjectNameHelp")}</p>
+                    </div>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label htmlFor="np-agent-prompt">
+                        {t("newProject.agentPromptLabel")}
+                        <span className="text-destructive"> *</span>
+                      </Label>
+                      <Textarea
+                        id="np-agent-prompt"
+                        className="min-h-36 resize-y"
+                        placeholder={t("newProject.agentPromptPlaceholder")}
+                        value={agentPrompt}
+                        onChange={(event) => setAgentPrompt(event.target.value)}
+                        aria-label={t("newProject.agentPromptLabel")}
+                        required
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <p>{t("newProject.agentPromptHelp")}</p>
+                        <span>
+                          {agentPrompt.length}/{MAX_AGENT_PROMPT_LENGTH}
+                        </span>
                       </div>
                     </div>
-
-                    <Separator />
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="np-manual-workspace-root">
-                          {t("newProject.workspaceRootLabel")}
-                          <span className="text-destructive"> *</span>
-                        </Label>
-                        <Input
-                          id="np-manual-workspace-root"
-                          autoComplete="off"
-                          spellCheck={false}
-                          placeholder={t("newProject.placeholderRoot")}
-                          value={workspaceRootDir}
-                          onChange={(event) => setWorkspaceRootDir(event.target.value)}
-                          required
-                          aria-label={t("newProject.workspaceRootLabel")}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="np-manual-project-root">
-                          {t("newProject.projectRootLabel")}
-                          <span className="text-destructive"> *</span>
-                        </Label>
-                        <Input
-                          id="np-manual-project-root"
-                          autoComplete="off"
-                          spellCheck={false}
-                          placeholder={t("newProject.placeholderRoot")}
-                          value={projectRootDir}
-                          onChange={(event) => setProjectRootDir(event.target.value)}
-                          required
-                          aria-label={t("newProject.projectRootLabel")}
-                        />
-                      </div>
-                    </div>
-
-                    {buildOptionsCard}
-
-                    <Button type="submit" disabled={!manualCanSubmit || manualCreateLoading} className="w-full sm:w-auto">
-                      {manualCreateLoading ? t("newProject.creating") : t("newProject.createProjectButton")}
-                    </Button>
-                  </form>
+                  </div>
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
+
+              {agentDefaultsCard}
+
+              {agentRequest ? (
+                <Card className="dashboard-surface border-primary/30 bg-primary/5 shadow-sm">
+                  <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-3">
+                    <div className="space-y-1">
+                      <CardTitle className="text-base">{t("newProject.agentRequestTitle")}</CardTitle>
+                      <CardDescription>{t("newProject.agentRequestDesc")}</CardDescription>
+                    </div>
+                    {agentRequest.placeholder ? (
+                      <Badge variant="secondary" className="shrink-0">
+                        {t("newProject.agentPlaceholderBadge")}
+                      </Badge>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 text-sm sm:grid-cols-3">
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t("newProject.agentRequestId")}
+                        </p>
+                        <p className="font-mono text-sm">{agentRequest.requestId}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t("newProject.agentRequestStatus")}
+                        </p>
+                        <p>{agentRequest.status === "queued" ? t("sidebar.statusQueued") : agentRequest.status}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t("newProject.agentRequestCreatedAt")}
+                        </p>
+                        <p>{agentRequest.createdAt}</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{agentRequest.message}</p>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              <div className="border-border bg-card/80 flex flex-col gap-3 rounded-xl border p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+                <Button type="button" variant="ghost" asChild className="justify-center sm:justify-start">
+                  <Link to="/projects">{t("common.cancel")}</Link>
+                </Button>
+                <Button type="submit" size="lg" className="gap-2 shadow-md" disabled={!agentCanSubmit || agentCreateLoading}>
+                  {agentCreateLoading ? t("newProject.agentCreating") : t("newProject.agentCreateButton")}
+                </Button>
+              </div>
+            </form>
+          </TabsContent>
+        </Tabs>
       </div>
     </>
   );

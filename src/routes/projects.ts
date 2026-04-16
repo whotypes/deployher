@@ -10,6 +10,10 @@ import { parseProjectCommandForStorage } from "../lib/parseProjectCommandLine";
 import { parseRepoRelativePath, parseRuntimeImageMode } from "../lib/projectPaths";
 import { preferPreviewOriginForExternalAsset } from "../lib/previewAssetUrl";
 import {
+  AgentProjectDeployerError,
+  ensureAgentProjectDeployer
+} from "../lib/agentProjectDeployer";
+import {
   buildPreviewIconCandidateUrls,
   fetchPreviewDeploymentAsset,
   fetchPreviewDeploymentAssetTryUrls,
@@ -18,6 +22,7 @@ import {
 import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
 import { pickFeaturedDeploymentFromSortedDesc } from "../lib/sidebarFeaturedDeployment";
 import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
+import { generateShortId } from "../utils/shortId";
 
 type Project = typeof schema.projects.$inferSelect;
 type ProjectEnv = typeof schema.projectEnvs.$inferSelect;
@@ -29,6 +34,7 @@ type RuntimeImageMode = typeof schema.projects.$inferSelect.runtimeImageMode;
 const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MAX_ENV_KEY_LENGTH = 128;
 const MAX_ENV_VALUE_LENGTH = 16 * 1024;
+const MAX_AGENT_PROMPT_LENGTH = 8_000;
 const DEFAULT_RUNTIME_CONTAINER_PORT = 3000;
 const PREVIEW_MODES = new Set<PreviewMode>(["auto", "static", "server"]);
 const SERVER_PREVIEW_TARGETS = new Set<ServerPreviewTarget>(["isolated-runner"]);
@@ -307,6 +313,122 @@ export const createProject = async (req: RequestWithParamsAndSession) => {
   }
 
   return json(withProjectMeta(project), { status: 201 });
+};
+
+export const createAgentProject = async (req: RequestWithParamsAndSession) => {
+  const body = await parseJson<{
+    name?: unknown;
+    prompt?: unknown;
+    frameworkHint?: unknown;
+    previewMode?: unknown;
+    runtimeImageMode?: unknown;
+  }>(req);
+  if (!body) {
+    return badRequest("Invalid JSON body");
+  }
+
+  if (typeof body.prompt !== "string" || !body.prompt.trim()) {
+    return badRequest("prompt is required");
+  }
+
+  const prompt = body.prompt.trim();
+  if (prompt.length > MAX_AGENT_PROMPT_LENGTH) {
+    return badRequest(`prompt must be at most ${MAX_AGENT_PROMPT_LENGTH} characters`);
+  }
+
+  let requestedName: string | null = null;
+  if (body.name !== undefined) {
+    if (typeof body.name !== "string") {
+      return badRequest("name must be a string when provided");
+    }
+    const trimmedName = body.name.trim();
+    requestedName = trimmedName.length > 0 ? trimmedName : null;
+  }
+
+  const frameworkHint =
+    body.frameworkHint === undefined ? "auto" : parseFrameworkHint(body.frameworkHint);
+  if (!frameworkHint) {
+    return badRequest("frameworkHint must be one of: auto, nextjs, node, python, static");
+  }
+
+  const previewMode =
+    body.previewMode === undefined ? "auto" : parsePreviewMode(body.previewMode);
+  if (!previewMode) {
+    return badRequest("previewMode must be one of: auto, static, server");
+  }
+
+  const runtimeImageMode =
+    body.runtimeImageMode === undefined ? "auto" : parseRuntimeImageMode(body.runtimeImageMode);
+  if (!runtimeImageMode) {
+    return badRequest("runtimeImageMode must be one of: auto, platform, dockerfile");
+  }
+
+  const requestId = generateShortId();
+  const createdAt = new Date().toISOString();
+  const projectName = requestedName ?? `Agent Project ${requestId}`;
+
+  let deployer;
+  try {
+    deployer = await ensureAgentProjectDeployer();
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to start the Picoclaw deployer";
+    const status =
+      error instanceof AgentProjectDeployerError ? error.status : 500;
+    return json({ error: message }, { status });
+  }
+
+  const userId = req.session.user.id;
+  const [project] = await db
+    .insert(schema.projects)
+    .values({
+      name: projectName,
+      repoUrl: `agent://picoclaw/${requestId}`,
+      branch: "agent",
+      workspaceRootDir: ".",
+      projectRootDir: ".",
+      frameworkHint,
+      userId,
+      previewMode,
+      serverPreviewTarget: "isolated-runner",
+      runtimeImageMode
+    })
+    .returning();
+
+  if (!project) {
+    return json({ error: "Failed to create agent project" }, { status: 500 });
+  }
+
+  return json(
+    {
+      requestId,
+      status: "queued" as const,
+      createdAt,
+      placeholder: false as const,
+      message: deployer.alreadyRunning
+        ? `Agent project request accepted. Picoclaw launcher is already available at ${deployer.launcherUrl}.`
+        : `Agent project request accepted. Picoclaw launcher started at ${deployer.launcherUrl}.`,
+      draft: {
+        name: requestedName,
+        prompt,
+        frameworkHint,
+        previewMode,
+        runtimeImageMode
+      },
+      deployer: {
+        binaryPath: deployer.binaryPath,
+        containerName: deployer.containerName,
+        dataDir: deployer.dataDir,
+        gatewayUrl: deployer.gatewayUrl,
+        launcherUrl: deployer.launcherUrl,
+        alreadyRunning: deployer.alreadyRunning
+      },
+      project: withProjectMeta(project)
+    },
+    { status: 202 }
+  );
 };
 
 export const getProject = async (req: RequestWithParamsAndSession) => {

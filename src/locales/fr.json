@@ -341,6 +341,11 @@
       "paths": "Chemins",
       "build": "Build et aperçu"
     },
+    "stepsAgent": {
+      "brief": "Brief",
+      "defaults": "Réglages",
+      "request": "Demande"
+    },
     "stepsAria": "Étapes de configuration",
     "progressAria": "Progression",
     "scanningRepo": "Analyse du dépôt…",
@@ -379,6 +384,7 @@
     "dockerfileOnly": "Dockerfile seul (sans build hôte)",
     "tabImport": "Depuis GitHub",
     "tabManual": "URL manuelle",
+    "tabAgent": "Avec agent",
     "repoCardTitle": "Dépôt",
     "findRepo": "Rechercher un dépôt",
     "loadingRepos": "Chargement des dépôts…",
@@ -387,6 +393,17 @@
     "monorepoDesc": "Lockfiles vs dossier d’app (utilisez . pour les dépôts à un seul paquet).",
     "manualRepoTitle": "Détails du dépôt",
     "manualRepoDesc": "Utilisez une URL GitHub sur laquelle vous pouvez pousser. La branche doit exister sur le remote.",
+    "agentCardTitle": "Brief du projet",
+    "agentCardDesc": "Met en file une demande de création de projet pilotée par agent et s’assure que le lanceur Picoclaw est disponible pour elle.",
+    "agentPromptLabel": "Que doit construire l’agent ?",
+    "agentPromptPlaceholder": "Construis une petite app Next.js avec authentification email, tableau de bord et paiements Stripe en mode test.",
+    "agentPromptHelp": "Décrivez le produit, les parcours principaux, les contraintes techniques et ce que le projet généré doit inclure dès le départ.",
+    "agentProjectNameHelp": "Optionnel. Si vous indiquez un nom, il est ajouté à la demande comme nom de projet préféré.",
+    "agentDefaultsTitle": "Réglages de génération",
+    "agentDefaultsDesc": "Ces réglages accompagnent la demande afin que le backend puisse générer la bonne cible quand le worker agent sera branché.",
+    "agentFrameworkHintHelp": "Framework cible préféré pour le projet généré.",
+    "agentPreviewHelp": "Mode d’aperçu préféré pour le projet généré.",
+    "agentRuntimeImageModeHelp": "Stratégie d’image runtime préférée pour le projet généré.",
     "noRepos": "Aucun dépôt trouvé.",
     "loadReposFailed": "Échec du chargement des dépôts",
     "inspectFailed": "Impossible d’analyser le dépôt",
@@ -395,6 +412,8 @@
     "linkGithubFailed": "Échec de la liaison GitHub. Réessayez.",
     "projectCreated": "Projet créé.",
     "createFailed": "Échec de la création du projet",
+    "agentCreateFailed": "Impossible de mettre en file la demande de projet agent",
+    "agentQueued": "Demande de projet agent mise en file.",
     "fillRequired": "Renseignez le nom, le dépôt et la branche.",
     "repoPrivate": "privé",
     "repoPublic": "public",
@@ -433,15 +452,30 @@
     "placeholderRoot": ".",
     "creating": "Création…",
     "createProjectButton": "Créer le projet",
+    "agentCreating": "Mise en file…",
+    "agentCreateButton": "Mettre en file le projet agent",
     "stepsShort": {
       "source": "Source",
       "paths": "Chemins",
       "build": "Build"
     },
+    "stepsAgentShort": {
+      "brief": "Brief",
+      "defaults": "Réglages",
+      "request": "Demande"
+    },
+    "agentRequestTitle": "Demande agent mise en file",
+    "agentRequestDesc": "Le backend a accepté cette demande et s’est assuré que le lanceur Picoclaw est disponible.",
+    "agentPlaceholderBadge": "Placeholder",
+    "agentRequestId": "Identifiant",
+    "agentRequestStatus": "Statut",
+    "agentRequestCreatedAt": "Envoyée",
     "validation": {
       "pathsInvalid": "Indiquez des chemins workspace et projet valides (relatifs au dépôt, sans ..), le workspace étant parent du projet.",
       "portInvalid": "Indiquez un port entre 1 et 65535 (chiffres uniquement)."
     },
+    "agentValidationPrompt": "Ajoutez un brief de projet avant de mettre la demande agent en file.",
+    "agentValidationPromptLength": "Gardez le brief sous {{count}} caractères.",
     "pathExplorer": {
       "needRepoBranch": "Sélectionnez un dépôt et une branche pour parcourir les dossiers et trouver package.json.",
       "title": "Parcourir le dépôt",

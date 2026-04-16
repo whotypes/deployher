@@ -7,6 +7,7 @@ describe("isPdployApiPathOnTenantHost", () => {
     expect(isPdployApiPathOnTenantHost("/api/session")).toBe(true);
     expect(isPdployApiPathOnTenantHost("/api/ui/projects-page")).toBe(true);
     expect(isPdployApiPathOnTenantHost("/api/projects")).toBe(true);
+    expect(isPdployApiPathOnTenantHost("/api/projects/agent-create")).toBe(true);
     expect(isPdployApiPathOnTenantHost("/api/projects/abc")).toBe(true);
     expect(isPdployApiPathOnTenantHost("/api/deployments/x")).toBe(true);
     expect(isPdployApiPathOnTenantHost("/api/github/repos")).toBe(true);

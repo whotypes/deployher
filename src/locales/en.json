@@ -341,6 +341,11 @@
       "paths": "Paths",
       "build": "Build & preview"
     },
+    "stepsAgent": {
+      "brief": "Brief",
+      "defaults": "Defaults",
+      "request": "Request"
+    },
     "stepsAria": "Setup steps",
     "progressAria": "Setup progress",
     "scanningRepo": "Scanning repository",
@@ -379,6 +384,7 @@
     "dockerfileOnly": "Dockerfile only (skip host build)",
     "tabImport": "From GitHub",
     "tabManual": "Manual URL",
+    "tabAgent": "With agent",
     "repoCardTitle": "Repository",
     "findRepo": "Find a repository",
     "loadingRepos": "Loading repositories…",
@@ -387,6 +393,17 @@
     "monorepoDesc": "Lockfiles vs app folder (use . for single-package repos).",
     "manualRepoTitle": "Repository details",
     "manualRepoDesc": "Use any GitHub URL you can push to. Branch must exist on the remote.",
+    "agentCardTitle": "Project brief",
+    "agentCardDesc": "Queue an agent-driven project creation request and ensure the Picoclaw launcher is available for it.",
+    "agentPromptLabel": "What should the agent build?",
+    "agentPromptPlaceholder": "Build a small Next.js app with email auth, a dashboard, and Stripe test payments.",
+    "agentPromptHelp": "Describe the product, core flows, stack constraints, and anything the generated project should include from the start.",
+    "agentProjectNameHelp": "Optional. When you provide a name, it is included in the request payload as the preferred project name.",
+    "agentDefaultsTitle": "Generation defaults",
+    "agentDefaultsDesc": "These defaults travel with the request so the backend can scaffold toward the right runtime once the agent worker is wired up.",
+    "agentFrameworkHintHelp": "Preferred framework target for the generated project.",
+    "agentPreviewHelp": "Preferred preview mode for the generated project.",
+    "agentRuntimeImageModeHelp": "Preferred runtime image strategy for the generated project.",
     "noRepos": "No repositories found.",
     "loadReposFailed": "Failed to load repositories",
     "inspectFailed": "Could not inspect the repository",
@@ -395,6 +412,8 @@
     "linkGithubFailed": "GitHub linking failed. Please try again.",
     "projectCreated": "Project created.",
     "createFailed": "Failed to create project",
+    "agentCreateFailed": "Failed to queue agent project request",
+    "agentQueued": "Agent project request queued.",
     "fillRequired": "Please fill in name, repository and branch.",
     "repoPrivate": "private",
     "repoPublic": "public",
@@ -433,15 +452,30 @@
     "placeholderRoot": ".",
     "creating": "Creating…",
     "createProjectButton": "Create project",
+    "agentCreating": "Queueing…",
+    "agentCreateButton": "Queue agent project",
     "stepsShort": {
       "source": "Source",
       "paths": "Paths",
       "build": "Build"
     },
+    "stepsAgentShort": {
+      "brief": "Brief",
+      "defaults": "Defaults",
+      "request": "Request"
+    },
+    "agentRequestTitle": "Agent request queued",
+    "agentRequestDesc": "The backend accepted this request and ensured the Picoclaw launcher is available.",
+    "agentPlaceholderBadge": "Placeholder",
+    "agentRequestId": "Request id",
+    "agentRequestStatus": "Status",
+    "agentRequestCreatedAt": "Submitted",
     "validation": {
       "pathsInvalid": "Enter valid workspace and project paths (repo-relative, no ..), with workspace as a parent of the project.",
       "portInvalid": "Enter a runtime port between 1 and 65535 (digits only)."
     },
+    "agentValidationPrompt": "Enter a project brief before queueing the agent request.",
+    "agentValidationPromptLength": "Keep the project brief under {{count}} characters.",
     "pathExplorer": {
       "needRepoBranch": "Select a repository and branch to browse folders and locate package.json.",
       "title": "Browse the repository",
