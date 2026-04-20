@@ -343,8 +343,7 @@
     },
     "stepsAgent": {
       "brief": "Brief",
-      "defaults": "Defaults",
-      "request": "Request"
+      "config": "Picoclaw config"
     },
     "stepsAria": "Setup steps",
     "progressAria": "Setup progress",
@@ -394,13 +393,10 @@
     "manualRepoTitle": "Repository details",
     "manualRepoDesc": "Use any GitHub URL you can push to. Branch must exist on the remote.",
     "agentCardTitle": "Project brief",
-    "agentCardDesc": "Queue an agent-driven project creation request and ensure the Picoclaw launcher is available for it.",
-    "agentPromptLabel": "What should the agent build?",
-    "agentPromptPlaceholder": "Build a small Next.js app with email auth, a dashboard, and Stripe test payments.",
-    "agentPromptHelp": "Describe the product, core flows, stack constraints, and anything the generated project should include from the start.",
+    "agentCardDesc": "Create an agent project draft. Deployment happens later from the project page.",
     "agentProjectNameHelp": "Optional. When you provide a name, it is included in the request payload as the preferred project name.",
     "agentDefaultsTitle": "Generation defaults",
-    "agentDefaultsDesc": "These defaults travel with the request so the backend can scaffold toward the right runtime once the agent worker is wired up.",
+    "agentDefaultsDesc": "These defaults are saved on the project and reused when you deploy from the project page.",
     "agentFrameworkHintHelp": "Preferred framework target for the generated project.",
     "agentPreviewHelp": "Preferred preview mode for the generated project.",
     "agentRuntimeImageModeHelp": "Preferred runtime image strategy for the generated project.",
@@ -412,7 +408,7 @@
     "linkGithubFailed": "GitHub linking failed. Please try again.",
     "projectCreated": "Project created.",
     "createFailed": "Failed to create project",
-    "agentCreateFailed": "Failed to queue agent project request",
+    "agentCreateFailed": "Failed to create agent project",
     "agentQueued": "Agent project request queued.",
     "fillRequired": "Please fill in name, repository and branch.",
     "repoPrivate": "private",
@@ -452,8 +448,8 @@
     "placeholderRoot": ".",
     "creating": "Creating…",
     "createProjectButton": "Create project",
-    "agentCreating": "Queueing…",
-    "agentCreateButton": "Queue agent project",
+    "agentCreating": "Creating…",
+    "agentCreateButton": "Create agent project",
     "stepsShort": {
       "source": "Source",
       "paths": "Paths",
@@ -461,9 +457,10 @@
     },
     "stepsAgentShort": {
       "brief": "Brief",
-      "defaults": "Defaults",
-      "request": "Request"
+      "config": "Config"
     },
+    "agentConfigTitle": "Picoclaw config",
+    "agentConfigDesc": "Edit the config.json sections you want saved on this project. Workspace and gateway safety fields are enforced by the backend.",
     "agentRequestTitle": "Agent request queued",
     "agentRequestDesc": "The backend accepted this request and ensured the Picoclaw launcher is available.",
     "agentPlaceholderBadge": "Placeholder",
@@ -474,8 +471,6 @@
       "pathsInvalid": "Enter valid workspace and project paths (repo-relative, no ..), with workspace as a parent of the project.",
       "portInvalid": "Enter a runtime port between 1 and 65535 (digits only)."
     },
-    "agentValidationPrompt": "Enter a project brief before queueing the agent request.",
-    "agentValidationPromptLength": "Keep the project brief under {{count}} characters.",
     "pathExplorer": {
       "needRepoBranch": "Select a repository and branch to browse folders and locate package.json.",
       "title": "Browse the repository",
@@ -631,6 +626,15 @@
     "cancellationRequested": "\n[{{time}}] Cancellation requested.\n"
   },
   "projectDetail": {
+    "agentSourceLabel": "Agent project",
+    "agentPanelTitle": "Agent deployment",
+    "agentPanelDesc": "Edit the saved Picoclaw config, then deploy this project.",
+    "agentSaveDraft": "Save draft",
+    "agentSaving": "Saving…",
+    "agentSaveSuccess": "Agent draft saved.",
+    "agentSaveFailed": "Failed to save agent draft",
+    "agentDeploy": "Deploy",
+    "agentDeploying": "Deploying…",
     "currentDeployment": "Current deployment",
     "projectEyebrow": "Project",
     "branch": "Branch",
@@ -678,6 +682,40 @@
     "siteMetaUpdated": "Updated {{time}}",
     "deploymentStartedToast": "Deployment started!",
     "deployCreateFailed": "Failed to create deployment"
+  },
+  "agentConfig": {
+    "sections": {
+      "agents": {
+        "label": "agents",
+        "placeholder": "{\n  \"defaults\": {\n    \"model_name\": \"gpt-5.4\"\n  }\n}",
+        "help": "JSON object merged into the top-level agents section."
+      },
+      "model_list": {
+        "label": "model_list",
+        "placeholder": "[\n  {\n    \"model_name\": \"gpt-5.4\",\n    \"model\": \"openai/gpt-5.4\",\n    \"api_keys\": [\"sk-your-openai-key\"]\n  }\n]",
+        "help": "JSON array of model entries. Deployment requires at least one model."
+      },
+      "gateway": {
+        "label": "gateway",
+        "placeholder": "{\n  \"hot_reload\": false,\n  \"log_level\": \"warn\"\n}",
+        "help": "JSON object for gateway flags. Host and port are controlled by the server."
+      },
+      "channels": {
+        "label": "channels",
+        "placeholder": "{\n  \"pico\": {\n    \"enabled\": true\n  }\n}",
+        "help": "Optional JSON object for channels."
+      },
+      "hooks": {
+        "label": "hooks",
+        "placeholder": "{\n  \"enabled\": true\n}",
+        "help": "Optional JSON object for hooks."
+      },
+      "tools": {
+        "label": "tools",
+        "placeholder": "{\n  \"web\": {\n    \"enabled\": true\n  }\n}",
+        "help": "Optional JSON object for tools."
+      }
+    }
   },
   "projectObservability": {
     "intro": "Preview traffic is sampled (see sample rate on the traffic card). Client IPs use the {{header}} header only when {{env}} is enabled.",

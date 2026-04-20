@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import {
   filterReposByQuery,
   groupReposByOwner,
@@ -38,6 +37,12 @@ import { GitHubMark } from "@/ui/GitHubMark";
 import { fetchWithCsrf } from "./fetchWithCsrf";
 import { NewProjectPathExplorer } from "./NewProjectPathExplorer";
 import type { RepoScanHintsPayload, RepoScanPrimaryFramework } from "./repoScanHintsTypes";
+import {
+  AgentProjectConfigEditor,
+  createAgentProjectConfigDraftState,
+  parseAgentProjectConfigDraftState
+} from "./AgentProjectConfigEditor";
+import { defaultAgentProjectConfigComponents } from "@/lib/agentProjectConfig";
 
 type OwnerRepoGroupProps = {
   owner: string;
@@ -243,23 +248,6 @@ type FrameworkHintValue = "auto" | "nextjs" | "node" | "python" | "static";
 type PreviewModeValue = "auto" | "static" | "server";
 type RuntimeImageModeValue = "auto" | "platform" | "dockerfile";
 
-type AgentProjectCreateResponse = {
-  requestId: string;
-  status: "queued";
-  createdAt: string;
-  placeholder: boolean;
-  message: string;
-  draft: {
-    name: string | null;
-    prompt: string;
-    frameworkHint: FrameworkHintValue;
-    previewMode: PreviewModeValue;
-    runtimeImageMode: RuntimeImageModeValue;
-  };
-};
-
-const MAX_AGENT_PROMPT_LENGTH = 8_000;
-
 const SetupStepRail = ({
   mode,
   activeIndex,
@@ -280,14 +268,9 @@ const SetupStepRail = ({
               shortLabel: t("newProject.stepsAgentShort.brief")
             },
             {
-              id: "defaults",
-              label: t("newProject.stepsAgent.defaults"),
-              shortLabel: t("newProject.stepsAgentShort.defaults")
-            },
-            {
-              id: "request",
-              label: t("newProject.stepsAgent.request"),
-              shortLabel: t("newProject.stepsAgentShort.request")
+              id: "config",
+              label: t("newProject.stepsAgent.config"),
+              shortLabel: t("newProject.stepsAgentShort.config")
             }
           ]
         : [
@@ -368,8 +351,9 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const [manualRepoUrl, setManualRepoUrl] = React.useState("");
   const [manualBranch, setManualBranch] = React.useState(() => readPreferredBranch());
   const [agentProjectName, setAgentProjectName] = React.useState("");
-  const [agentPrompt, setAgentPrompt] = React.useState("");
-  const [agentRequest, setAgentRequest] = React.useState<AgentProjectCreateResponse | null>(null);
+  const [agentConfigDraft, setAgentConfigDraft] = React.useState(() =>
+    createAgentProjectConfigDraftState(defaultAgentProjectConfigComponents())
+  );
   const [workspaceRootDir, setWorkspaceRootDir] = React.useState(".");
   const [projectRootDir, setProjectRootDir] = React.useState(".");
   const [frameworkHint, setFrameworkHint] = React.useState<FrameworkHintValue>("auto");
@@ -418,15 +402,12 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     selectedRepo && branch.trim() && rootsValid && portValid
   );
   const manualCanSubmit = manualBasicsReady && rootsValid && portValid;
-  const agentPromptTrimmed = agentPrompt.trim();
-  const agentCanSubmit = agentPromptTrimmed.length > 0 && agentPromptTrimmed.length <= MAX_AGENT_PROMPT_LENGTH;
+  const agentCanSubmit = true;
   const completedThrough =
     createMode === "agent"
-      ? agentRequest
-        ? 2
-        : agentPromptTrimmed.length > 0 || agentProjectName.trim().length > 0
-          ? 1
-          : 0
+      ? agentProjectName.trim().length > 0
+        ? 1
+        : 0
       : createMode === "import"
       ? importFlowReady
         ? 2
@@ -438,7 +419,8 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
         : manualName.trim() || manualRepoUrl.trim()
           ? 1
           : 0;
-  const activeIndex = completedThrough >= 2 ? 2 : completedThrough;
+  const activeIndex =
+    createMode === "agent" ? Math.min(completedThrough, 1) : completedThrough >= 2 ? 2 : completedThrough;
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -743,12 +725,9 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
   const handleAgentCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!agentPromptTrimmed) {
-      showToast(t("newProject.agentValidationPrompt"), "error");
-      return;
-    }
-    if (agentPromptTrimmed.length > MAX_AGENT_PROMPT_LENGTH) {
-      showToast(t("newProject.agentValidationPromptLength", { count: MAX_AGENT_PROMPT_LENGTH }), "error");
+    const agentConfigResult = parseAgentProjectConfigDraftState(agentConfigDraft);
+    if (!agentConfigResult.ok) {
+      showToast(agentConfigResult.error, "error");
       return;
     }
 
@@ -759,22 +738,18 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: agentProjectName.trim() || null,
-          prompt: agentPromptTrimmed,
           frameworkHint,
           previewMode,
-          runtimeImageMode
+          runtimeImageMode,
+          agentConfigComponents: agentConfigResult.value
         })
       });
-      const data = (await response.json()) as
-        | AgentProjectCreateResponse
-        | {
-            error?: string;
-          };
+      const data = (await response.json()) as { id?: string; error?: string };
       if (!response.ok) {
-        throw new Error(("error" in data && data.error) || t("newProject.agentCreateFailed"));
+        throw new Error(data.error ?? t("newProject.agentCreateFailed"));
       }
-      setAgentRequest(data as AgentProjectCreateResponse);
-      showToast(t("newProject.agentQueued"), "success");
+      showToast(t("newProject.projectCreated"), "success");
+      finishCreate(data.id);
     } catch (error) {
       showToast(error instanceof Error ? error.message : t("newProject.agentCreateFailed"), "error");
     } finally {
@@ -1411,84 +1386,40 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                   <CardDescription>{t("newProject.agentCardDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1.5 sm:col-span-2">
-                      <Label htmlFor="np-agent-project-name">{t("newProject.projectNameLabel")}</Label>
-                      <Input
-                        id="np-agent-project-name"
-                        autoComplete="off"
-                        placeholder={t("newProject.placeholderProjectName")}
-                        value={agentProjectName}
-                        onChange={(event) => setAgentProjectName(event.target.value)}
-                        aria-label={t("newProject.projectNameLabel")}
-                      />
-                      <p className="text-xs text-muted-foreground">{t("newProject.agentProjectNameHelp")}</p>
-                    </div>
-                    <div className="flex flex-col gap-1.5 sm:col-span-2">
-                      <Label htmlFor="np-agent-prompt">
-                        {t("newProject.agentPromptLabel")}
-                        <span className="text-destructive"> *</span>
-                      </Label>
-                      <Textarea
-                        id="np-agent-prompt"
-                        className="min-h-36 resize-y"
-                        placeholder={t("newProject.agentPromptPlaceholder")}
-                        value={agentPrompt}
-                        onChange={(event) => setAgentPrompt(event.target.value)}
-                        aria-label={t("newProject.agentPromptLabel")}
-                        required
-                      />
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <p>{t("newProject.agentPromptHelp")}</p>
-                        <span>
-                          {agentPrompt.length}/{MAX_AGENT_PROMPT_LENGTH}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="np-agent-project-name">{t("newProject.projectNameLabel")}</Label>
+                    <Input
+                      id="np-agent-project-name"
+                      autoComplete="off"
+                      placeholder={t("newProject.placeholderProjectName")}
+                      value={agentProjectName}
+                      onChange={(event) => setAgentProjectName(event.target.value)}
+                      aria-label={t("newProject.projectNameLabel")}
+                    />
+                    <p className="text-xs text-muted-foreground">{t("newProject.agentProjectNameHelp")}</p>
                   </div>
                 </CardContent>
               </Card>
 
               {agentDefaultsCard}
 
-              {agentRequest ? (
-                <Card className="dashboard-surface border-primary/30 bg-primary/5 shadow-sm">
-                  <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-3">
-                    <div className="space-y-1">
-                      <CardTitle className="text-base">{t("newProject.agentRequestTitle")}</CardTitle>
-                      <CardDescription>{t("newProject.agentRequestDesc")}</CardDescription>
-                    </div>
-                    {agentRequest.placeholder ? (
-                      <Badge variant="secondary" className="shrink-0">
-                        {t("newProject.agentPlaceholderBadge")}
-                      </Badge>
-                    ) : null}
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-4 text-sm sm:grid-cols-3">
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {t("newProject.agentRequestId")}
-                        </p>
-                        <p className="font-mono text-sm">{agentRequest.requestId}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {t("newProject.agentRequestStatus")}
-                        </p>
-                        <p>{agentRequest.status === "queued" ? t("sidebar.statusQueued") : agentRequest.status}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {t("newProject.agentRequestCreatedAt")}
-                        </p>
-                        <p>{agentRequest.createdAt}</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{agentRequest.message}</p>
-                  </CardContent>
-                </Card>
-              ) : null}
+              <Card className="dashboard-surface border-border/80 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{t("newProject.agentConfigTitle")}</CardTitle>
+                  <CardDescription>{t("newProject.agentConfigDesc")}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <AgentProjectConfigEditor
+                    draft={agentConfigDraft}
+                    onChange={(key, value) =>
+                      setAgentConfigDraft((current) => ({
+                        ...current,
+                        [key]: value
+                      }))
+                    }
+                  />
+                </CardContent>
+              </Card>
 
               <div className="border-border bg-card/80 flex flex-col gap-3 rounded-xl border p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
                 <Button type="button" variant="ghost" asChild className="justify-center sm:justify-start">

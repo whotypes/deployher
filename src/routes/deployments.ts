@@ -20,6 +20,11 @@ import { generateShortId } from "../utils/shortId";
 import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
 import { formatRunnerRuntimeLogError } from "./runtimeLogFormatting";
 import { requestRunnerEnsurePreview } from "../lib/previewRunnerRehydrate";
+import { sanitizeAgentProjectConfigComponents } from "../lib/agentProjectConfig";
+import {
+  assertAgentDeploymentPreconditions,
+  runAgentProjectDeployment
+} from "../lib/agentProjectDeployment";
 
 const getProjectForUser = async (projectId: string, userId: string) => {
   const [project] = await db
@@ -53,13 +58,6 @@ export const listDeployments = async (req: RequestWithParamsAndSession) => {
 };
 
 export const createDeployment = async (req: RequestWithParamsAndSession) => {
-  if (!isRedisConfigured()) {
-    return json({ error: "Redis is not configured" }, { status: 503 });
-  }
-  if (!isStorageConfigured()) {
-    return json({ error: "S3 storage is not configured" }, { status: 503 });
-  }
-
   const projectId = req.params["id"];
   if (!projectId) {
     return notFound("Project not found");
@@ -69,8 +67,20 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
   if (!project) {
     return notFound("Project not found");
   }
+  if (project.sourceType !== "agent") {
+    if (!isRedisConfigured()) {
+      return json({ error: "Redis is not configured" }, { status: 503 });
+    }
+    if (!isStorageConfigured()) {
+      return json({ error: "S3 storage is not configured" }, { status: 503 });
+    }
+  }
 
-  const body = await parseJson<{ artifactPrefix?: unknown; envFile?: unknown }>(req);
+  const body = await parseJson<{
+    artifactPrefix?: unknown;
+    envFile?: unknown;
+    agentConfigComponents?: unknown;
+  }>(req);
   const artifactPrefix =
     body && typeof body.artifactPrefix === "string" && body.artifactPrefix.trim()
       ? body.artifactPrefix.trim()
@@ -88,6 +98,32 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
     );
   }
 
+  const isAgentProject = project.sourceType === "agent";
+  let agentConfigSnapshot: typeof schema.projects.$inferSelect.agentConfig = null;
+  let projectAgentUpdates: Partial<typeof schema.projects.$inferInsert> | null = null;
+
+  if (isAgentProject) {
+    try {
+      await assertAgentDeploymentPreconditions();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Agent deployer is not available";
+      return json({ error: message }, { status: 503 });
+    }
+
+    const configResult = sanitizeAgentProjectConfigComponents(body?.agentConfigComponents ?? project.agentConfig, {
+      requireModelList: true
+    });
+    if (!configResult.ok) {
+      return badRequest(configResult.error);
+    }
+    agentConfigSnapshot = configResult.value;
+
+    projectAgentUpdates = {
+      agentConfig: agentConfigSnapshot,
+      updatedAt: new Date()
+    };
+  }
+
   const shortId = generateShortId();
 
   const [deployment] = await db
@@ -96,9 +132,10 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
       projectId: project.id,
       shortId,
       artifactPrefix,
-      status: "queued",
+      status: isAgentProject ? "building" : "queued",
       buildPreviewMode: project.previewMode,
-      buildServerPreviewTarget: project.serverPreviewTarget
+      buildServerPreviewTarget: project.serverPreviewTarget,
+      agentConfigSnapshot
     })
     .returning();
 
@@ -108,8 +145,21 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
 
   await db
     .update(schema.projects)
-    .set({ currentDeploymentId: deployment.id, updatedAt: new Date() })
+    .set({
+      currentDeploymentId: deployment.id,
+      updatedAt: new Date(),
+      ...(projectAgentUpdates ?? {})
+    })
     .where(eq(schema.projects.id, project.id));
+
+  if (isAgentProject) {
+    queueMicrotask(() => {
+      void runAgentProjectDeployment(deployment.id).catch((error) => {
+        console.error(`Agent deployment ${deployment.id} failed outside request lifecycle:`, error);
+      });
+    });
+    return json(deployment, { status: 201 });
+  }
 
   try {
     let repoCredentialId: string | undefined;

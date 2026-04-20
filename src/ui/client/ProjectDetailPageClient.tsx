@@ -1,10 +1,21 @@
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  defaultAgentProjectConfigComponents,
+  type AgentProjectConfigComponents,
+  type AgentProjectSourceType
+} from "@/lib/agentProjectConfig";
 import { RefreshCw } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { fetchWithCsrf } from "./fetchWithCsrf";
 import { showPageToast } from "./pageNotifications";
 import { useProjectGlyphImage } from "./useProjectGlyphImage";
+import {
+  AgentProjectConfigEditor,
+  createAgentProjectConfigDraftState,
+  parseAgentProjectConfigDraftState
+} from "./AgentProjectConfigEditor";
 
 export type ProjectDetailSiteMetaBootstrap = {
   siteIconUrl: string | null;
@@ -26,12 +37,14 @@ export type ProjectDeploymentRowBootstrap = {
 export type ProjectDetailBootstrap = {
   projectId: string;
   projectName: string;
+  sourceType: AgentProjectSourceType;
   repoUrl: string;
   branch: string;
   projectRootDir: string;
   currentPreviewUrl: string | null;
   /** true if this project has at least one deployment that finished successfully */
   hasSuccessfulDeployment: boolean;
+  agentConfig: AgentProjectConfigComponents | null;
   siteMeta: ProjectDetailSiteMetaBootstrap | null;
   currentDeploymentId?: string | null;
 };
@@ -49,6 +62,130 @@ const notify = (message: string, variant: "success" | "error"): void => {
   const notification = document.getElementById("notification");
   if (!notification) return;
   showPageToast(notification, message, variant);
+};
+
+export const AgentProjectDeploymentPanel = ({
+  projectId,
+  initialConfig
+}: {
+  projectId: string;
+  initialConfig: AgentProjectConfigComponents | null;
+}): React.ReactElement => {
+  const { t } = useTranslation();
+  const [configDraft, setConfigDraft] = React.useState(() =>
+    createAgentProjectConfigDraftState(initialConfig ?? defaultAgentProjectConfigComponents())
+  );
+  const [saving, setSaving] = React.useState(false);
+  const [deploying, setDeploying] = React.useState(false);
+
+  React.useEffect(() => {
+    setConfigDraft(createAgentProjectConfigDraftState(initialConfig ?? defaultAgentProjectConfigComponents()));
+  }, [initialConfig]);
+
+  const parseDraft = React.useCallback(
+    (requireModelList: boolean) => {
+      const parsedConfig = parseAgentProjectConfigDraftState(configDraft, { requireModelList });
+      if (!parsedConfig.ok) {
+        return { ok: false as const, error: parsedConfig.error };
+      }
+      return {
+        ok: true as const,
+        config: parsedConfig.value
+      };
+    },
+    [configDraft]
+  );
+
+  const saveDraft = async (): Promise<void> => {
+    if (saving || deploying) return;
+    const parsed = parseDraft(false);
+    if (!parsed.ok) {
+      notify(parsed.error, "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetchWithCsrf(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentConfigComponents: parsed.config
+        })
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? t("projectDetail.agentSaveFailed"));
+      }
+      notify(t("projectDetail.agentSaveSuccess"), "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t("projectDetail.agentSaveFailed"), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deploy = async (): Promise<void> => {
+    if (saving || deploying) return;
+    const parsed = parseDraft(true);
+    if (!parsed.ok) {
+      notify(parsed.error, "error");
+      return;
+    }
+
+    setDeploying(true);
+    try {
+      const response = await fetchWithCsrf(`/projects/${projectId}/deployments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentConfigComponents: parsed.config
+        })
+      });
+      const data = (await response.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? t("projectDetail.deployCreateFailed"));
+      }
+      notify(t("projectDetail.deploymentStartedToast"), "success");
+      window.setTimeout(() => {
+        window.location.href = `/deployments/${data.id ?? ""}`;
+      }, 400);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t("projectDetail.deployCreateFailed"), "error");
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t("projectDetail.agentPanelTitle")}</CardTitle>
+        <CardDescription>{t("projectDetail.agentPanelDesc")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <AgentProjectConfigEditor
+          draft={configDraft}
+          disabled={saving || deploying}
+          onChange={(key, value) =>
+            setConfigDraft((current) => ({
+              ...current,
+              [key]: value
+            }))
+          }
+        />
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button type="button" variant="outline" disabled={saving || deploying} onClick={() => void saveDraft()}>
+            {saving ? t("projectDetail.agentSaving") : t("projectDetail.agentSaveDraft")}
+          </Button>
+          <Button type="button" disabled={saving || deploying} onClick={() => void deploy()}>
+            {deploying ? t("projectDetail.agentDeploying") : t("projectDetail.agentDeploy")}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 };
 
 export const ProjectDetailSetCurrentRoot = ({

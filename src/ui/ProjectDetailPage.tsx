@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ScrollText, Settings } from "lucide-react";
 import { pickFeaturedDeploymentFromSortedDesc } from "@/lib/sidebarFeaturedDeployment";
+import type { AgentProjectConfigComponents, AgentProjectSourceType } from "@/lib/agentProjectConfig";
 
 type Deployment = {
   id: string;
@@ -25,12 +26,14 @@ type Deployment = {
   buildPreviewMode: "auto" | "static" | "server" | null;
   buildLogKey: string | null;
   previewUrl: string | null;
+  agentConfigSnapshot: AgentProjectConfigComponents | null;
   createdAt: string;
   finishedAt: string | null;
 };
 
 type Project = {
   id: string;
+  sourceType: AgentProjectSourceType;
   name: string;
   repoUrl: string;
   branch: string;
@@ -46,6 +49,7 @@ type Project = {
   runtimeContainerPort: number;
   installCommand: string | null;
   buildCommand: string | null;
+  agentConfig: AgentProjectConfigComponents | null;
   createdAt: string;
   updatedAt: string;
   currentDeploymentId: string | null;
@@ -112,11 +116,13 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
     return {
       projectId: data.project.id,
       projectName: data.project.name,
+      sourceType: data.project.sourceType,
       repoUrl: data.project.repoUrl,
       branch: data.project.branch,
       projectRootDir: data.project.projectRootDir,
       currentPreviewUrl: data.currentPreviewUrl,
       hasSuccessfulDeployment: rows.some((d) => d.status === "success"),
+      agentConfig: data.project.agentConfig ?? null,
       siteMeta:
         data.currentPreviewUrl !== null
           ? {
@@ -131,10 +137,12 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
   }, [
     data.project.id,
     data.project.name,
+    data.project.sourceType,
     data.project.repoUrl,
     data.project.branch,
     data.project.projectRootDir,
     data.currentPreviewUrl,
+    data.project.agentConfig,
     data.project.siteIconUrl,
     data.project.siteOgImageUrl,
     data.project.siteMetaFetchedAt,
@@ -205,7 +213,9 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
                 </h1>
               </div>
               <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
-                {data.project.repoUrl.replace(/^https:\/\/github\.com\//, "")}
+                {data.project.sourceType === "agent"
+                  ? t("projectDetail.agentSourceLabel")
+                  : data.project.repoUrl.replace(/^https:\/\/github\.com\//, "")}
               </p>
             </div>
             <dl className="grid gap-3 text-sm">
@@ -291,7 +301,7 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
                 </a>
               </Button>
             ) : null}
-            <div className="contents" id="project-detail-deploy-main-root" />
+            {data.project.sourceType === "github" ? <div className="contents" id="project-detail-deploy-main-root" /> : null}
             <div id="project-detail-set-current-root" />
           </div>
         </div>
@@ -321,14 +331,18 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
                   <TableRow>
                     <TableCell className="w-36 text-muted-foreground font-medium">{t("projectDetail.tableRepo")}</TableCell>
                     <TableCell>
-                      <a
-                        href={data.project.repoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="no-underline hover:underline"
-                      >
-                        {data.project.repoUrl.replace("https://github.com/", "")}
-                      </a>
+                      {data.project.sourceType === "agent" ? (
+                        <span>{t("projectDetail.agentSourceLabel")}</span>
+                      ) : (
+                        <a
+                          href={data.project.repoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="no-underline hover:underline"
+                        >
+                          {data.project.repoUrl.replace("https://github.com/", "")}
+                        </a>
+                      )}
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -421,6 +435,9 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
     </div>
 
     <div className="min-w-0 space-y-6">
+      {data.project.sourceType === "agent" ? (
+        <div id="project-detail-agent-panel-root" className="min-w-0" />
+      ) : null}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t("projectDetail.deploymentCardTitle")}</CardTitle>

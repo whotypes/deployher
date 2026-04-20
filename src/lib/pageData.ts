@@ -384,6 +384,7 @@ export const buildProjectDetailData = async (
       ...project,
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),
+      agentConfig: project.agentConfig ?? null,
       siteIconUrl: project.siteIconUrl ?? null,
       siteOgImageUrl: project.siteOgImageUrl ?? null,
       siteMetaFetchedAt: project.siteMetaFetchedAt ? project.siteMetaFetchedAt.toISOString() : null,
@@ -398,13 +399,18 @@ export const buildProjectDetailData = async (
       serveStrategy: d.serveStrategy,
       buildPreviewMode: d.buildPreviewMode,
       buildLogKey: d.buildLogKey,
-      previewUrl: buildPreviewUrl(d.shortId),
+      previewUrl: effectiveDeploymentPreviewUrl(d.status, d.previewUrl, d.shortId),
+      agentConfigSnapshot: d.agentConfigSnapshot ?? null,
       createdAt: d.createdAt.toISOString(),
       finishedAt: d.finishedAt?.toISOString() ?? null
     })),
     currentPreviewUrl:
       currentDeployment && currentDeployment.status === "success"
-        ? buildPreviewUrl(currentDeployment.shortId)
+        ? effectiveDeploymentPreviewUrl(
+            currentDeployment.status,
+            currentDeployment.previewUrl,
+            currentDeployment.shortId
+          )
         : null,
     runtimeLogsAvailable: config.runner.previewEnabled && Boolean(config.runner.url?.trim())
   };

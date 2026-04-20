@@ -343,8 +343,7 @@
     },
     "stepsAgent": {
       "brief": "Brief",
-      "defaults": "Réglages",
-      "request": "Demande"
+      "config": "Config Picoclaw"
     },
     "stepsAria": "Étapes de configuration",
     "progressAria": "Progression",
@@ -394,13 +393,10 @@
     "manualRepoTitle": "Détails du dépôt",
     "manualRepoDesc": "Utilisez une URL GitHub sur laquelle vous pouvez pousser. La branche doit exister sur le remote.",
     "agentCardTitle": "Brief du projet",
-    "agentCardDesc": "Met en file une demande de création de projet pilotée par agent et s’assure que le lanceur Picoclaw est disponible pour elle.",
-    "agentPromptLabel": "Que doit construire l’agent ?",
-    "agentPromptPlaceholder": "Construis une petite app Next.js avec authentification email, tableau de bord et paiements Stripe en mode test.",
-    "agentPromptHelp": "Décrivez le produit, les parcours principaux, les contraintes techniques et ce que le projet généré doit inclure dès le départ.",
+    "agentCardDesc": "Crée un brouillon de projet agent. Le déploiement se fait ensuite depuis la page du projet.",
     "agentProjectNameHelp": "Optionnel. Si vous indiquez un nom, il est ajouté à la demande comme nom de projet préféré.",
     "agentDefaultsTitle": "Réglages de génération",
-    "agentDefaultsDesc": "Ces réglages accompagnent la demande afin que le backend puisse générer la bonne cible quand le worker agent sera branché.",
+    "agentDefaultsDesc": "Ces réglages sont enregistrés sur le projet et réutilisés lors du déploiement depuis la page du projet.",
     "agentFrameworkHintHelp": "Framework cible préféré pour le projet généré.",
     "agentPreviewHelp": "Mode d’aperçu préféré pour le projet généré.",
     "agentRuntimeImageModeHelp": "Stratégie d’image runtime préférée pour le projet généré.",
@@ -412,7 +408,7 @@
     "linkGithubFailed": "Échec de la liaison GitHub. Réessayez.",
     "projectCreated": "Projet créé.",
     "createFailed": "Échec de la création du projet",
-    "agentCreateFailed": "Impossible de mettre en file la demande de projet agent",
+    "agentCreateFailed": "Impossible de créer le projet agent",
     "agentQueued": "Demande de projet agent mise en file.",
     "fillRequired": "Renseignez le nom, le dépôt et la branche.",
     "repoPrivate": "privé",
@@ -452,8 +448,8 @@
     "placeholderRoot": ".",
     "creating": "Création…",
     "createProjectButton": "Créer le projet",
-    "agentCreating": "Mise en file…",
-    "agentCreateButton": "Mettre en file le projet agent",
+    "agentCreating": "Création…",
+    "agentCreateButton": "Créer le projet agent",
     "stepsShort": {
       "source": "Source",
       "paths": "Chemins",
@@ -461,9 +457,10 @@
     },
     "stepsAgentShort": {
       "brief": "Brief",
-      "defaults": "Réglages",
-      "request": "Demande"
+      "config": "Config"
     },
+    "agentConfigTitle": "Config Picoclaw",
+    "agentConfigDesc": "Modifiez les sections de config.json à enregistrer sur ce projet. Les champs de sécurité pour workspace et gateway sont imposés côté backend.",
     "agentRequestTitle": "Demande agent mise en file",
     "agentRequestDesc": "Le backend a accepté cette demande et s’est assuré que le lanceur Picoclaw est disponible.",
     "agentPlaceholderBadge": "Placeholder",
@@ -474,8 +471,6 @@
       "pathsInvalid": "Indiquez des chemins workspace et projet valides (relatifs au dépôt, sans ..), le workspace étant parent du projet.",
       "portInvalid": "Indiquez un port entre 1 et 65535 (chiffres uniquement)."
     },
-    "agentValidationPrompt": "Ajoutez un brief de projet avant de mettre la demande agent en file.",
-    "agentValidationPromptLength": "Gardez le brief sous {{count}} caractères.",
     "pathExplorer": {
       "needRepoBranch": "Sélectionnez un dépôt et une branche pour parcourir les dossiers et trouver package.json.",
       "title": "Parcourir le dépôt",
@@ -631,6 +626,15 @@
     "cancellationRequested": "\n[{{time}}] Annulation demandée.\n"
   },
   "projectDetail": {
+    "agentSourceLabel": "Projet agent",
+    "agentPanelTitle": "Déploiement agent",
+    "agentPanelDesc": "Modifiez la config Picoclaw enregistrée, puis déployez ce projet.",
+    "agentSaveDraft": "Enregistrer le brouillon",
+    "agentSaving": "Enregistrement…",
+    "agentSaveSuccess": "Brouillon agent enregistré.",
+    "agentSaveFailed": "Échec de l’enregistrement du brouillon agent",
+    "agentDeploy": "Déployer",
+    "agentDeploying": "Déploiement…",
     "currentDeployment": "Déploiement actuel",
     "projectEyebrow": "Projet",
     "branch": "Branche",
@@ -678,6 +682,40 @@
     "siteMetaUpdated": "Mis à jour {{time}}",
     "deploymentStartedToast": "Déploiement démarré !",
     "deployCreateFailed": "Échec de la création du déploiement"
+  },
+  "agentConfig": {
+    "sections": {
+      "agents": {
+        "label": "agents",
+        "placeholder": "{\n  \"defaults\": {\n    \"model_name\": \"gpt-5.4\"\n  }\n}",
+        "help": "Objet JSON fusionné dans la section agents de haut niveau."
+      },
+      "model_list": {
+        "label": "model_list",
+        "placeholder": "[\n  {\n    \"model_name\": \"gpt-5.4\",\n    \"model\": \"openai/gpt-5.4\",\n    \"api_keys\": [\"sk-your-openai-key\"]\n  }\n]",
+        "help": "Tableau JSON des modèles. Le déploiement exige au moins un modèle."
+      },
+      "gateway": {
+        "label": "gateway",
+        "placeholder": "{\n  \"hot_reload\": false,\n  \"log_level\": \"warn\"\n}",
+        "help": "Objet JSON pour les options gateway. L’hôte et le port sont gérés par le serveur."
+      },
+      "channels": {
+        "label": "channels",
+        "placeholder": "{\n  \"pico\": {\n    \"enabled\": true\n  }\n}",
+        "help": "Objet JSON optionnel pour les canaux."
+      },
+      "hooks": {
+        "label": "hooks",
+        "placeholder": "{\n  \"enabled\": true\n}",
+        "help": "Objet JSON optionnel pour les hooks."
+      },
+      "tools": {
+        "label": "tools",
+        "placeholder": "{\n  \"web\": {\n    \"enabled\": true\n  }\n}",
+        "help": "Objet JSON optionnel pour les outils."
+      }
+    }
   },
   "projectObservability": {
     "intro": "Le trafic d’aperçu est échantillonné (voir le taux sur la carte). Les IP client utilisent l’en-tête {{header}} uniquement si {{env}} est activé.",

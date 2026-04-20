@@ -2,6 +2,7 @@ import { Suspense, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { parseGitHubRepoUrl } from "../../github";
 import {
+  AgentProjectDeploymentPanel,
   ProjectDetailDeployTrigger,
   ProjectDetailHeroSitePreview,
   ProjectDetailSetCurrentRoot,
@@ -33,13 +34,26 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
       };
     }
 
-    const deployMainLabel = bootstrap.hasSuccessfulDeployment ? "Re-deploy" : "Deploy";
-
-    const mainRoot = document.getElementById("project-detail-deploy-main-root");
-    if (mainRoot) {
-      const r = createRoot(mainRoot);
-      r.render(<ProjectDetailDeployTrigger projectId={projectId} label={deployMainLabel} />);
-      roots.push(r);
+    if (bootstrap.sourceType === "agent") {
+      const agentPanelRoot = document.getElementById("project-detail-agent-panel-root");
+      if (agentPanelRoot) {
+        const r = createRoot(agentPanelRoot);
+        r.render(
+          <AgentProjectDeploymentPanel
+            projectId={projectId}
+            initialConfig={bootstrap.agentConfig}
+          />
+        );
+        roots.push(r);
+      }
+    } else {
+      const deployMainLabel = bootstrap.hasSuccessfulDeployment ? "Re-deploy" : "Deploy";
+      const mainRoot = document.getElementById("project-detail-deploy-main-root");
+      if (mainRoot) {
+        const r = createRoot(mainRoot);
+        r.render(<ProjectDetailDeployTrigger projectId={projectId} label={deployMainLabel} />);
+        roots.push(r);
+      }
     }
 
     const setCurrentRoot = document.getElementById("project-detail-set-current-root");
@@ -65,7 +79,7 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
 
     const explorerRoot = document.getElementById("project-detail-repo-explorer-root");
     if (explorerRoot) {
-      const spec = parseGitHubRepoUrl(bootstrap.repoUrl);
+      const spec = bootstrap.sourceType === "github" ? parseGitHubRepoUrl(bootstrap.repoUrl) : null;
       if (spec && bootstrap.branch.trim()) {
         const r = createRoot(explorerRoot);
         r.render(
@@ -101,11 +115,13 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
   }, [
     bootstrap.projectId,
     bootstrap.projectName,
+    bootstrap.sourceType,
     bootstrap.repoUrl,
     bootstrap.branch,
     bootstrap.projectRootDir,
     bootstrap.currentPreviewUrl,
     bootstrap.hasSuccessfulDeployment,
+    bootstrap.agentConfig,
     siteIconUrl,
     siteOgImageUrl,
     siteMetaFetchedAt,

@@ -9,6 +9,10 @@ import {
   uuid,
   uniqueIndex
 } from "drizzle-orm/pg-core";
+import type {
+  AgentProjectConfigComponents,
+  AgentProjectSourceType
+} from "../lib/agentProjectConfig";
 
 /**
  * Better Auth core schema (user, session, account, verification).
@@ -77,6 +81,7 @@ export const verification = pgTable("verification", {
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  sourceType: text("source_type").notNull().default("github").$type<AgentProjectSourceType>(),
   name: text("name").notNull(),
   repoUrl: text("repo_url").notNull(),
   branch: text("branch").notNull(),
@@ -104,6 +109,7 @@ export const projects = pgTable("projects", {
   runtimeContainerPort: integer("runtime_container_port").notNull().default(3000),
   installCommand: text("install_command"),
   buildCommand: text("build_command"),
+  agentConfig: jsonb("agent_config").$type<AgentProjectConfigComponents | null>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   currentDeploymentId: uuid("current_deployment_id"),
@@ -177,6 +183,7 @@ export const deployments = pgTable("deployments", {
   buildServerPreviewTarget: text("build_server_preview_target").$type<"isolated-runner" | null>(),
   previewManifestKey: text("preview_manifest_key"),
   previewUrl: text("preview_url"),
+  agentConfigSnapshot: jsonb("agent_config_snapshot").$type<AgentProjectConfigComponents | null>(),
   workerId: text("worker_id"),
   lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
   runAttempt: integer("run_attempt").notNull().default(0),

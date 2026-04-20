@@ -2,7 +2,9 @@ import path from "path";
 import { describe, expect, test } from "bun:test";
 import {
   AgentProjectDeployerError,
+  buildAgentProjectDeployerCommand,
   ensureAgentProjectDeployer,
+  resolveAgentProjectDeployerPlan,
   resolveAgentProjectDeployerBinaryPath
 } from "./agentProjectDeployer";
 
@@ -29,6 +31,36 @@ describe("resolveAgentProjectDeployerBinaryPath", () => {
 });
 
 describe("ensureAgentProjectDeployer", () => {
+  test("builds a replace command for deployment-time restarts", async () => {
+    const cwd = "/workspace";
+
+    const plan = await resolveAgentProjectDeployerPlan({
+      cwd,
+      env: {},
+      fileExists: async (targetPath) => targetPath === path.join(cwd, "dist", "picoclaw-deployer"),
+      which: () => null,
+      spawn: () => {
+        throw new Error("not used");
+      },
+      readText: async () => ""
+    });
+
+    expect(buildAgentProjectDeployerCommand(plan, { replace: true })).toEqual([
+      path.join(cwd, "dist", "picoclaw-deployer"),
+      "--mode",
+      "launcher",
+      "--name",
+      "deployher-agent-launcher",
+      "--data-dir",
+      path.join(cwd, "var", "picoclaw-agent"),
+      "--gateway-port",
+      "18790",
+      "--launcher-port",
+      "18800",
+      "--replace"
+    ]);
+  });
+
   test("starts the launcher deployer with the expected command", async () => {
     const cwd = "/workspace";
     const seenCommands: string[][] = [];

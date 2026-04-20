@@ -100,11 +100,68 @@ func TestEnsureDataDirCreatesStarterConfig(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	text := string(content)
-	if !strings.Contains(text, "\"api_key\": \"sk-your-openai-key\"") {
-		t.Fatalf("expected starter config to contain placeholder API key, got %s", text)
+	if !strings.Contains(text, "\"model_list\": [") {
+		t.Fatalf("expected starter config to contain model_list, got %s", text)
+	}
+	if !strings.Contains(text, "\"api_keys\": [") {
+		t.Fatalf("expected starter config to contain api_keys, got %s", text)
 	}
 	if !strings.Contains(text, "\"host\": \"0.0.0.0\"") {
 		t.Fatalf("expected starter config to contain gateway host, got %s", text)
+	}
+	if !strings.Contains(text, "\"model_name\": \"gpt-5.4\"") {
+		t.Fatalf("expected starter config to contain agent default model name, got %s", text)
+	}
+}
+
+func TestEnsureDataDirRewritesLegacyStarterConfig(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "picoclaw")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("mkdir data dir: %v", err)
+	}
+	legacyConfig := `{
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  },
+  "providers": [
+    {
+      "name": "openai",
+      "type": "openai",
+      "model": "gpt-4.1-mini",
+      "api_key": "sk-your-openai-key"
+    }
+  ],
+  "workspace": {
+    "root": "/root/.picoclaw/workspace"
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(dataDir, "config.json"), []byte(legacyConfig), 0o644); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	_, configPath, created, err := ensureDataDir(Options{DataDir: dataDir, GatewayHost: "0.0.0.0"})
+	if err != nil {
+		t.Fatalf("ensureDataDir() error = %v", err)
+	}
+	if !created {
+		t.Fatal("expected ensureDataDir to rewrite legacy starter config")
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read rewritten config: %v", err)
+	}
+	text := string(content)
+	if strings.Contains(text, "\"providers\": [") {
+		t.Fatalf("expected legacy providers array to be removed, got %s", text)
+	}
+	if !strings.Contains(text, "\"model_list\": [") {
+		t.Fatalf("expected rewritten config to contain model_list, got %s", text)
 	}
 }
 

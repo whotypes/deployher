@@ -154,21 +154,28 @@ export class AgentProjectDeployerError extends Error {
   }
 }
 
-export type AgentProjectDeployerResult = {
+export type AgentProjectDeployerPlan = {
   binaryPath: string;
-  command: string[];
   containerName: string;
   dataDir: string;
+  gatewayPort: number;
+  launcherPort: number;
+  dashboardToken: string | null;
+  pull: boolean;
   gatewayUrl: string;
   launcherUrl: string;
+};
+
+export type AgentProjectDeployerResult = AgentProjectDeployerPlan & {
+  command: string[];
   alreadyRunning: boolean;
   stdout: string;
   stderr: string;
 };
 
-export const ensureAgentProjectDeployer = async (
+export const resolveAgentProjectDeployerPlan = async (
   depsInput?: Partial<Deps>
-): Promise<AgentProjectDeployerResult> => {
+): Promise<AgentProjectDeployerPlan> => {
   const deps = { ...defaultDeps(), ...depsInput };
   const binaryPath = await resolveAgentProjectDeployerBinaryPath(deps);
   if (!binaryPath) {
@@ -196,29 +203,60 @@ export const ensureAgentProjectDeployer = async (
     "AGENT_PROJECT_LAUNCHER_PORT",
     DEFAULT_LAUNCHER_PORT
   );
-  const dashboardToken = trimEnv(deps.env, "AGENT_PROJECT_DASHBOARD_TOKEN");
+  const dashboardToken = trimEnv(deps.env, "AGENT_PROJECT_DASHBOARD_TOKEN") ?? null;
   const pull = parseBoolean(deps.env, "AGENT_PROJECT_PULL", false);
 
-  const command = [
+  return {
     binaryPath,
+    containerName,
+    dataDir,
+    gatewayPort,
+    launcherPort,
+    dashboardToken,
+    pull,
+    gatewayUrl: `http://127.0.0.1:${gatewayPort}`,
+    launcherUrl: `http://127.0.0.1:${launcherPort}`
+  };
+};
+
+export const buildAgentProjectDeployerCommand = (
+  plan: AgentProjectDeployerPlan,
+  options: { replace?: boolean } = {}
+): string[] => {
+  const command = [
+    plan.binaryPath,
     "--mode",
     "launcher",
     "--name",
-    containerName,
+    plan.containerName,
     "--data-dir",
-    dataDir,
+    plan.dataDir,
     "--gateway-port",
-    String(gatewayPort),
+    String(plan.gatewayPort),
     "--launcher-port",
-    String(launcherPort)
+    String(plan.launcherPort)
   ];
 
-  if (dashboardToken) {
-    command.push("--dashboard-token", dashboardToken);
+  if (plan.dashboardToken) {
+    command.push("--dashboard-token", plan.dashboardToken);
   }
-  if (pull) {
+  if (plan.pull) {
     command.push("--pull");
   }
+  if (options.replace) {
+    command.push("--replace");
+  }
+
+  return command;
+};
+
+export const ensureAgentProjectDeployer = async (
+  depsInput?: Partial<Deps>,
+  options: { replace?: boolean } = {}
+): Promise<AgentProjectDeployerResult> => {
+  const deps = { ...defaultDeps(), ...depsInput };
+  const plan = await resolveAgentProjectDeployerPlan(deps);
+  const command = buildAgentProjectDeployerCommand(plan, options);
 
   let proc: SpawnedProcess;
   try {
@@ -250,12 +288,8 @@ export const ensureAgentProjectDeployer = async (
   }
 
   return {
-    binaryPath,
+    ...plan,
     command,
-    containerName,
-    dataDir,
-    gatewayUrl: `http://127.0.0.1:${gatewayPort}`,
-    launcherUrl: `http://127.0.0.1:${launcherPort}`,
     alreadyRunning,
     stdout: normalizedStdout,
     stderr: normalizedStderr
