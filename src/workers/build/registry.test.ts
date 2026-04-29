@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import path from "path";
 import { mkdtemp, mkdir, rm, stat, writeFile } from "fs/promises";
 import { tmpdir } from "os";
-import { detectNodePackageManager } from "./packageManagers/node";
+import { detectNodePackageManager, resolveNodeInstallRoot } from "./packageManagers/node";
 import { detectBuildStrategy } from "./registry";
 import { nodeBuildStrategy } from "./strategies/node";
 import { pythonBuildStrategy } from "./strategies/python";
@@ -46,6 +46,7 @@ const createBuildCtx = (deploymentId: string) => ({
   log: () => {},
   appendLogChunk: () => {},
   env: {},
+  repoRootDir: ".",
   repoDir: ".",
   workspaceDir: ".",
   repoRelativeDir: ".",
@@ -284,6 +285,35 @@ describe("detectNodePackageManager", () => {
   });
 });
 
+describe("resolveNodeInstallRoot", () => {
+  const runtime = createRuntime();
+
+  it("prefers a parent pnpm lockfile over package-lock in the workspace", async () => {
+    const repo = await createRepo({
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "client/package-lock.json": "{}"
+    });
+    try {
+      const root = await resolveNodeInstallRoot(path.join(repo.dir, "client"), repo.dir, runtime);
+      expect(root).toBe(repo.dir);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("uses the workspace when no lockfiles exist in the ancestor chain", async () => {
+    const repo = await createRepo({
+      "client/package.json": "{}"
+    });
+    try {
+      const root = await resolveNodeInstallRoot(path.join(repo.dir, "client"), repo.dir, runtime);
+      expect(root).toBe(path.join(repo.dir, "client"));
+    } finally {
+      await repo.cleanup();
+    }
+  });
+});
+
 describe("node build strategy", () => {
   const runtime = createRuntime();
 
@@ -301,7 +331,7 @@ describe("node build strategy", () => {
     try {
       const result = await nodeBuildStrategy.build(
         repo.dir,
-        createBuildCtx("dep-node-static"),
+        { ...createBuildCtx("dep-node-static"), repoRootDir: repo.dir },
         runtime
       );
 
@@ -326,7 +356,7 @@ describe("node build strategy", () => {
     try {
       const result = await nodeBuildStrategy.build(
         repo.dir,
-        createBuildCtx("dep-node-next"),
+        { ...createBuildCtx("dep-node-next"), repoRootDir: repo.dir },
         runtime
       );
 
@@ -368,6 +398,7 @@ describe("node build strategy", () => {
         path.join(repo.dir, "web"),
         {
           ...createBuildCtx("dep-node-next-monorepo"),
+          repoRootDir: repo.dir,
           repoDir: path.join(repo.dir, "web"),
           workspaceDir: repo.dir,
           repoRelativeDir: "web",
@@ -398,7 +429,7 @@ describe("node build strategy", () => {
     });
 
     try {
-      const result = await nodeBuildStrategy.build(repo.dir, createBuildCtx("dep-node-next-public"), runtime);
+      const result = await nodeBuildStrategy.build(repo.dir, { ...createBuildCtx("dep-node-next-public"), repoRootDir: repo.dir }, runtime);
       expect(result.serveStrategy).toBe("server");
       expect(result.previewResolution.code).toBe("next_dot_next");
     } finally {
@@ -420,7 +451,7 @@ describe("node build strategy", () => {
 
     try {
       await expect(
-        nodeBuildStrategy.build(repo.dir, createBuildCtx("dep-node-next-missing-dot-next"), runtime)
+        nodeBuildStrategy.build(repo.dir, { ...createBuildCtx("dep-node-next-missing-dot-next"), repoRootDir: repo.dir }, runtime)
       ).rejects.toThrow(
         "This repository looks like a Next.js app, but Deployher only found static output in the selected project root. Check the project root directory or set an explicit framework/runtime configuration before redeploying."
       );
@@ -444,7 +475,7 @@ describe("node build strategy", () => {
       await expect(
         nodeBuildStrategy.build(
           repo.dir,
-          { ...createBuildCtx("dep-node-force-static"), previewMode: "static" },
+          { ...createBuildCtx("dep-node-force-static"), repoRootDir: repo.dir, previewMode: "static" },
           runtime
         )
       ).rejects.toThrow(
@@ -468,7 +499,7 @@ describe("node build strategy", () => {
       await expect(
         nodeBuildStrategy.build(
           repo.dir,
-          createBuildCtx("dep-node-ambiguous"),
+          { ...createBuildCtx("dep-node-ambiguous"), repoRootDir: repo.dir },
           runtime
         )
       ).rejects.toThrow(
@@ -493,7 +524,7 @@ describe("node build strategy", () => {
     try {
       const result = await nodeBuildStrategy.build(
         repo.dir,
-        { ...createBuildCtx("dep-node-hint-with-dist"), frameworkHint: "node" },
+        { ...createBuildCtx("dep-node-hint-with-dist"), repoRootDir: repo.dir, frameworkHint: "node" },
         runtime
       );
 
@@ -531,7 +562,7 @@ describe("node build strategy", () => {
       await expect(
         nodeBuildStrategy.build(
           repo.dir,
-          createBuildCtx("dep-node-install-fail"),
+          { ...createBuildCtx("dep-node-install-fail"), repoRootDir: repo.dir },
           runtime
         )
       ).rejects.toThrow(
@@ -567,6 +598,7 @@ describe("node build strategy", () => {
         path.join(repo.dir, "apps/web"),
         {
           ...createBuildCtx("dep-node-monorepo"),
+          repoRootDir: repo.dir,
           repoDir: path.join(repo.dir, "apps/web"),
           workspaceDir: repo.dir,
           repoRelativeDir: "apps/web",
@@ -586,6 +618,57 @@ describe("node build strategy", () => {
         cwd: repo.dir,
         workdirRelative: "apps/web"
       });
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("runs pnpm install at the repository root when the lockfile is only above the workspace", async () => {
+    const repo = await createRepo({
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "package.json": JSON.stringify({ name: "root", private: true }),
+      "client/package.json": JSON.stringify({
+        name: "client",
+        scripts: { build: "vite build" },
+        dependencies: { ui: "workspace:*" }
+      }),
+      "client/dist/index.html": "<html></html>"
+    });
+
+    const calls: Array<{ cmd: string[]; cwd: string }> = [];
+    const runtimeWithCapture: BuildRuntime = {
+      ...createRuntime(),
+      runCommand: async (cmd, options) => {
+        calls.push({ cmd, cwd: options.cwd });
+        return { code: 0, stdout: "", stderr: "" };
+      }
+    };
+
+    try {
+      await nodeBuildStrategy.build(
+        path.join(repo.dir, "client"),
+        {
+          ...createBuildCtx("dep-node-pnpm-nested-workspace"),
+          repoRootDir: repo.dir,
+          repoDir: path.join(repo.dir, "client"),
+          workspaceDir: path.join(repo.dir, "client"),
+          repoRelativeDir: "client",
+          workspaceRelativeDir: "client",
+          previewMode: "static"
+        },
+        runtimeWithCapture
+      );
+
+      expect(calls).toHaveLength(2);
+      const installCall = calls[0];
+      const buildCall = calls[1];
+      if (!installCall || !buildCall) {
+        throw new Error("expected install and build commands");
+      }
+      expect(installCall.cmd[0]).toBe("corepack");
+      expect(installCall.cmd[1]).toBe("pnpm");
+      expect(installCall.cwd).toBe(repo.dir);
+      expect(buildCall.cwd).toBe(path.join(repo.dir, "client"));
     } finally {
       await repo.cleanup();
     }

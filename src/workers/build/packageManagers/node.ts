@@ -109,6 +109,53 @@ const hasAnyLockfileForDetector = async (
   return false;
 };
 
+const PM_ROOT_LOCKFILES = ["pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"] as const;
+
+export const resolveNodeInstallRoot = async (
+  workspaceDir: string,
+  repoRootDir: string,
+  runtime: Pick<BuildRuntime, "exists">
+): Promise<string> => {
+  const resolvedRepo = path.resolve(repoRootDir);
+  const resolvedWs = path.resolve(workspaceDir);
+  const wsInRepo =
+    resolvedWs === resolvedRepo ||
+    resolvedWs.startsWith(resolvedRepo + path.sep);
+  if (!wsInRepo) {
+    return resolvedWs;
+  }
+
+  const chain: string[] = [];
+  let dir = resolvedWs;
+  while (true) {
+    chain.push(dir);
+    if (dir === resolvedRepo) {
+      break;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+
+  for (const candidate of chain.slice().reverse()) {
+    for (const name of PM_ROOT_LOCKFILES) {
+      if (await runtime.exists(path.join(candidate, name))) {
+        return candidate;
+      }
+    }
+  }
+
+  for (const candidate of chain) {
+    if (await runtime.exists(path.join(candidate, "package-lock.json"))) {
+      return candidate;
+    }
+  }
+
+  return resolvedWs;
+};
+
 export const detectNodePackageManager = async (
   repoDir: string,
   runtime: BuildRuntime

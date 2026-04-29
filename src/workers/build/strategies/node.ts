@@ -1,5 +1,5 @@
 import path from "path";
-import { detectNodePackageManager } from "../packageManagers/node";
+import { detectNodePackageManager, resolveNodeInstallRoot } from "../packageManagers/node";
 import type { BuildStrategy, PreviewResolution, RuntimeConfig } from "../types";
 
 const STATIC_OUTPUT_DIRS = ["out", "dist", "build", "public"];
@@ -174,7 +174,21 @@ export const nodeBuildStrategy: BuildStrategy = {
       );
     }
 
-    const manager = await detectNodePackageManager(ctx.workspaceDir, runtime);
+    const useDefaultInstall =
+      ctx.installCommandOverride == null || ctx.installCommandOverride.length === 0;
+    const installRoot = useDefaultInstall
+      ? await resolveNodeInstallRoot(ctx.workspaceDir, ctx.repoRootDir, runtime)
+      : ctx.workspaceDir;
+    if (useDefaultInstall && installRoot !== ctx.workspaceDir) {
+      ctx.log(
+        `Resolved dependency install directory to repository path ${path.relative(ctx.repoRootDir, installRoot).replace(/\\/g, "/") || "."} (monorepo lockfile or workspace layout).`
+      );
+    }
+
+    const manager = await detectNodePackageManager(
+      useDefaultInstall ? installRoot : ctx.workspaceDir,
+      runtime
+    );
     ctx.log(`Using ${manager.name} for install/build`);
 
     const installEnv = normalizeCommandEnv({
@@ -202,10 +216,17 @@ export const nodeBuildStrategy: BuildStrategy = {
         ? `Installing dependencies (custom: ${installArgv.join(" ")})`
         : `Installing dependencies (${manager.install.join(" ")})`
     );
+    const installCwd = useDefaultInstall ? installRoot : ctx.workspaceDir;
+    const installWorkdirRelative = useDefaultInstall
+      ? installRoot === ctx.repoRootDir
+        ? "."
+        : path.relative(ctx.repoRootDir, installRoot).replace(/\\/g, "/") || "."
+      : ctx.workspaceRelativeDir;
+
     const install = await runtime.runCommand(installArgv, {
-      cwd: ctx.workspaceDir,
+      cwd: installCwd,
       env: installEnv,
-      workdirRelative: ctx.workspaceRelativeDir
+      workdirRelative: installWorkdirRelative
     });
     if (install.code !== 0) {
       throw new Error(formatCommandFailure("Dependency install", install));

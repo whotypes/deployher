@@ -51,6 +51,8 @@ export type BuildExecutionContext = {
   log: (line: string) => void;
   appendLogChunk: (content: string) => void;
   env: Record<string, string>;
+  /** Extracted repository root (contains the full checkout). */
+  repoRootDir: string;
   repoDir: string;
   workspaceDir: string;
   repoRelativeDir: string;
