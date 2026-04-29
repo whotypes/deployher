@@ -122,11 +122,6 @@ export const createExampleDeployment = async (req: RequestWithParamsAndSession) 
     return json({ error: "Failed to create deployment" }, { status: 500 });
   }
 
-  await db
-    .update(schema.projects)
-    .set({ currentDeploymentId: deployment.id, updatedAt: new Date() })
-    .where(eq(schema.projects.id, project.id));
-
   try {
     await enqueueDeployment(deployment.id, { userId: req.session.user.id });
   } catch (err) {
