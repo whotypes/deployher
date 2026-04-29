@@ -71,7 +71,7 @@ export const ProjectObservabilityPage = ({ data }: { data: ProjectObservabilityD
       </div>
 
       <p className="mb-6 max-w-2xl text-sm text-muted-foreground">
-        {t("projectObservability.intro", { header: "X-Forwarded-For", env: "OBSERVABILITY_TRUST_PROXY" })}
+        {t("projectObservability.intro", { header: "X-Forwarded-For" })}
       </p>
 
       <div id="project-observability-root" className="space-y-8">
