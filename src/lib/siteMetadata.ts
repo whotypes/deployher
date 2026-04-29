@@ -171,6 +171,44 @@ const metaContent = (tag: string): string | null => {
   return v ? v : null;
 };
 
+const tryResolveContent = (raw: string | undefined, baseUrl: string): string | null => {
+  if (!raw) return null;
+  const t = raw.trim();
+  if (!t) return null;
+  return resolveHref(t, baseUrl);
+};
+
+const extractOgImageByLooseRegex = (html: string, baseUrl: string): string | null => {
+  const patterns: RegExp[] = [
+    /<meta\b[^>]+?\bproperty\s*=\s*["']og:image["'][^>]+?\bcontent\s*=\s*["']([^"']*)["']/i,
+    /<meta\b[^>]+?\bcontent\s*=\s*["']([^"']*)["'][^>]+?\bproperty\s*=\s*["']og:image["']/i,
+    /<meta\b[^>]+?\bproperty\s*=\s*["']og:image:url["'][^>]+?\bcontent\s*=\s*["']([^"']*)["']/i,
+    /<meta\b[^>]+?\bcontent\s*=\s*["']([^"']*)["'][^>]+?\bproperty\s*=\s*["']og:image:url["']/i,
+    /<meta\b[^>]+?\bproperty\s*=\s*["']og:image:secure_url["'][^>]+?\bcontent\s*=\s*["']([^"']*)["']/i,
+    /<meta\b[^>]+?\bcontent\s*=\s*["']([^"']*)["'][^>]+?\bproperty\s*=\s*["']og:image:secure_url["']/i,
+    /<meta\b[^>]+?\bname\s*=\s*["']twitter:image["'][^>]+?\bcontent\s*=\s*["']([^"']*)["']/i,
+    /<meta\b[^>]+?\bcontent\s*=\s*["']([^"']*)["'][^>]+?\bname\s*=\s*["']twitter:image["']/i
+  ];
+  for (const re of patterns) {
+    re.lastIndex = 0;
+    const m = re.exec(html);
+    const u = tryResolveContent(m?.[1], baseUrl);
+    if (u) return u;
+  }
+  const multiline: RegExp[] = [
+    /<meta\b[\s\S]+?\bproperty\s*=\s*["']og:image(?!:)[\s\S]+?\bcontent\s*=\s*["']([^"']*)["']/i,
+    /<meta\b[\s\S]+?\bcontent\s*=\s*["']([^"']*)["'][\s\S]+?\bproperty\s*=\s*["']og:image["']/i,
+    /<meta\b[\s\S]+?\bname\s*=\s*["']twitter:image["'][\s\S]+?\bcontent\s*=\s*["']([^"']*)["']/i
+  ];
+  for (const re of multiline) {
+    re.lastIndex = 0;
+    const m = re.exec(html);
+    const u = tryResolveContent(m?.[1], baseUrl);
+    if (u) return u;
+  }
+  return null;
+};
+
 export const extractOgImageFromHtml = (html: string, baseUrl: string): string | null => {
   const scan = (predicate: (tag: string) => boolean): string | null => {
     const metaRe = /<meta\b[^>]*>/gi;
@@ -192,7 +230,18 @@ export const extractOgImageFromHtml = (html: string, baseUrl: string): string | 
       /\bproperty\s*=\s*["']og:image:secure_url["']/i.test(tag)
   );
   if (og) return og;
-  return scan((tag) => /\bname\s*=\s*["']twitter:image["']/i.test(tag));
+  const tw = scan((tag) => /\bname\s*=\s*["']twitter:image["']/i.test(tag));
+  if (tw) return tw;
+  return extractOgImageByLooseRegex(html, baseUrl);
+};
+
+/** Same directory as the preview page; live static output often has meta only in this file. */
+export const siteMetadataIndexHtmlUrl = (publicPreviewUrl: string): string | null => {
+  try {
+    return new URL("index.html", publicPreviewUrl).href;
+  } catch {
+    return null;
+  }
 };
 
 type LinkCandidate = { href: string; rel: string; sizesScore: number };
@@ -420,8 +469,26 @@ const readResponseTextWithCap = async (response: Response, maxBytes: number): Pr
   return out;
 };
 
-export const fetchSiteMetadata = async (publicPreviewUrl: string): Promise<SiteMetadataFetchResult> => {
-  const attempts = buildSiteMetaFetchAttempts(publicPreviewUrl, config.siteMetadata.fetchOrigin);
+const sameSiteMetadataDocumentPath = (a: string, b: string): boolean => {
+  try {
+    const u = new URL(a);
+    const v = new URL(b);
+    u.hash = "";
+    v.hash = "";
+    if (u.origin !== v.origin) return false;
+    const p = (pathname: string) => (pathname === "" ? "/" : pathname);
+    return p(u.pathname) === p(v.pathname);
+  } catch {
+    return a === b;
+  }
+};
+
+const fetchSiteMetadataHtmlFromUrl = async (
+  documentUrl: string
+): Promise<
+  { ok: true; html: string; parseBase: string } | { ok: false; error: string }
+> => {
+  const attempts = buildSiteMetaFetchAttempts(documentUrl, config.siteMetadata.fetchOrigin);
   if ("error" in attempts) {
     return { ok: false, error: attempts.error };
   }
@@ -486,9 +553,41 @@ export const fetchSiteMetadata = async (publicPreviewUrl: string): Promise<SiteM
     return { ok: false, error: `Unexpected content-type: ${ct || "none"}` };
   }
 
+  let parseBase: string;
   try {
-    const baseForResolve = new URL(publicPreviewUrl).href;
-    const { iconUrl, ogImageUrl } = parseSiteMetadataFromHtml(html, baseForResolve);
+    parseBase = new URL(response.url).href;
+  } catch {
+    try {
+      parseBase = new URL(documentUrl).href;
+    } catch {
+      return { ok: false, error: "Invalid response URL" };
+    }
+  }
+
+  return { ok: true, html, parseBase };
+};
+
+export const fetchSiteMetadata = async (publicPreviewUrl: string): Promise<SiteMetadataFetchResult> => {
+  const first = await fetchSiteMetadataHtmlFromUrl(publicPreviewUrl);
+  if (!first.ok) return first;
+
+  try {
+    let { iconUrl, ogImageUrl } = parseSiteMetadataFromHtml(first.html, first.parseBase);
+    if (!ogImageUrl?.trim() || !iconUrl?.trim()) {
+      const indexUrl = siteMetadataIndexHtmlUrl(publicPreviewUrl);
+      if (indexUrl && !sameSiteMetadataDocumentPath(indexUrl, first.parseBase)) {
+        const second = await fetchSiteMetadataHtmlFromUrl(indexUrl);
+        if (second.ok) {
+          const p2 = parseSiteMetadataFromHtml(second.html, second.parseBase);
+          if (!ogImageUrl?.trim()) {
+            ogImageUrl = p2.ogImageUrl;
+          }
+          if (!iconUrl?.trim()) {
+            iconUrl = p2.iconUrl;
+          }
+        }
+      }
+    }
     return { ok: true, iconUrl, ogImageUrl };
   } catch {
     return { ok: false, error: "Failed to parse HTML" };
