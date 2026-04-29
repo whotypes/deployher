@@ -1,9 +1,11 @@
 import "./src/env/bootstrap";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { bearer, deviceAuthorization } from "better-auth/plugins";
 import { db } from "./src/db/db";
-import { accounts, sessions, users, verification } from "./src/db/schema";
+import { accounts, deviceCodes, sessions, users, verification } from "./src/db/schema";
 import { config, getAuthBaseUrl, getTrustedAppOrigins } from "./src/config";
+import { DEPLOYHER_CLI_CLIENT_ID } from "./src/lib/cliAuthConstants";
 
 const githubClientId = process.env.GITHUB_CLIENT_ID ?? Bun.env.GITHUB_CLIENT_ID;
 const githubClientSecret = process.env.GITHUB_CLIENT_SECRET ?? Bun.env.GITHUB_CLIENT_SECRET;
@@ -16,6 +18,12 @@ if (!githubClientId || !githubClientSecret || !clientURL) {
 export const auth = betterAuth({
     baseURL: clientURL,
     trustedOrigins: getTrustedAppOrigins(),
+    plugins: [
+        bearer(),
+        deviceAuthorization({
+            validateClient: (clientId) => clientId === DEPLOYHER_CLI_CLIENT_ID
+        })
+    ],
     socialProviders: {
         github: {
             clientId: githubClientId,
@@ -49,7 +57,8 @@ export const auth = betterAuth({
             users,
             sessions,
             accounts,
-            verifications: verification
+            verifications: verification,
+            deviceCode: deviceCodes
         },
         usePlural: true,
         camelCase: true
