@@ -49,6 +49,7 @@ mock.module("../config", () => ({
   getDevProjectUrlPattern: () => "http://{project}.localhost:3001",
   getProdProjectUrlPattern: () => "https://{project}.localhost",
   buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`,
+  buildPublicPreviewUrl: (label: string) => `http://${label}.localhost:3001`,
   resolveProjectDomains: (project: { id: string; name: string }) => ({
     dev: `http://${project.id}.localhost:3001`,
     prod: `https://${project.id}.localhost`
