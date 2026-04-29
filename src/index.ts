@@ -3,10 +3,10 @@ import { setServer, setStartedAt } from "./appContext";
 import { buildClient, clientOutDir } from "./client/build";
 import { config } from "./config";
 import { json } from "./http/helpers";
+import { shouldDisableRequestTimeout } from "./http/timeoutRoutes";
 import { rehydratePreviewRunnerAfterAppStart } from "./lib/previewRunnerRehydrate";
 import { startQueueStallAlertScheduler } from "./lib/projectAlerts";
 import { router } from "./router";
-import { extractDeploymentIdFromHost } from "./routes/preview";
 import { checkStorageConnectivity, isStorageConfigured } from "./storage";
 
 setStartedAt(Date.now());
@@ -37,11 +37,7 @@ const start = async () => {
     fetch: async (req, srv) => {
       const host = req.headers.get("host") ?? "";
       const pathname = new URL(req.url).pathname;
-      if (
-        extractDeploymentIdFromHost(host) ||
-        pathname.startsWith("/d/") ||
-        pathname.startsWith("/preview/")
-      ) {
+      if (shouldDisableRequestTimeout(host, pathname)) {
         srv.timeout(req, 0);
       }
       return await router(req);
