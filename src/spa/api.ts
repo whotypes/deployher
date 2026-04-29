@@ -15,6 +15,37 @@ const resolveApiUrl = (url: string): string => {
   return url;
 };
 
+const parseErrorMessageFromBody = (text: string, status: number): string => {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return `Request failed (${status})`;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && "error" in parsed) {
+      const msg = (parsed as { error: unknown }).error;
+      if (typeof msg === "string" && msg.trim()) {
+        return msg.trim();
+      }
+    }
+  } catch {
+    // body is not JSON
+  }
+  return trimmed.length > 400 ? `${trimmed.slice(0, 400)}…` : trimmed;
+};
+
+export class FetchJsonError extends Error {
+  readonly status: number;
+  readonly bodyText: string;
+
+  constructor(message: string, status: number, bodyText: string) {
+    super(message);
+    this.name = "FetchJsonError";
+    this.status = status;
+    this.bodyText = bodyText;
+  }
+}
+
 export const fetchJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
   const target = resolveApiUrl(url);
   const r = await fetch(target, { credentials: "include", ...init });
@@ -27,8 +58,9 @@ export const fetchJson = async <T>(url: string, init?: RequestInit): Promise<T> 
     throw new Error("Forbidden");
   }
   if (!r.ok) {
-    const t = await r.text();
-    throw new Error(t || `HTTP ${r.status}`);
+    const bodyText = await r.text();
+    const message = parseErrorMessageFromBody(bodyText, r.status);
+    throw new FetchJsonError(message, r.status, bodyText);
   }
   return r.json() as Promise<T>;
 };
