@@ -32,7 +32,12 @@ import * as uiApi from "./routes/uiApi";
 import * as cliApi from "./routes/cliApi";
 import { requestUsesCliBearerAuth } from "./security/cliAuth";
 import { attachCsrfCookie, ensureCsrfToken, validateMutationRequest } from "./security/csrf";
+import {
+  canonicalWhyOnLandingUrl,
+  requestHostIsDashApp
+} from "./lib/deployherHosts";
 import { guessContentType } from "./utils/contentType";
+import { applyApiCorsHeaders, corsPreflightResponse } from "./http/cors";
 
 type PublicRoute = {
   pattern: string;
@@ -89,6 +94,16 @@ const servePublicSpa: PublicRouteHandler = async (req) => {
   return attachCsrfCookie(res, csrf);
 };
 
+const whyPublicGet: PublicRouteHandler = async (req) => {
+  if (requestHostIsDashApp(req)) {
+    const canonical = canonicalWhyOnLandingUrl();
+    if (canonical) {
+      return Response.redirect(canonical, 302);
+    }
+  }
+  return servePublicSpa(req);
+};
+
 const loginSpa: PublicRouteHandler = async (req) => {
   const url = new URL(req.url);
   const session = await getSession(req);
@@ -140,7 +155,7 @@ const deploymentDetailPageGet: ProtectedRouteHandler = async (req) => {
 
 const publicRoutes: PublicRoute[] = [
   { pattern: "/", methods: { GET: servePublicSpa } },
-  { pattern: "/why", methods: { GET: servePublicSpa } },
+  { pattern: "/why", methods: { GET: whyPublicGet } },
   { pattern: "/login", methods: { GET: loginSpa } },
   { pattern: "/device", methods: { GET: servePublicSpa } },
   { pattern: "/health", methods: { GET: healthSpa } },
@@ -477,6 +492,13 @@ const respondDashboardApiOr404 = async (req: Request): Promise<Response> => {
 };
 
 export const router = async (req: Request): Promise<Response> => {
+  const preflight = corsPreflightResponse(req);
+  if (preflight) return preflight;
+  const res = await dispatchRequest(req);
+  return applyApiCorsHeaders(req, res);
+};
+
+const dispatchRequest = async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
   const method = req.method;
   const pathname = url.pathname;
