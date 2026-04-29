@@ -225,7 +225,7 @@ export const ProjectDetailHeroSitePreview = ({
       >
         <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden />
       </Button>
-      {siteMetaError ? (
+      {siteMetaError && ogLoadFailed ? (
         <p className="mt-2 text-xs text-destructive" role="status">
           {siteMetaError}
         </p>
