@@ -19,7 +19,7 @@ export const registerStart = (program: Command, getCtx: (cmd: Command) => CliCon
     .action(async function (this: Command) {
       const ctx = getCtx(this);
       await ensureViteDevApiUrl(ctx);
-      await runBootstrapWithListr(ctx);
+      await runBootstrapWithListr(ctx, { seed: true });
       if (ctx.logLevel !== "quiet") {
         console.log(
           pc.green(
@@ -66,7 +66,7 @@ export const registerStart = (program: Command, getCtx: (cmd: Command) => CliCon
             task.output = "Garage meta/data and .garage.env cleared";
           },
         },
-        ...createBootstrapTasks(ctx),
+        ...createBootstrapTasks(ctx, { seed: true }),
       ]);
 
       await listr.run();
