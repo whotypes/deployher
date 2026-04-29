@@ -180,15 +180,17 @@ const withOptionalPort = (protocol: string, domain: string, port: number) => {
   return normalizedPort === defaultPort ? `${protocol}://${domain}` : `${protocol}://${domain}:${normalizedPort}`;
 };
 
-export const getDevBaseUrl = () => withOptionalPort(config.devProtocol, config.devDomain, config.port);
-
-export const originForPublicHostname = (host: string): string => {
+const getPublicPortForProd = (): number => {
   const proto = config.prodProtocol;
   const defaultPort = proto === "https" ? 443 : 80;
   const explicit = rawEnv.DEPLOYHER_PUBLIC_PORT?.trim();
-  const port = explicit ? parsePort(explicit, defaultPort) : defaultPort;
-  return withOptionalPort(proto, host, port);
+  return explicit ? parsePort(explicit, defaultPort) : defaultPort;
 };
+
+export const getDevBaseUrl = () => withOptionalPort(config.devProtocol, config.devDomain, config.port);
+
+export const originForPublicHostname = (host: string): string =>
+  withOptionalPort(config.prodProtocol, host, getPublicPortForProd());
 
 export const getLandingOrigins = (): string[] =>
   config.deployher.landingHostnames.map((h) => originForPublicHostname(h));
@@ -241,7 +243,7 @@ export const getDevProjectUrlPattern = () => withOptionalPort(
 export const getProdProjectUrlPattern = () => withOptionalPort(
   config.prodProtocol,
   `{project}.${config.prodDomain}`,
-  config.port
+  getPublicPortForProd()
 );
 
 export const buildDevSubdomainUrl = (label: string) => withOptionalPort(
@@ -249,6 +251,11 @@ export const buildDevSubdomainUrl = (label: string) => withOptionalPort(
   `${label}.${config.devDomain}`,
   config.port
 );
+
+export const buildPublicPreviewUrl = (label: string): string =>
+  config.env === "development"
+    ? buildDevSubdomainUrl(label)
+    : originForPublicHostname(`${label}.${config.prodDomain}`);
 
 export const resolveProjectDomains = (project: { id: string; name: string }) => {
   const slug = project.name
@@ -262,6 +269,6 @@ export const resolveProjectDomains = (project: { id: string; name: string }) => 
 
   return {
     dev: buildDevSubdomainUrl(label),
-    prod: withOptionalPort(config.prodProtocol, `${label}.${config.prodDomain}`, config.port)
+    prod: withOptionalPort(config.prodProtocol, `${label}.${config.prodDomain}`, getPublicPortForProd())
   };
 };
