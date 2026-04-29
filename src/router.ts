@@ -13,6 +13,7 @@ import { json } from "./http/helpers";
 import * as pageData from "./lib/pageData";
 import * as account from "./routes/account";
 import * as admin from "./routes/admin";
+import * as deploymentObservability from "./routes/deploymentObservability";
 import * as deployments from "./routes/deployments";
 import * as github from "./routes/github";
 import * as pages from "./routes/pages";
@@ -28,6 +29,8 @@ import * as projectObservability from "./routes/projectObservability";
 import * as projects from "./routes/projects";
 import * as runnerInternal from "./routes/runnerInternal";
 import * as uiApi from "./routes/uiApi";
+import * as cliApi from "./routes/cliApi";
+import { requestUsesCliBearerAuth } from "./security/cliAuth";
 import { attachCsrfCookie, ensureCsrfToken, validateMutationRequest } from "./security/csrf";
 import { guessContentType } from "./utils/contentType";
 
@@ -139,6 +142,7 @@ const publicRoutes: PublicRoute[] = [
   { pattern: "/", methods: { GET: servePublicSpa } },
   { pattern: "/why", methods: { GET: servePublicSpa } },
   { pattern: "/login", methods: { GET: loginSpa } },
+  { pattern: "/device", methods: { GET: servePublicSpa } },
   { pattern: "/health", methods: { GET: healthSpa } },
   { pattern: "/preview/*", methods: { GET: servePreview } },
   { pattern: "/api/csrf", methods: { GET: uiApi.getCsrfApi } },
@@ -148,6 +152,7 @@ const publicRoutes: PublicRoute[] = [
 ];
 
 const protectedRoutes: ProtectedRoute[] = [
+  { pattern: "/api/cli/whoami", methods: { GET: cliApi.getCliWhoamiApi } },
   { pattern: "/api/workspace/dashboard", methods: { GET: uiApi.getWorkspaceDashboardApi } },
   { pattern: "/api/ui/projects-page", methods: { GET: uiApi.getUiProjectsPageApi } },
   { pattern: "/api/ui/new-project", methods: { GET: uiApi.getUiNewProjectApi } },
@@ -324,6 +329,10 @@ const protectedRoutes: ProtectedRoute[] = [
   },
   { pattern: "/api/admin/build-settings", operatorOnly: true, methods: { GET: admin.getBuildSettings, PATCH: admin.updateBuildSettings } },
   { pattern: "/api/deployments/:id", methods: { GET: deployments.getDeployment } },
+  {
+    pattern: "/api/deployments/:id/observability",
+    methods: { GET: deploymentObservability.getDeploymentObservability }
+  },
   { pattern: "/api/deployments/:id/cancel", methods: { POST: deployments.cancelDeployment } },
   {
     pattern: "/api/deployments/:id/ensure-preview",
@@ -332,6 +341,10 @@ const protectedRoutes: ProtectedRoute[] = [
   {
     pattern: "/api/deployments/:id/log",
     methods: { GET: deployments.getDeploymentLog }
+  },
+  {
+    pattern: "/api/deployments/:id/log/stream",
+    methods: { GET: deployments.streamDeploymentLog }
   },
   {
     pattern: "/api/deployments/:id/runtime-log/stream",
@@ -343,15 +356,43 @@ const protectedRoutes: ProtectedRoute[] = [
   }
 ];
 
-const resolveAssetFile = async (subPath: string): Promise<string | null> => {
-  const direct = path.resolve(clientOutDir, subPath);
-  if (direct.startsWith(clientOutDir) && (await Bun.file(direct).exists())) {
+const isInsideClientOutDir = (filePath: string): boolean =>
+  filePath === clientOutDir || filePath.startsWith(`${clientOutDir}${path.sep}`);
+
+const resolveClientFile = async (subPath: string): Promise<string | null> => {
+  const normalizedPath = subPath.replace(/^\/+/, "");
+  if (!normalizedPath || normalizedPath.includes("..") || normalizedPath.includes("\0")) {
+    return null;
+  }
+
+  const direct = path.resolve(clientOutDir, normalizedPath);
+  if (isInsideClientOutDir(direct) && path.extname(direct) && (await Bun.file(direct).exists())) {
     return direct;
   }
-  const nested = path.resolve(clientOutDir, "assets", subPath);
-  if (nested.startsWith(clientOutDir) && (await Bun.file(nested).exists())) {
+
+  const nested = path.resolve(clientOutDir, "assets", normalizedPath);
+  if (isInsideClientOutDir(nested) && path.extname(nested) && (await Bun.file(nested).exists())) {
     return nested;
   }
+
+  return null;
+};
+
+const serveClientFile = async (requestedPath: string): Promise<Response | null> => {
+  const resolved = await resolveClientFile(requestedPath);
+  if (resolved) {
+    return new Response(Bun.file(resolved), {
+      headers: { "Content-Type": guessContentType(resolved) }
+    });
+  }
+
+  const embeddedAsset = getEmbeddedClientAsset(requestedPath);
+  if (embeddedAsset) {
+    return new Response(embeddedAsset.blob, {
+      headers: { "Content-Type": embeddedAsset.contentType }
+    });
+  }
+
   return null;
 };
 
@@ -382,7 +423,7 @@ const dispatchPublicAndProtectedRoutes = async (req: Request): Promise<Response 
         }
         const csrf = ensureCsrfToken(req);
         const appOwnedMutation = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
-        if (appOwnedMutation) {
+        if (appOwnedMutation && !requestUsesCliBearerAuth(req)) {
           const validation = await validateMutationRequest(req, csrf.token);
           if (!validation.ok) {
             return attachCsrfCookie(
@@ -423,6 +464,7 @@ export const isPdployApiPathOnTenantHost = (pathname: string): boolean => {
   if (pathname === "/api/projects" || pathname.startsWith("/api/projects/")) return true;
   if (pathname.startsWith("/api/admin")) return true;
   if (pathname.startsWith("/api/deployments/")) return true;
+  if (pathname.startsWith("/api/cli/")) return true;
   return false;
 };
 
@@ -462,25 +504,11 @@ export const router = async (req: Request): Promise<Response> => {
 
   if (pathname.startsWith("/assets/") && method === "GET") {
     const subPath = pathname.slice("/assets".length).replace(/^\/+/, "") || "";
-    const resolved = await resolveAssetFile(subPath);
-    if (!resolved) {
-      const embeddedAsset = getEmbeddedClientAsset(subPath);
-      if (embeddedAsset) {
-        return new Response(embeddedAsset.blob, {
-          headers: { "Content-Type": embeddedAsset.contentType }
-        });
-      }
-      const nestedTry = getEmbeddedClientAsset(`assets/${subPath}`);
-      if (nestedTry) {
-        return new Response(nestedTry.blob, {
-          headers: { "Content-Type": nestedTry.contentType }
-        });
-      }
+    const assetResponse = await serveClientFile(subPath);
+    if (!assetResponse) {
       return json({ error: "Not Found" }, { status: 404 });
     }
-    return new Response(Bun.file(resolved), {
-      headers: { "Content-Type": guessContentType(resolved) }
-    });
+    return assetResponse;
   }
 
   if (pathname.startsWith("/api/")) {
@@ -502,6 +530,13 @@ export const router = async (req: Request): Promise<Response> => {
   const pageResponse = await dispatchPublicAndProtectedRoutes(req);
   if (pageResponse !== null) {
     return pageResponse;
+  }
+
+  if (method === "GET" && path.extname(pathname)) {
+    const assetResponse = await serveClientFile(pathname);
+    if (assetResponse) {
+      return assetResponse;
+    }
   }
 
   if (pages.wantsHtml(req)) {
