@@ -61,7 +61,7 @@ const waitForPreviewRunnerReachable = async (
   return false;
 };
 
-const normalizeRuntimeConfigForRunner = (
+export const normalizeRuntimeConfigForRunner = (
   raw: DeploymentRuntimeConfig | null
 ): {
   port: number;
@@ -81,7 +81,23 @@ const normalizeRuntimeConfigForRunner = (
   const workingDir = typeof base.workingDir === "string" ? base.workingDir : undefined;
   const framework =
     base.framework === "nextjs" || base.framework === "node" ? base.framework : undefined;
-  return { port, command, ...(workingDir ? { workingDir } : {}), ...(framework ? { framework } : {}) };
+  const rawEnv = (base as Record<string, unknown>).env;
+  const env =
+    rawEnv && typeof rawEnv === "object" && !Array.isArray(rawEnv)
+      ? Object.fromEntries(
+          Object.entries(rawEnv as Record<string, unknown>).filter(
+            (entry): entry is [string, string] =>
+              typeof entry[0] === "string" && typeof entry[1] === "string"
+          )
+        )
+      : undefined;
+  return {
+    port,
+    command,
+    ...(workingDir ? { workingDir } : {}),
+    ...(framework ? { framework } : {}),
+    ...(env && Object.keys(env).length > 0 ? { env } : {})
+  };
 };
 
 const consumeEnsurePreviewNdjsonStream = async (
