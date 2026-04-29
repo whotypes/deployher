@@ -3,6 +3,7 @@ import { Command } from "commander";
 import pc from "picocolors";
 import pkg from "../package.json" with { type: "json" };
 import { buildContext, type BuildContextOptions } from "./context";
+import { registerBootstrap } from "./commands/bootstrap";
 import { registerDetect } from "./commands/detect";
 import { registerDoctor } from "./commands/doctor";
 import { registerLink } from "./commands/link";
@@ -52,7 +53,8 @@ const main = async (): Promise<void> => {
       "after",
       `
 ${pc.dim("Examples (repo root):")}
-  ${pc.cyan("bun cli/index.ts start")}    full bootstrap (always works)
+  ${pc.cyan("bun cli/index.ts bootstrap")}  VPS-oriented .env + stack (skip seed unless --seed)
+  ${pc.cyan("bun cli/index.ts start")}    full bootstrap with demo seed
   ${pc.cyan("bun deployher doctor")}      same CLI via package.json script name
   ${pc.cyan("deployher start")}           after ${pc.dim("bun link --global")} in this repo
 
@@ -65,6 +67,7 @@ ${pc.dim("Global flags before the subcommand:")} ${pc.cyan("bun cli/index.ts --v
 
   const getCtx = (invoked: Command) => buildContext(collectRootOpts(invoked));
 
+  registerBootstrap(program, getCtx);
   registerStart(program, getCtx);
   registerStop(program, getCtx);
   registerMigrate(program, getCtx);
