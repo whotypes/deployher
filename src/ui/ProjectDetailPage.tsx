@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "@/spa/routerCompat";
 import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
 import { AppShell } from "./AppShell";
 import type { ProjectDetailBootstrap } from "./client/ProjectDetailPageClient";
@@ -76,7 +76,13 @@ const statusVariant = (status: string): "default" | "secondary" | "destructive" 
   }
 };
 
-export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
+export const ProjectDetailPage = ({
+  data,
+  onRequestDetailRefetch
+}: {
+  data: ProjectDetailData;
+  onRequestDetailRefetch?: () => void;
+}) => {
   const { t } = useTranslation();
   const deploymentPreviewLabel = (deployment: Deployment): string => {
     if (deployment.buildPreviewMode === "server") return t("deployment.previewMode.server");
@@ -449,7 +455,7 @@ export const ProjectDetailPage = ({ data }: { data: ProjectDetailData }) => {
 
       <div id="project-detail-repo-explorer-root" className="min-w-0" />
     </div>
-    <ProjectDetailInteractiveMount bootstrap={interactiveBootstrap} />
+    <ProjectDetailInteractiveMount bootstrap={interactiveBootstrap} onRequestDetailRefetch={onRequestDetailRefetch} />
   </AppShell>
   );
 };

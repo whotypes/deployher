@@ -38,7 +38,13 @@ export type DeploymentDetailData = {
   previewEnsureAvailable: boolean;
 };
 
-export const DeploymentDetailPage = ({ data }: { data: DeploymentDetailData }) => {
+export const DeploymentDetailPage = ({
+  data,
+  onRequestDeploymentRefetch
+}: {
+  data: DeploymentDetailData;
+  onRequestDeploymentRefetch?: () => void;
+}) => {
   const { t } = useTranslation();
   return (
     <AppShell
@@ -60,7 +66,10 @@ export const DeploymentDetailPage = ({ data }: { data: DeploymentDetailData }) =
       ]}
     >
       <div id="deployment-detail-client-root">
-        <DeploymentDetailPageClient initialData={data} />
+        <DeploymentDetailPageClient
+          initialData={data}
+          onRequestDeploymentRefetch={onRequestDeploymentRefetch}
+        />
       </div>
     </AppShell>
   );

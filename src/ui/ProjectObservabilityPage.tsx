@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "@/spa/routerCompat";
 import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
 import { AppShell } from "./AppShell";
 import { ProjectObservabilityPageClient } from "./client/ProjectObservabilityPageClient";

@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "@/spa/routerCompat";
 import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
 import { AppShell } from "./AppShell";
 import { ProjectSettingsPageClient } from "./client/ProjectSettingsPageClient";
@@ -52,7 +52,13 @@ type SettingsNavItem = {
   danger?: boolean;
 };
 
-export const ProjectSettingsPage = ({ data }: { data: ProjectSettingsData }) => {
+export const ProjectSettingsPage = ({
+  data,
+  onRequestSettingsRefetch
+}: {
+  data: ProjectSettingsData;
+  onRequestSettingsRefetch?: () => void;
+}) => {
   const { t } = useTranslation();
   const { project, activeSection } = data;
 
@@ -138,7 +144,7 @@ export const ProjectSettingsPage = ({ data }: { data: ProjectSettingsData }) => 
 
         <div className="min-w-0 max-w-2xl flex-1">
           <div id="project-settings-client-root">
-            <ProjectSettingsPageClient data={data} />
+            <ProjectSettingsPageClient data={data} onRequestSettingsRefetch={onRequestSettingsRefetch} />
           </div>
         </div>
       </div>
