@@ -1,5 +1,7 @@
+import { frameworkList } from "@vercel/frameworks";
+import { detectFrameworkRecord, LocalFileSystemDetector } from "@vercel/fs-detectors";
 import Docker from "dockerode";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { cp, mkdir, mkdtemp, readdir, rm, stat } from "fs/promises";
 import { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
@@ -7,65 +9,62 @@ import { tmpdir } from "os";
 import path from "path";
 import { getBuildContainerConfig, type BuildContainerConfig } from "../admin/buildSettings";
 import { buildDevSubdomainUrl, config } from "../config";
-import {
-  DOCKER_DEPLOYMENT_LABEL_KEY,
-  sanitizeDockerLabelValue
-} from "../docker/buildContainerCleanup";
-import { publishDeploymentEvent } from "../deploymentEvents";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
+import { publishDeploymentEvent } from "../deploymentEvents";
+import {
+    DOCKER_DEPLOYMENT_LABEL_KEY,
+    sanitizeDockerLabelValue
+} from "../docker/buildContainerCleanup";
 import { parseExampleRepoUrl, resolveLocalExample } from "../examples";
 import { buildZipballUrl, parseGitHubRepoUrl } from "../github";
-import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
+import { parseEnvFileContent } from "../lib/parseEnvFileContent";
+import { parseStoredProjectCommandForBuild } from "../lib/parseProjectCommandLine";
+import { requestRunnerEnsurePreview } from "../lib/previewRunnerRehydrate";
 import {
-  buildPreviewManifestKey,
-  cachePreviewManifest,
-  createPreviewManifest,
-  type PreviewManifest
+    buildPreviewManifestKey,
+    cachePreviewManifest,
+    createPreviewManifest,
+    type PreviewManifest
 } from "../lib/previewServe";
+import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
 import {
-  ackDeployment,
-  dequeueDeployment,
-  reclaimDeployment,
-  touchPendingDeployment,
-  type DeploymentJob
+    resolveProjectRoots,
+    sanitizeRelativeWorkdir
+} from "../lib/projectPaths";
+import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
+import { mergeBuildProjectConfigWithRepoDeployherToml } from "../lib/repoDeployherConfig";
+import {
+    buildRuntimeImageTagOnly,
+    notifyPreviewRunnersPrewarm,
+    requireNexusCredentialsForRuntimePush,
+    requirePreviewRuntimeRegistryForPush
+} from "../preview";
+import {
+    ackDeployment,
+    dequeueDeployment,
+    reclaimDeployment,
+    touchPendingDeployment,
+    type DeploymentJob
 } from "../queue";
 import { consumeRepoCredential } from "../repoCredentials";
 import { isStorageConfigured, upload } from "../storage";
-import { parseEnvFileContent } from "../lib/parseEnvFileContent";
-import { parseStoredProjectCommandForBuild } from "../lib/parseProjectCommandLine";
-import { mergeBuildProjectConfigWithRepoDeployherToml } from "../lib/repoDeployherConfig";
-import { requestRunnerEnsurePreview } from "../lib/previewRunnerRehydrate";
-import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
-import {
-  buildRuntimeImageTagOnly,
-  notifyPreviewRunnersPrewarm,
-  requireNexusCredentialsForRuntimePush,
-  requirePreviewRuntimeRegistryForPush
-} from "../preview";
-import {
-  resolveProjectRoots,
-  sanitizeRelativeWorkdir,
-  type RuntimeImageMode
-} from "../lib/projectPaths";
 import { guessContentType } from "../utils/contentType";
-import { detectFrameworkRecord, LocalFileSystemDetector } from "@vercel/fs-detectors";
-import { frameworkList } from "@vercel/frameworks";
+import { resolveBuildContainerImage } from "./build/containerImages";
 import { detectBuildStrategy } from "./build/registry";
 import type {
-  BuildRuntime,
-  DeploymentBuildStrategy,
-  PreviewResolution,
-  RunCommandResult,
-  RuntimeConfig,
-  RuntimeImageMode as WorkerRuntimeImageMode,
-  ServeStrategy
+    BuildRuntime,
+    DeploymentBuildStrategy,
+    PreviewResolution,
+    RunCommandResult,
+    RuntimeConfig,
+    ServeStrategy,
+    RuntimeImageMode as WorkerRuntimeImageMode
 } from "./build/types";
 import {
-  getEffectivePendingHeartbeatMs,
-  hasFreshWorkerHeartbeat
+    getEffectivePendingHeartbeatMs,
+    hasFreshWorkerHeartbeat
 } from "./workerTiming";
-import { resolveBuildContainerImage } from "./build/containerImages";
 
 const buildPreviewUrl = (shortId: string) =>
   buildDevSubdomainUrl(shortId);
@@ -1756,7 +1755,7 @@ const processJob = async (job: DeploymentJob) => {
         status = "failed";
         logLine(
           ctx,
-          "Server preview requires an isolated runner (set RUNNER_PREVIEW_ENABLED and RUNNER_URL)."
+          "Server preview requires an isolated runner (set RUNNER_URL to the preview-runner, or set RUNNER_PREVIEW_ENABLED=0 to opt out)."
         );
       } else {
         logLine(ctx, "Starting preview container on isolated runner…");
