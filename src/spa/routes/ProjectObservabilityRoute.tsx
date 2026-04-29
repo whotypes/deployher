@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
+import { useParams } from "@/spa/routerCompat";
 import type { ProjectObservabilityData } from "@/ui/ProjectObservabilityPage";
 import { ProjectObservabilityPage } from "@/ui/ProjectObservabilityPage";
 import { fetchJson } from "../api";

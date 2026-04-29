@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
+import { useParams } from "@/spa/routerCompat";
 import type { ProjectSettingsData } from "@/ui/ProjectSettingsPage";
 import { ProjectSettingsPage } from "@/ui/ProjectSettingsPage";
 import { fetchJson } from "../api";
@@ -27,6 +27,7 @@ export const ProjectSettingsRoute = ({
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<ProjectSettingsData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settingsRefresh, setSettingsRefresh] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -39,7 +40,7 @@ export const ProjectSettingsRoute = ({
     fetchJson<ProjectSettingsData>(`/api/ui/projects/${encodeURIComponent(id)}/settings/${path}`)
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : t("common.fetchFailed")));
-  }, [id, section, t]);
+  }, [id, section, settingsRefresh, t]);
 
   if (!id) {
     return <div className="text-destructive p-6">{t("routes.missingProjectId")}</div>;
@@ -50,5 +51,7 @@ export const ProjectSettingsRoute = ({
   if (!data) {
     return <div className="text-muted-foreground p-6">{t("common.loading")}</div>;
   }
-  return <ProjectSettingsPage data={data} />;
+  return (
+    <ProjectSettingsPage data={data} onRequestSettingsRefetch={() => setSettingsRefresh((n) => n + 1)} />
+  );
 };
