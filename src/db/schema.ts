@@ -182,6 +182,7 @@ export const deployments = pgTable("deployments", {
     port?: number;
     command?: string[];
     framework?: "nextjs" | "node";
+    env?: Record<string, string>;
   } | null>(),
   previewResolution: jsonb("preview_resolution").$type<{
     code:
