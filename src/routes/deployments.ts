@@ -17,6 +17,7 @@ import { getRedisSubscriber, isRedisConfigured } from "../redis";
 import { storeRepoCredential } from "../repoCredentials";
 import { getText, getTextFromOffset, isStorageConfigured } from "../storage";
 import { generateShortId } from "../utils/shortId";
+import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
 import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
 import { formatRunnerRuntimeLogError } from "./runtimeLogFormatting";
 import { requestRunnerEnsurePreview } from "../lib/previewRunnerRehydrate";
@@ -49,7 +50,16 @@ export const listDeployments = async (req: RequestWithParamsAndSession) => {
     .where(eq(schema.deployments.projectId, projectId))
     .orderBy(desc(schema.deployments.createdAt));
 
-  return json(rows);
+  return json(
+    rows.map((deployment) => ({
+      ...deployment,
+      previewUrl: effectiveDeploymentPreviewUrl(
+        deployment.status,
+        deployment.previewUrl,
+        deployment.shortId
+      )
+    }))
+  );
 };
 
 export const createDeployment = async (req: RequestWithParamsAndSession) => {
@@ -137,7 +147,17 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
     return json({ error: "Failed to queue deployment" }, { status: 503 });
   }
 
-  return json(deployment, { status: 201 });
+  return json(
+    {
+      ...deployment,
+      previewUrl: effectiveDeploymentPreviewUrl(
+        deployment.status,
+        deployment.previewUrl,
+        deployment.shortId
+      )
+    },
+    { status: 201 }
+  );
 };
 
 export const getDeployment = async (req: RequestWithParamsAndSession) => {
@@ -161,7 +181,14 @@ export const getDeployment = async (req: RequestWithParamsAndSession) => {
     return notFound("Deployment not found");
   }
 
-  return json(deployment);
+  return json({
+    ...deployment,
+    previewUrl: effectiveDeploymentPreviewUrl(
+      deployment.status,
+      deployment.previewUrl,
+      deployment.shortId
+    )
+  });
 };
 
 export const cancelDeployment = async (req: RequestWithParamsAndSession) => {
