@@ -14,6 +14,7 @@ import {
   writePreferredBranch,
   type CreateModePref
 } from "@/lib/userUiPrefs";
+import { useNavigate } from "@/spa/routerCompat";
 import { fetchWithCsrf } from "./fetchWithCsrf";
 
 export const AccountWorkspacePreferences = ({
@@ -97,6 +98,7 @@ export const AccountWorkspacePreferences = ({
 
 export const AccountDeleteSection = (): React.ReactElement => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [pending, setPending] = React.useState(false);
 
   const handleDelete = async (): Promise<void> => {
@@ -111,7 +113,7 @@ export const AccountDeleteSection = (): React.ReactElement => {
       if (!response.ok) {
         throw new Error(t("account.deleteRequestFailed", { status: String(response.status) }));
       }
-      window.location.href = "/login";
+      navigate("/login");
     } catch (err) {
       console.error("Failed to delete account:", err);
       window.alert(t("account.deleteFailed"));

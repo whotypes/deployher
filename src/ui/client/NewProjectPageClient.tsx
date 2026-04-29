@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Check, ChevronRight, CircleHelp, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "@/spa/routerCompat";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -304,6 +304,9 @@ const SetupStepRail = ({
 
 export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProjectPageClientProps) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const routerLocation = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [createMode, setCreateMode] = React.useState<"import" | "manual">(() =>
     readProjectsCreateModeInitial(hasRepoAccess)
   );
@@ -388,13 +391,17 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const activeIndex = completedThrough >= 2 ? 2 : completedThrough;
 
   React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("github") !== "linked") return;
+    if (searchParams.get("github") !== "linked") return;
     setCreateMode("import");
-    params.delete("github");
-    const query = params.toString();
-    window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : ""));
-  }, []);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("github");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [searchParams, setSearchParams]);
 
   React.useEffect(() => {
     if (!hasRepoAccess) return;
@@ -537,10 +544,10 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
   const finishCreate = (projectId?: string) => {
     if (!projectId) {
-      window.location.href = "/projects";
+      navigate("/projects");
       return;
     }
-    window.location.href = readOpenAfterCreate() ? `/projects/${projectId}` : "/projects";
+    navigate(readOpenAfterCreate() ? `/projects/${projectId}` : "/projects");
   };
 
   React.useEffect(() => {
@@ -553,7 +560,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const handleGitHubConnect = async () => {
     setConnectLoading(true);
     try {
-      const callbackURL = `${window.location.pathname}?github=linked`;
+      const callbackURL = `${routerLocation.pathname}?github=linked`;
       const response = await fetch("/api/auth/link-social", {
         method: "POST",
         credentials: "include",
@@ -568,9 +575,9 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
         window.location.href = response.url;
         return;
       }
-      const location = response.headers.get("Location");
-      if (location) {
-        window.location.href = location;
+      const redirectLocation = response.headers.get("Location");
+      if (redirectLocation) {
+        window.location.href = redirectLocation;
         return;
       }
       const data = (await response.json().catch(() => ({}))) as { url?: string };
