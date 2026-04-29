@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -45,10 +46,12 @@ type MetricsPayload = {
 type TrafficPayload = {
   rangeDays: number;
   sampleRate: number;
+  deploymentFilter: string | null;
   byDay: { t: string; count: number }[];
   byStatus: { statusCode: number; count: number }[];
   topIps: { clientIp: string; count: number }[];
   byPathBucket: { pathBucket: string; count: number }[];
+  byDeployment: { deploymentId: string; shortId: string; count: number }[];
 };
 
 type DestinationRow = {
@@ -91,6 +94,8 @@ const formatAxisDate = (iso: string, bucket: string): string => {
 export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: ProjectObservabilityBootstrap }) => {
   const { t } = useTranslation();
   const { projectId, projectName, runtimeLogs } = bootstrap;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const trafficDeploymentFilter = searchParams.get("deploymentId");
 
   const deployChartConfig = useMemo(
     () =>
@@ -134,13 +139,17 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
   }, [projectId, rangeDays, metricsBucket, t]);
 
   const loadTraffic = useCallback(async () => {
+    const qs = new URLSearchParams();
+    qs.set("rangeDays", String(rangeDays));
+    const depFilter = trafficDeploymentFilter?.trim();
+    if (depFilter) qs.set("deploymentId", depFilter);
     const res = await fetch(
-      `/api/projects/${projectId}/observability/traffic?rangeDays=${rangeDays}`,
+      `/api/projects/${projectId}/observability/traffic?${qs.toString()}`,
       { credentials: "same-origin" }
     );
     if (!res.ok) throw new Error(t("projectObservability.loadTrafficFailed"));
     setTraffic((await res.json()) as TrafficPayload);
-  }, [projectId, rangeDays, t]);
+  }, [projectId, rangeDays, trafficDeploymentFilter, t]);
 
   const loadAlerts = useCallback(async () => {
     const [dRes, rRes] = await Promise.all([
@@ -321,6 +330,62 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
         <Button type="button" variant="outline" onClick={() => void refreshAll()}>
           {t("common.refresh")}
         </Button>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-2">
+            <Label htmlFor={`obs-dep-filter-${projectId}`}>{t("projectObservability.filterByDeployment")}</Label>
+            <Select
+              value={trafficDeploymentFilter?.trim() ? trafficDeploymentFilter.trim() : "__all__"}
+              onValueChange={(v) => {
+                setSearchParams(
+                  (prev) => {
+                    const next = new URLSearchParams(prev);
+                    if (!v || v === "__all__") next.delete("deploymentId");
+                    else next.set("deploymentId", v);
+                    return next;
+                  },
+                  { replace: true }
+                );
+              }}
+            >
+              <SelectTrigger id={`obs-dep-filter-${projectId}`} className="w-[240px]">
+                <SelectValue placeholder={t("projectObservability.allDeployments")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">{t("projectObservability.allDeployments")}</SelectItem>
+                {trafficDeploymentFilter?.trim() &&
+                traffic &&
+                !traffic.byDeployment.some((r) => r.deploymentId === trafficDeploymentFilter.trim()) ? (
+                  <SelectItem value={trafficDeploymentFilter.trim()}>
+                    {trafficDeploymentFilter.trim().slice(0, 8)}…
+                  </SelectItem>
+                ) : null}
+                {(traffic?.byDeployment ?? []).map((row) => (
+                  <SelectItem key={row.deploymentId} value={row.deploymentId}>
+                    {row.shortId} ({row.count})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {trafficDeploymentFilter?.trim() ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                setSearchParams(
+                  (prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.delete("deploymentId");
+                    return next;
+                  },
+                  { replace: true }
+                )
+              }
+            >
+              {t("projectObservability.clearDeploymentFilter")}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -476,6 +541,65 @@ export const ProjectObservabilityPageClient = ({ bootstrap }: { bootstrap: Proje
           </CardContent>
         </Card>
       </div>
+
+      {traffic && traffic.byDeployment.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("projectObservability.deploymentsTrafficTitle")}</CardTitle>
+            <CardDescription>{t("projectObservability.deploymentsTrafficDesc")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("deployment.deploymentLabel")}</TableHead>
+                  <TableHead className="text-right">{t("projectObservability.samplesCol")}</TableHead>
+                  <TableHead className="w-[1%] text-right">{t("projectObservability.actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {traffic.byDeployment.map((row) => (
+                  <TableRow key={row.deploymentId}>
+                    <TableCell className="font-mono text-xs">{row.shortId}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSearchParams(
+                              (prev) => {
+                                const next = new URLSearchParams(prev);
+                                next.set("deploymentId", row.deploymentId);
+                                return next;
+                              },
+                              { replace: true }
+                            );
+                          }}
+                        >
+                          {t("projectObservability.filter")}
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" asChild>
+                          <Link
+                            to={`/deployments/${row.deploymentId}`}
+                            aria-label={t("projectObservability.openDeploymentAria", {
+                              shortId: row.shortId
+                            })}
+                          >
+                            {t("projectObservability.openDeployment")}
+                          </Link>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {traffic && traffic.byStatus.length > 0 ? (
         <Card>

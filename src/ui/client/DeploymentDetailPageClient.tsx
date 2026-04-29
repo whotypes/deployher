@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { buildDeploymentPipelineHtml } from "@/lib/deploymentPipeline";
 import { cn } from "@/lib/utils";
 import type { DeploymentDetailData } from "../DeploymentDetailPage";
+import { DeploymentObservabilityPanel } from "./DeploymentObservabilityPanel";
 import { fetchWithCsrf } from "./fetchWithCsrf";
 
 type Deployment = DeploymentDetailData["deployment"];
@@ -747,6 +748,8 @@ export const DeploymentDetailPageClient = ({
               )}
             </Alert>
           ) : null}
+
+          <DeploymentObservabilityPanel deploymentId={data.deployment.id} projectId={data.project.id} />
 
           <div className="space-y-2">
             <p className="px-0.5 text-[0.65rem] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
