@@ -1,6 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { type RequestWithParamsAndSession } from "../auth/session";
-import { buildDevSubdomainUrl, config, resolveProjectDomains } from "../config";
+import { config, resolveProjectDomains } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { normalizeGitHubRepoUrl } from "../github";
@@ -10,6 +10,7 @@ import { preferPreviewOriginForExternalAsset } from "../lib/previewAssetUrl";
 import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
 import { parseRepoRelativePath, parseRuntimeImageMode } from "../lib/projectPaths";
 import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
+import { resolveLivePreviewPageUrl, selectLivePreviewDeploymentForProject } from "../lib/livePreviewDeployment";
 import { pickFeaturedDeploymentFromSortedDesc } from "../lib/sidebarFeaturedDeployment";
 import { parseSidebarProjectDeploymentStatus } from "../lib/sidebarProjectDeploymentStatus";
 import {
@@ -750,8 +751,7 @@ export const getProjectSitePreviewImage = async (req: RequestWithParamsAndSessio
   const [projectRow] = await db
     .select({
       siteIconUrl: schema.projects.siteIconUrl,
-      siteOgImageUrl: schema.projects.siteOgImageUrl,
-      currentDeploymentId: schema.projects.currentDeploymentId
+      siteOgImageUrl: schema.projects.siteOgImageUrl
     })
     .from(schema.projects)
     .where(and(eq(schema.projects.id, id), eq(schema.projects.userId, userId)))
@@ -766,27 +766,12 @@ export const getProjectSitePreviewImage = async (req: RequestWithParamsAndSessio
     return badRequest("kind must be og or icon");
   }
 
-  if (!projectRow.currentDeploymentId) {
-    return json({ error: "No current deployment" }, { status: 422 });
+  const dep = await selectLivePreviewDeploymentForProject(id);
+  if (!dep) {
+    return json({ error: "No live preview deployment" }, { status: 422 });
   }
 
-  const [dep] = await db
-    .select({
-      id: schema.deployments.id,
-      previewUrl: schema.deployments.previewUrl,
-      shortId: schema.deployments.shortId,
-      status: schema.deployments.status
-    })
-    .from(schema.deployments)
-    .where(eq(schema.deployments.id, projectRow.currentDeploymentId))
-    .limit(1);
-
-  if (!dep || dep.status !== "success") {
-    return json({ error: "Current deployment is not live" }, { status: 422 });
-  }
-
-  const previewBase = dep.previewUrl?.trim() || buildDevSubdomainUrl(dep.shortId);
-
+  const previewBase = resolveLivePreviewPageUrl(dep);
   let resolved: string;
   if (kind === "og") {
     let raw = projectRow.siteOgImageUrl?.trim() ?? "";
