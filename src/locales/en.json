@@ -106,8 +106,8 @@
   "landing": {
     "chip": "Self-hosted PaaS",
     "whySelfHost": "Why self-host",
-    "heroTitle": "Push to GitHub. Deploy to your VPS.",
-    "heroSubtitle": "Deployher turns any VPS into a modern app platform with GitHub deploys, Docker builds, live logs, previews, and full control.",
+    "heroTitle": "Ship your code on your infra.",
+    "heroSubtitle": "After getting started on deployher, deploying stuff to production is the easiest part of your workflow.",
     "signInGithub": "Start free",
     "signInGithubAria": "Sign in to Deployher with GitHub",
     "githubRepo": "View source",
