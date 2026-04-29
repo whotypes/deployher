@@ -163,6 +163,37 @@ export const getObservabilityTraffic = async (req: RequestWithParamsAndSession) 
   const rangeDays = parseRangeDays(url.searchParams.get("rangeDays"));
   const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
 
+  const deploymentIdRaw = url.searchParams.get("deploymentId")?.trim() ?? "";
+  let deploymentScoped: string | null = null;
+  if (deploymentIdRaw) {
+    const [deploymentRow] = await db
+      .select({ id: schema.deployments.id })
+      .from(schema.deployments)
+      .where(
+        and(
+          eq(schema.deployments.id, deploymentIdRaw),
+          eq(schema.deployments.projectId, projectId)
+        )
+      )
+      .limit(1);
+    if (!deploymentRow) {
+      return badRequest("deployment not found for this project");
+    }
+    deploymentScoped = deploymentRow.id;
+  }
+
+  const trafficWhere =
+    deploymentScoped !== null
+      ? and(
+          eq(schema.previewTrafficEvents.projectId, projectId),
+          gte(schema.previewTrafficEvents.occurredAt, since),
+          eq(schema.previewTrafficEvents.deploymentId, deploymentScoped)
+        )
+      : and(
+          eq(schema.previewTrafficEvents.projectId, projectId),
+          gte(schema.previewTrafficEvents.occurredAt, since)
+        );
+
   const bucketExpr = sql`date_trunc('day', ${schema.previewTrafficEvents.occurredAt})`;
 
   const byDay = await db
@@ -171,12 +202,7 @@ export const getObservabilityTraffic = async (req: RequestWithParamsAndSession) 
       n: sql<number>`count(*)::int`
     })
     .from(schema.previewTrafficEvents)
-    .where(
-      and(
-        eq(schema.previewTrafficEvents.projectId, projectId),
-        gte(schema.previewTrafficEvents.occurredAt, since)
-      )
-    )
+    .where(trafficWhere)
     .groupBy(bucketExpr)
     .orderBy(bucketExpr);
 
@@ -186,12 +212,7 @@ export const getObservabilityTraffic = async (req: RequestWithParamsAndSession) 
       n: sql<number>`count(*)::int`
     })
     .from(schema.previewTrafficEvents)
-    .where(
-      and(
-        eq(schema.previewTrafficEvents.projectId, projectId),
-        gte(schema.previewTrafficEvents.occurredAt, since)
-      )
-    )
+    .where(trafficWhere)
     .groupBy(schema.previewTrafficEvents.statusCode);
 
   const byStatus = [...byStatusRows].sort((a, b) => b.n - a.n);
@@ -202,12 +223,7 @@ export const getObservabilityTraffic = async (req: RequestWithParamsAndSession) 
       n: sql<number>`count(*)::int`
     })
     .from(schema.previewTrafficEvents)
-    .where(
-      and(
-        eq(schema.previewTrafficEvents.projectId, projectId),
-        gte(schema.previewTrafficEvents.occurredAt, since)
-      )
-    )
+    .where(trafficWhere)
     .groupBy(schema.previewTrafficEvents.clientIp);
 
   const topIps = [...topIpsRows].sort((a, b) => b.n - a.n).slice(0, 20);
@@ -218,19 +234,40 @@ export const getObservabilityTraffic = async (req: RequestWithParamsAndSession) 
       n: sql<number>`count(*)::int`
     })
     .from(schema.previewTrafficEvents)
-    .where(
-      and(
-        eq(schema.previewTrafficEvents.projectId, projectId),
-        gte(schema.previewTrafficEvents.occurredAt, since)
-      )
-    )
+    .where(trafficWhere)
     .groupBy(schema.previewTrafficEvents.pathBucket);
 
   const byPathBucket = [...byPathBucketRows].sort((a, b) => b.n - a.n);
 
+  const projectTrafficWhere = and(
+    eq(schema.previewTrafficEvents.projectId, projectId),
+    gte(schema.previewTrafficEvents.occurredAt, since)
+  );
+
+  const byDeploymentRows = await db
+    .select({
+      deploymentId: schema.previewTrafficEvents.deploymentId,
+      shortId: schema.deployments.shortId,
+      n: sql<number>`count(*)::int`
+    })
+    .from(schema.previewTrafficEvents)
+    .innerJoin(schema.deployments, eq(schema.previewTrafficEvents.deploymentId, schema.deployments.id))
+    .where(projectTrafficWhere)
+    .groupBy(schema.previewTrafficEvents.deploymentId, schema.deployments.shortId);
+
+  const byDeployment = [...byDeploymentRows]
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 40)
+    .map((row) => ({
+      deploymentId: row.deploymentId,
+      shortId: row.shortId,
+      count: row.n
+    }));
+
   return json({
     rangeDays,
     sampleRate: config.observability.previewTrafficSampleRate,
+    deploymentFilter: deploymentScoped,
     byDay: byDay.map((row) => ({
       t: row.t instanceof Date ? row.t.toISOString() : String(row.t),
       count: row.n
@@ -240,7 +277,8 @@ export const getObservabilityTraffic = async (req: RequestWithParamsAndSession) 
     byPathBucket: byPathBucket.map((row) => ({
       pathBucket: row.pathBucket ?? "unknown",
       count: row.n
-    }))
+    })),
+    byDeployment
   });
 };
 
