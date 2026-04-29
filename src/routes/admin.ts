@@ -14,6 +14,7 @@ import { enqueueDeployment } from "../queue";
 import { isRedisConfigured } from "../redis";
 import { isStorageConfigured } from "../storage";
 import { generateShortId } from "../utils/shortId";
+import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
 import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
 
 const pythonServerStreamProjectSeed = {
@@ -134,7 +135,19 @@ export const createExampleDeployment = async (req: RequestWithParamsAndSession) 
     return json({ error: "Failed to queue deployment" }, { status: 503 });
   }
 
-  return json({ deployment }, { status: 201 });
+  return json(
+    {
+      deployment: {
+        ...deployment,
+        previewUrl: effectiveDeploymentPreviewUrl(
+          deployment.status,
+          deployment.previewUrl,
+          deployment.shortId
+        )
+      }
+    },
+    { status: 201 }
+  );
 };
 
 export const getBuildSettings = async (_req: RequestWithParamsAndSession) => {
