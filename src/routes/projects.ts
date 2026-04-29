@@ -1,6 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { type RequestWithParamsAndSession } from "../auth/session";
 import { config, resolveProjectDomains } from "../config";
+import { removeDockerResourcesForDeployment } from "../docker/buildContainerCleanup";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { normalizeGitHubRepoUrl } from "../github";
@@ -845,6 +846,29 @@ export const deleteProject = async (req: RequestWithParamsAndSession) => {
     return notFound("Project not found");
   }
   const userId = req.session.user.id;
+  const owned = await db
+    .select({ id: schema.projects.id })
+    .from(schema.projects)
+    .where(and(eq(schema.projects.id, id), eq(schema.projects.userId, userId)))
+    .limit(1);
+
+  if (!owned[0]) {
+    return notFound("Project not found");
+  }
+
+  const deploymentRows = await db
+    .select({ id: schema.deployments.id })
+    .from(schema.deployments)
+    .where(eq(schema.deployments.projectId, id));
+
+  await Promise.all(
+    deploymentRows.map((row) =>
+      removeDockerResourcesForDeployment(row.id).catch((err: unknown) => {
+        console.error(`Docker cleanup failed for deployment ${row.id}:`, err);
+      })
+    )
+  );
+
   const [deleted] = await db
     .delete(schema.projects)
     .where(and(eq(schema.projects.id, id), eq(schema.projects.userId, userId)))
