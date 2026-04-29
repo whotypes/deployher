@@ -74,6 +74,26 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
 
+export const deviceCodes = pgTable(
+  "device_codes",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    deviceCode: text("device_code").notNull(),
+    userCode: text("user_code").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    status: text("status").notNull(),
+    lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+    pollingInterval: integer("polling_interval"),
+    clientId: text("client_id"),
+    scope: text("scope")
+  },
+  (table) => [
+    index("device_codes_device_code_idx").on(table.deviceCode),
+    uniqueIndex("device_codes_user_code_idx").on(table.userCode)
+  ]
+);
+
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -215,10 +235,13 @@ export const previewTrafficEvents = pgTable(
     clientIp: text("client_ip").notNull(),
     method: text("method").notNull(),
     statusCode: integer("status_code").notNull(),
-    pathBucket: text("path_bucket")
+    pathBucket: text("path_bucket"),
+    path: text("path"),
+    durationMs: integer("duration_ms")
   },
   (table) => [
-    index("preview_traffic_events_project_id_occurred_at_idx").on(table.projectId, table.occurredAt)
+    index("preview_traffic_events_project_id_occurred_at_idx").on(table.projectId, table.occurredAt),
+    index("preview_traffic_events_deployment_id_occurred_at_idx").on(table.deploymentId, table.occurredAt)
   ]
 );
 
