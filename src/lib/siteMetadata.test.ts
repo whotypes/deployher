@@ -33,12 +33,34 @@ describe("buildSiteMetaFetchAttempts", () => {
     expect(r[0]?.url).toBe("https://preview.example.com/");
   });
 
-  test("single attempt when origin override is set", () => {
+  test("configured origin runs first then public URL and dockers for tenant .localhost", () => {
     const r = buildSiteMetaFetchAttempts("http://abc.localhost:3000/", "http://127.0.0.1:3000");
     expect(Array.isArray(r)).toBe(true);
     if (!Array.isArray(r)) return;
-    expect(r).toHaveLength(1);
     expect(r[0]?.url).toBe("http://127.0.0.1:3000/");
+    expect(r[0]?.hostHeader).toBe("abc.localhost:3000");
+    expect(r[1]?.url).toBe("http://abc.localhost:3000/");
+    const urls = r.map((x) => x.url);
+    expect(urls).toContain("http://app:3000/");
+    expect(urls).toContain("http://host.docker.internal:3000/");
+    expect(new Set(urls).size).toBe(urls.length);
+  });
+
+  test("configured origin plus direct URL only for non-.localhost previews", () => {
+    const r = buildSiteMetaFetchAttempts("https://preview.example.com/path?q=1", "http://127.0.0.1:3000");
+    expect(Array.isArray(r)).toBe(true);
+    if (!Array.isArray(r)) return;
+    expect(r).toHaveLength(2);
+    expect(r[0]?.url).toBe("http://127.0.0.1:3000/path?q=1");
+    expect(r[0]?.hostHeader).toBe("preview.example.com");
+    expect(r[1]?.url).toBe("https://preview.example.com/path?q=1");
+  });
+
+  test("rejects invalid SITE_META_FETCH_ORIGIN", () => {
+    const r = buildSiteMetaFetchAttempts("http://abc.localhost:3000/", "not-a-url");
+    expect(Array.isArray(r)).toBe(false);
+    if (Array.isArray(r)) return;
+    expect(r.error.toLowerCase()).toContain("site_meta_fetch_origin");
   });
 });
 
