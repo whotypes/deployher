@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { preferPreviewOriginForExternalAsset } from "./previewAssetUrl";
 import {
     buildPreviewIconCandidateUrls,
     buildSiteMetaFetchAttempts,
@@ -7,9 +8,9 @@ import {
     extractOgImageFromHtml,
     parseSiteMetadataFromHtml,
     rebaseAssetUrlOntoPreviewOrigin,
-    resolveMetadataFetchRequest
+    resolveMetadataFetchRequest,
+    siteMetadataIndexHtmlUrl
 } from "./siteMetadata";
-import { preferPreviewOriginForExternalAsset } from "./previewAssetUrl";
 
 describe("buildSiteMetaFetchAttempts", () => {
   test("adds internal fallbacks for tenant .localhost without override", () => {
@@ -96,6 +97,22 @@ describe("extractOgImageFromHtml", () => {
       <meta property="og:image" content="https://a.com/og.png" />
     `;
     expect(extractOgImageFromHtml(html, "https://ex.com/")).toBe("https://a.com/og.png");
+  });
+
+  test("reads multiline meta tag (regex fallback) when one-line <meta> scan misses", () => {
+    const html = `<head>
+<meta
+  property="og:image"
+  content="/nested/og.png" />
+</head>`;
+    expect(extractOgImageFromHtml(html, "https://dep.example/")).toBe("https://dep.example/nested/og.png");
+  });
+});
+
+describe("siteMetadataIndexHtmlUrl", () => {
+  test("resolves index in same directory as preview", () => {
+    expect(siteMetadataIndexHtmlUrl("https://a.example/prefix/")).toBe("https://a.example/prefix/index.html");
+    expect(siteMetadataIndexHtmlUrl("https://a.example/")).toBe("https://a.example/index.html");
   });
 });
 
