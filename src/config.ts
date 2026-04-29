@@ -37,6 +37,30 @@ const normalizeUrl = (value: string | undefined) => {
   return v || undefined;
 };
 
+const parsePrimaryDeployherDomainExplicit = (): string | undefined => {
+  const v = rawEnv.DEPLOYHER_PRIMARY_DOMAIN?.trim();
+  if (!v) return undefined;
+  return v.replace(/^https?:\/\//i, "").replace(/\/+$/g, "");
+};
+
+const parseHostnameList = (value: string | undefined): readonly string[] => {
+  const v = value?.trim();
+  if (!v) return [];
+  return v
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
+const parseExtraTrustedOrigins = (): readonly string[] => {
+  const v = rawEnv.DEPLOYHER_EXTRA_TRUSTED_ORIGINS?.trim();
+  if (!v) return [];
+  return v
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
 function requireEnv(name: string): string {
   const v = rawEnv[name];
   if (v === undefined || typeof v !== "string" || !v.trim()) {
@@ -47,6 +71,41 @@ function requireEnv(name: string): string {
 
 const env = requireEnv("APP_ENV");
 const hostname = requireEnv("HOSTNAME");
+
+const primaryDeployherDomain = ((): string => {
+  const explicit = parsePrimaryDeployherDomainExplicit();
+  if (explicit) return explicit;
+  return env === "development"
+    ? normalizeDomain(rawEnv.DEV_DOMAIN, "localhost")
+    : normalizeDomain(rawEnv.PROD_DOMAIN, "localhost");
+})();
+
+const deployherLandingHostnames = ((): readonly string[] => {
+  const explicit = parseHostnameList(rawEnv.DEPLOYHER_LANDING_HOSTNAMES);
+  if (explicit.length > 0) return explicit;
+  const www = (rawEnv.DEPLOYHER_WWW_LANDING ?? "").trim().toLowerCase();
+  const withWww = www === "1" || www === "true" || www === "yes";
+  const isLocal =
+    primaryDeployherDomain === "localhost" || primaryDeployherDomain.endsWith(".localhost");
+  if (isLocal) return [primaryDeployherDomain];
+  return withWww
+    ? [primaryDeployherDomain, `www.${primaryDeployherDomain}`]
+    : [primaryDeployherDomain];
+})();
+
+const deployherDashHostname =
+  rawEnv.DEPLOYHER_DASH_HOSTNAME?.trim().replace(/^https?:\/\//i, "").replace(/\/+$/g, "") ||
+  `dash.${primaryDeployherDomain}`;
+
+const deployherApiHostname =
+  rawEnv.DEPLOYHER_API_HOSTNAME?.trim().replace(/^https?:\/\//i, "").replace(/\/+$/g, "") ||
+  `api.${primaryDeployherDomain}`;
+
+const deployherCookieDomain =
+  rawEnv.DEPLOYHER_COOKIE_DOMAIN?.trim() ||
+  (primaryDeployherDomain !== "localhost" && !primaryDeployherDomain.endsWith(".localhost")
+    ? `.${primaryDeployherDomain}`
+    : undefined);
 
 export const config = {
   env,
@@ -104,6 +163,14 @@ export const config = {
       16 * 1024 * 1024,
       Math.max(256 * 1024, parseInteger(rawEnv.SITE_PREVIEW_IMAGE_MAX_BYTES, 8 * 1024 * 1024))
     )
+  },
+  deployher: {
+    primaryDomain: primaryDeployherDomain,
+    landingHostnames: deployherLandingHostnames,
+    dashHostname: deployherDashHostname,
+    apiHostname: deployherApiHostname,
+    cookieDomain: deployherCookieDomain,
+    extraTrustedOrigins: parseExtraTrustedOrigins()
   }
 };
 
@@ -115,19 +182,55 @@ const withOptionalPort = (protocol: string, domain: string, port: number) => {
 
 export const getDevBaseUrl = () => withOptionalPort(config.devProtocol, config.devDomain, config.port);
 
-export const getProdBaseUrl = () => withOptionalPort(config.prodProtocol, config.prodDomain, config.port);
+export const originForPublicHostname = (host: string): string => {
+  const proto = config.prodProtocol;
+  const defaultPort = proto === "https" ? 443 : 80;
+  const explicit = rawEnv.DEPLOYHER_PUBLIC_PORT?.trim();
+  const port = explicit ? parsePort(explicit, defaultPort) : defaultPort;
+  return withOptionalPort(proto, host, port);
+};
+
+export const getLandingOrigins = (): string[] =>
+  config.deployher.landingHostnames.map((h) => originForPublicHostname(h));
+
+const singleProdOriginFallback = () =>
+  withOptionalPort(config.prodProtocol, config.prodDomain, config.port);
+
+export const getProdBaseUrl = (): string =>
+  config.deployher.dashHostname
+    ? originForPublicHostname(config.deployher.dashHostname)
+    : singleProdOriginFallback();
+
+export const getDashOrigin = (): string => getProdBaseUrl();
+
+export const getApiPublicOrigin = (): string =>
+  config.deployher.apiHostname
+    ? originForPublicHostname(config.deployher.apiHostname)
+    : getProdBaseUrl();
 
 export const getTrustedAppOrigins = (): string[] => {
-  const origins = new Set<string>([getDevBaseUrl(), getProdBaseUrl()]);
+  const origins = new Set<string>();
+  origins.add(getDevBaseUrl());
+  for (const o of getLandingOrigins()) origins.add(o);
+  origins.add(getDashOrigin());
+  origins.add(getApiPublicOrigin());
+  origins.add(withOptionalPort(config.prodProtocol, config.prodDomain, config.port));
   if (config.auth.url) {
     origins.add(config.auth.url);
+  }
+  for (const o of config.deployher.extraTrustedOrigins) {
+    if (o) origins.add(o);
   }
   return [...origins];
 };
 
-export const getAuthBaseUrl = (): string => config.auth.url ?? (
-  config.env === "development" ? getDevBaseUrl() : getProdBaseUrl()
-);
+export const getAuthBaseUrl = (): string =>
+  config.auth.url ??
+  (config.env === "development"
+    ? getDevBaseUrl()
+    : config.deployher.apiHostname
+      ? getApiPublicOrigin()
+      : getProdBaseUrl());
 
 export const getDevProjectUrlPattern = () => withOptionalPort(
   config.devProtocol,
