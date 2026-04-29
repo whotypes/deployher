@@ -1,16 +1,22 @@
 import { describe, expect, test } from "bun:test";
+import { buildPublicPreviewUrl } from "../config";
 import { resolveLivePreviewPageUrl } from "./livePreviewDeployment";
 
 describe("resolveLivePreviewPageUrl", () => {
-  test("uses trimmed previewUrl when set", () => {
+  test("uses canonical URL from shortId (ignores stale stored previewUrl)", () => {
     expect(resolveLivePreviewPageUrl({ previewUrl: "  https://ex.com/p  ", shortId: "x" })).toBe(
+      buildPublicPreviewUrl("x")
+    );
+  });
+
+  test("falls back to trimmed previewUrl when shortId empty", () => {
+    expect(resolveLivePreviewPageUrl({ previewUrl: "  https://ex.com/p  ", shortId: "" })).toBe(
       "https://ex.com/p"
     );
   });
 
-  test("falls back to dev subdomain when previewUrl is empty", () => {
+  test("builds from shortId when previewUrl empty", () => {
     const u = resolveLivePreviewPageUrl({ previewUrl: "", shortId: "abc" });
-    expect(u).toContain("abc");
-    expect(u.startsWith("http")).toBe(true);
+    expect(u).toBe(buildPublicPreviewUrl("abc"));
   });
 });
