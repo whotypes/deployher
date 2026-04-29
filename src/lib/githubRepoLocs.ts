@@ -23,6 +23,7 @@ const MAX_FILES_SCANNED = 8000;
 const MAX_FILE_BYTES = 512 * 1024;
 const CACHE_TTL_MS = 8 * 60 * 1000;
 
+// customer-repo build/cache dirs to skip when walking trees (includes nuxt/nitro `.output`, not deployher-specific)
 const SKIP_DIR_NAMES = new Set([
   "node_modules",
   ".git",

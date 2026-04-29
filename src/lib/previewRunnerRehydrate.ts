@@ -22,6 +22,45 @@ export const PREVIEW_ENSURE_HTTP_TIMEOUT_MS =
     ? Math.min(parsedEnsure, 60 * 60 * 1000)
     : 10 * 60 * 1000;
 
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const parseRunnerStartupWaitMs = (): number => {
+  const n = Number.parseInt(process.env.PREVIEW_RUNNER_STARTUP_WAIT_MS ?? "60000", 10);
+  if (!Number.isFinite(n) || n < 0) return 60_000;
+  return Math.min(n, 120_000);
+};
+
+const waitForPreviewRunnerReachable = async (
+  runnerBase: string,
+  maxWaitMs: number,
+  intervalMs: number
+): Promise<boolean> => {
+  const base = runnerBase.trim().replace(/\/+$/, "");
+  if (!base) return false;
+  const healthUrl = `${base}/health`;
+  const deadline = Date.now() + maxWaitMs;
+  let logged = false;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(healthUrl, { method: "GET", signal: AbortSignal.timeout(2500) });
+      if (res.ok) return true;
+    } catch {
+      /* runner not listening yet */
+    }
+    if (!logged) {
+      console.log(
+        "Preview runner: waiting for RUNNER_URL to accept connections (start the runner or unset RUNNER_URL)…"
+      );
+      logged = true;
+    }
+    await sleep(intervalMs);
+  }
+  return false;
+};
+
 const normalizeRuntimeConfigForRunner = (
   raw: DeploymentRuntimeConfig | null
 ): {
@@ -237,7 +276,18 @@ export const ensureCurrentServerPreviewContainers = async (): Promise<void> => {
 
 export const rehydratePreviewRunnerAfterAppStart = async (): Promise<void> => {
   if (!config.runner.previewEnabled) return;
-  if (!(config.runner.url ?? "").trim()) return;
+  const runnerBase = (config.runner.url ?? "").trim();
+  if (!runnerBase) return;
+
+  const maxWait = parseRunnerStartupWaitMs();
+  const reachable = await waitForPreviewRunnerReachable(runnerBase, maxWait, 500);
+  if (!reachable) {
+    console.warn(
+      "Preview runner: not reachable within wait window; skipping startup rehydrate. " +
+        "Start the runner or increase PREVIEW_RUNNER_STARTUP_WAIT_MS (ms)."
+    );
+    return;
+  }
 
   const refs = await collectPrewarmPullRefs();
   if (refs.length > 0) {
