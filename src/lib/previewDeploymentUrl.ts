@@ -1,4 +1,4 @@
-import { buildDevSubdomainUrl } from "../config";
+import { buildPublicPreviewUrl } from "../config";
 
 /**
  * Public preview URL for UI: use DB value when set; for successful deployments with a missing
@@ -16,5 +16,5 @@ export const effectiveDeploymentPreviewUrl = (
   if (fromDb) return fromDb;
   const sid = shortId?.trim();
   if (!sid) return null;
-  return buildDevSubdomainUrl(sid);
+  return buildPublicPreviewUrl(sid);
 };
