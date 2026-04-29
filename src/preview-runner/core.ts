@@ -43,6 +43,19 @@ export const PREVIEW_STARTUP_POLL_INTERVAL_MS = 500;
 export const PREVIEW_STARTUP_MAX_ATTEMPTS = 120;
 export const PREVIEW_STARTUP_LOG_TAIL = 120;
 
+export const isDockerNoSuchContainerError = (e: unknown): boolean => {
+  if (!e || typeof e !== "object") return false;
+  const o = e as { statusCode?: unknown; message?: unknown };
+  if (o.statusCode === 404) return true;
+  if (typeof o.message === "string" && o.message.toLowerCase().includes("no such container")) {
+    return true;
+  }
+  if (e instanceof Error && e.message.toLowerCase().includes("no such container")) {
+    return true;
+  }
+  return false;
+};
+
 type NetworkEndpoint = { IPAddress?: string | null };
 
 export const getContainerHost = (
@@ -318,7 +331,15 @@ export const ensurePreviewContainerWithDeps = async (
   for (const entry of existing) {
     if (!entry.Id) continue;
     const existingContainer = deps.dockerClient.getContainer(entry.Id);
-    const inspection = await existingContainer.inspect();
+    let inspection: Awaited<ReturnType<typeof existingContainer.inspect>>;
+    try {
+      inspection = await existingContainer.inspect();
+    } catch (e) {
+      if (isDockerNoSuchContainerError(e)) {
+        continue;
+      }
+      throw e;
+    }
     const labels = inspection.Config?.Labels ?? {};
     const expiresAt = Number.parseInt(labels["io.deployher.preview.expires_at"] ?? "", 10);
     if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
@@ -337,12 +358,19 @@ export const ensurePreviewContainerWithDeps = async (
     const base = `http://${ip}:${port}`;
     if (
       await waitForUpstream(`${base}/`, async () => {
-        const inspection = await existingContainer.inspect();
-        return {
-          running: !!inspection.State?.Running,
-          exitCode:
-            typeof inspection.State?.ExitCode === "number" ? inspection.State.ExitCode : undefined
-        };
+        try {
+          const in2 = await existingContainer.inspect();
+          return {
+            running: !!in2.State?.Running,
+            exitCode:
+              typeof in2.State?.ExitCode === "number" ? in2.State.ExitCode : undefined
+          };
+        } catch (e) {
+          if (isDockerNoSuchContainerError(e)) {
+            return { running: false, exitCode: undefined };
+          }
+          throw e;
+        }
       })
     ) {
       return { upstreamBase: base };

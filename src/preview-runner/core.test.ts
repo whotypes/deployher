@@ -81,6 +81,60 @@ describe("ensurePreviewContainerWithDeps", () => {
     expect(removed).toEqual([]);
   });
 
+  it("creates a new container when list+inspect has a 404 (stale list entry)", async () => {
+    const notFound = Object.assign(new Error("(HTTP code 404) no such container"), { statusCode: 404 });
+    const freshInspect: FakeInspect = {
+      State: { Running: true },
+      Config: { Labels: { "io.deployher.preview.expires_at": futureExpiry } },
+      NetworkSettings: { Networks: { "deployher_default": { IPAddress: "172.20.0.20" } } },
+      Name: "/deployher-preview-ghost"
+    };
+    const result = await ensurePreviewContainerWithDeps(
+      {
+        deploymentId: "dep-ghost",
+        runtimeConfig,
+        ttlMs: 30_000,
+        memoryBytes: 1024,
+        nanoCpus: 1_000_000_000,
+        dockerNetwork: "deployher_default"
+      },
+      {
+        dockerClient: {
+          listContainers: async () => [{ Id: "ghost" }],
+          getContainer: () => ({
+            inspect: async () => {
+              throw notFound;
+            },
+            start: async () => {},
+            logs: (_opts: unknown, cb: LogsCallback) => cb(null, Buffer.from(""))
+          }),
+          createContainer: async (options: Record<string, unknown>) => {
+            createCalled += 1;
+            lastCreateOptions = options;
+            return {
+              id: "fresh-ghost",
+              start: async () => {},
+              inspect: async () => freshInspect as never,
+              logs: (_opts: unknown, cb: LogsCallback) => cb(null, Buffer.from(""))
+            };
+          }
+        },
+        pruneExpiredPreviewContainers: async () => {},
+        removeContainerIfExists: async (id) => {
+          removed.push(id);
+        },
+        resolvePreviewImageId: async () => "image:latest",
+        sanitizeLabelValue: (value) => value,
+        waitForHttp: async () => true,
+        getContainerHost: (value) =>
+          value.NetworkSettings?.Networks?.["deployher_default"]?.IPAddress ?? null
+      }
+    );
+    expect(createCalled).toBe(1);
+    expect(removed).toEqual([]);
+    expect(result).toEqual({ upstreamBase: "http://172.20.0.20:3000" });
+  });
+
   it("removes a dead prior container before creating a new one", async () => {
     const staleInspect: FakeInspect = {
       State: { Running: false, ExitCode: 1 },

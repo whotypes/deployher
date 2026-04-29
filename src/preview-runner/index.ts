@@ -14,6 +14,7 @@ import {
   ensurePreviewContainerWithDeps,
   formatPreviewStartupFailureText,
   getContainerHost,
+  isDockerNoSuchContainerError,
   type PreviewStartupFailure,
   PreviewStartupError,
   PREVIEW_STARTUP_LOG_TAIL,
@@ -348,7 +349,15 @@ const findRunningPreviewContainerId = async (deploymentId: string): Promise<stri
   });
   for (const entry of existing) {
     if (!entry.Id) continue;
-    const inspection = await dockerClient.getContainer(entry.Id).inspect();
+    let inspection: Awaited<ReturnType<ReturnType<typeof dockerClient.getContainer>["inspect"]>>;
+    try {
+      inspection = await dockerClient.getContainer(entry.Id).inspect();
+    } catch (e) {
+      if (isDockerNoSuchContainerError(e)) {
+        continue;
+      }
+      throw e;
+    }
     if (!inspection.State?.Running) continue;
     const labels = inspection.Config?.Labels ?? {};
     const expiresAt = Number.parseInt(labels[PREVIEW_EXPIRES_LABEL] ?? "", 10);
