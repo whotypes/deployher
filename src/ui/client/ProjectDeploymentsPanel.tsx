@@ -1,22 +1,22 @@
 "use client";
 
-import * as React from "react";
-import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
-import { ChevronDown, ExternalLink, MoreHorizontal, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { ChevronDown, ExternalLink, MoreHorizontal, Search } from "lucide-react";
+import * as React from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import type { ProjectDeploymentRowBootstrap } from "./ProjectDetailPageClient";
 
 const STATUS_ORDER = ["success", "failed", "building", "queued"] as const;
@@ -282,7 +282,7 @@ export const ProjectDeploymentsPanel = ({
                           </a>
                         </Button>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground">Not available</span>
                       )}
                     </TableCell>
                     <TableCell className="hidden align-middle text-muted-foreground text-sm tabular-nums sm:table-cell">
@@ -296,15 +296,13 @@ export const ProjectDeploymentsPanel = ({
                           size="sm"
                           className="h-8 px-2 text-xs"
                           data-set-current-deployment={d.id}
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
                         >
                           {t("projectDeployments.setAsCurrent")}
                         </Button>
                       ) : d.status === "success" && isCurrent ? (
                         <span className="text-xs text-muted-foreground">{t("projectDeployments.yes")}</span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground">No</span>
                       )}
                     </TableCell>
                     <TableCell className="p-2 text-right align-middle">
