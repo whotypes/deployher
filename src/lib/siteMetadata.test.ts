@@ -159,6 +159,16 @@ describe("extractIconFromHtml", () => {
     const html = `<link rel="mask-icon" href="/m.svg" color="#000" /><link rel="icon" href="/f.ico" />`;
     expect(extractIconFromHtml(html, "https://ex.com/")).toBe("https://ex.com/f.ico");
   });
+
+  test("reads rel=icon with type image/webp and quoted href", () => {
+    const html = `<link rel="icon" type="image/webp" href="/favicon.webp" />`;
+    expect(extractIconFromHtml(html, "https://ex.com/")).toBe("https://ex.com/favicon.webp");
+  });
+
+  test("reads unquoted rel and href", () => {
+    const html = `<link rel=icon href=/favicon.webp />`;
+    expect(extractIconFromHtml(html, "https://ex.com/")).toBe("https://ex.com/favicon.webp");
+  });
 });
 
 describe("extractDocumentBaseUrlFromHtml", () => {
@@ -237,7 +247,8 @@ describe("buildPreviewIconCandidateUrls", () => {
     expect(urls[0]).toBe("http://abc.localhost:3000/wrong-path.png");
     expect(urls).toContain("http://abc.localhost:3000/apple-touch-icon.png");
     expect(urls).toContain("http://abc.localhost:3000/favicon.ico");
-    expect(urls.length).toBe(5);
+    expect(urls).toContain("http://abc.localhost:3000/favicon.webp");
+    expect(urls.length).toBe(6);
   });
 
   test("does not duplicate apple-touch when resolved is already that path", () => {
@@ -246,7 +257,7 @@ describe("buildPreviewIconCandidateUrls", () => {
       "http://abc.localhost:3000/"
     );
     expect(urls.filter((u) => u.endsWith("/apple-touch-icon.png")).length).toBe(1);
-    expect(urls.length).toBe(4);
+    expect(urls.length).toBe(5);
   });
 });
 
