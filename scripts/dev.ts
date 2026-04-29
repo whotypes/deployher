@@ -1,3 +1,9 @@
+/**
+ * Bun API (uses PORT from .env, usually 3000) + Vite/Start on 5173 (--port in dev:vite).
+ * Vite's child env omits PORT so nothing tries to bind the API port for the dev UI.
+ * Run preview-runner in another terminal; avoid `bun run start:preview-runner &` in the same shell
+ * as this script if you use Ctrl+C — job control can SIGTERM background jobs.
+ */
 const server = Bun.spawn(["bun", "--hot", "src/index.ts"], {
   cwd: process.cwd(),
   env: { ...process.env, SKIP_CLIENT_BUILD: "1" },
@@ -6,9 +12,12 @@ const server = Bun.spawn(["bun", "--hot", "src/index.ts"], {
   stderr: "inherit",
 });
 
+const viteEnv = { ...process.env };
+delete viteEnv.PORT;
+
 const client = Bun.spawn(["bun", "run", "dev:vite"], {
   cwd: process.cwd(),
-  env: process.env,
+  env: viteEnv,
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",

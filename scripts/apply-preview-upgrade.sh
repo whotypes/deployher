@@ -12,10 +12,10 @@ echo "==> Rebuilding client assets"
 bun run build:client
 
 echo "==> Rebuilding and restarting app + deployment-worker only"
-docker compose up -d --build app deployment-worker
+docker compose up -d --build app-api marketing edge deployment-worker
 
 echo "==> Current service status"
-docker compose ps app deployment-worker postgres redis garage
+docker compose ps app-api marketing edge deployment-worker postgres redis garage
 
 echo
 echo "Preview upgrade applied without resetting infra."

@@ -21,6 +21,8 @@ const FORBIDDEN = [
 
 const shouldSkip = (rel: string): boolean => {
   if (rel.startsWith("spa/")) return true;
+  if (rel.startsWith("ui/")) return true;
+  if (rel.startsWith("components/")) return true;
   if (rel.endsWith(".test.ts")) return true;
   if (rel === "vite-env.d.ts") return true;
   return false;
