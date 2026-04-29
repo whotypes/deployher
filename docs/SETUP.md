@@ -61,6 +61,8 @@ cp .env.example .env
 # optional: cp config/local.example.toml config/local.toml
 ```
 
+**VPS / production (guided):** from the repo root, with Docker available, run **`bun run deployher bootstrap`** (or **`./dist/deployher-cli bootstrap`** after `bun run build:cli`). It creates `.env` from `.env.example` if missing, fills generated secrets (`BETTER_AUTH_SECRET`, `NEXUS_*`, `RUNNER_SHARED_SECRET`), prompts for GitHub OAuth and public domain routing (or use **`-y`** with those values already in `.env`), then runs the same Docker bring-up as **`deployher start`** but **skips demo `seed.ts` by default** (pass **`--seed`** if you want the demo project). Use **`--dry-run`** to print planned `.env` keys without writing files or starting containers. For local laptops you can keep using **`deployher start`** (includes demo seed and sets `VITE_DEV_API_URL` for host Vite).
+
 2. Fill **required** values (in `.env` and/or `config/local.toml`) before the app can start:
 
 - **`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`**: from [GitHub OAuth Apps][github-oauth]. **Required** — the app throws on startup if they are missing.
@@ -70,9 +72,10 @@ cp .env.example .env
 3. Start the stack and bootstrap [garage] (creates S3 bucket and key, writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
 
 ```bash
-bun run deployher start
+bun run deployher bootstrap
+# or: bun run deployher start   # includes demo seed + VITE_DEV_API_URL for host Vite
 # or after: bun run build:cli
-# ./dist/deployher-cli start
+# ./dist/deployher-cli bootstrap
 ```
 
 It starts Postgres, Redis, Garage, Nexus, runs migrations and seed **in Docker** (`oven/bun` by default), syncs build images to Nexus when configured, then builds and starts **edge**, **app-api**, **marketing**, and deployment-worker. **No Bun on the host** — only Docker.
@@ -95,7 +98,7 @@ In development, the auth base URL comes from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `
 
 Good for: CI, testing the containerized path, or **running Compose without Bun on the host** after the repo is already bootstrapped.
 
-**First-time setup:** run [One-time bootstrap](#one-time-bootstrap) (`deployher start`). That provisions Garage S3 keys in `.env`, Nexus, migrations, and seed (via **`oven/bun` in Docker**). **Seed** (`seed.ts`) runs via that command, not automatically on every `docker compose up`.
+**First-time setup:** run [One-time bootstrap](#one-time-bootstrap): **`deployher start`** (includes demo seed) or **`deployher bootstrap`** on a server (skips seed unless `--seed`). That provisions Garage S3 keys in `.env`, Nexus when `NEXUS_*` are set, migrations, and seed only when using **`start`** or **`bootstrap --seed`** (via **`oven/bun` in Docker**). **Seed** (`seed.ts`) is not run on every `docker compose up`.
 
 **After bootstrap**, you can bring the stack up with Compose alone:
 
@@ -408,6 +411,8 @@ From your **PC**, open **`http://<vm-ip>:3000`**, not `http://localhost:3000` (t
 - Docker + Bun runtime is the supported production path. Single-file executable builds are optional and must be revalidated before relying on them.
 
 ### Hetzner Ubuntu VPS with Nginx
+
+Full split-domain steps (DNS, env, OAuth callback URL, rebuild with **`VITE_PUBLIC_*`**, proxy headers): **[docs/SPLIT_DOMAIN.md](./SPLIT_DOMAIN.md)**.
 
 Run Docker Compose on the VPS and proxy public DNS (`deployher.com`, `dash.deployher.com`, `api.deployher.com`, preview `*.deployher.com`) to **`deployher-edge`** on port **3000**, or terminate TLS on the proxy and forward HTTP to **`edge`**. Use **`DEPLOYHER_EDGE_USE_PATH_ROUTING=0`** and the **`DEPLOYHER_*`** host env vars when routing by **Host** (see **`docs/DEPLOYMENT.md`**).
 

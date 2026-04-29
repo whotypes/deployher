@@ -23,6 +23,8 @@ Images: `bun run build:web` (dashboard) and `bun run build:marketing` (landing).
 
 Use **`DEPLOYHER_EDGE_USE_PATH_ROUTING=0`**, **`DEPLOYHER_PRIMARY_DOMAIN`**, **`DEPLOYHER_*_HOSTNAME`**, **`DEPLOYHER_COOKIE_DOMAIN`**, and matching **`PROD_DOMAIN`** for preview URLs. Preserve **`Host`**, **`X-Forwarded-*`** at TLS termination; long timeouts for SSE and previews.
 
+For a consolidated checklist (DNS e.g. Spaceship, `.env`, GitHub OAuth callback, `docker compose build`, Nginx headers), see **[SPLIT_DOMAIN.md](./SPLIT_DOMAIN.md)**.
+
 ## VPS or bare-metal edge
 
 Run Compose on the server; terminate TLS on **Caddy** (or Nginx/Traefik) in front of **`deployher-edge:3000`**, or expose `:3000` only on loopback and proxy from the host. Do not replace **`edge`** with a single monolithic **app** container — routing is defined by **`docker/edge-entry.sh`** and env vars.
