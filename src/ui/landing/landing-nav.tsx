@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Languages } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { Link } from "react-router-dom"
+import { Link } from "@/spa/routerCompat"
 
 import {
   DropdownMenu,
