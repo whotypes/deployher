@@ -1,8 +1,9 @@
 import { buildPublicPreviewUrl } from "../config";
 
 /**
- * Public preview URL for UI: use DB value when set; for successful deployments with a missing
- * stored URL, fall back to the dev subdomain pattern (matches project detail `currentPreviewUrl`).
+ * Public preview URL for UI and APIs. Successful host previews are always derived from
+ * `shortId` plus current app config so links stay correct after domain or env fixes; the DB
+ * value can be stale. Non-success rows keep the stored URL when present (e.g. resolution hints).
  */
 export const effectiveDeploymentPreviewUrl = (
   status: string | null | undefined,
@@ -12,9 +13,9 @@ export const effectiveDeploymentPreviewUrl = (
   if (status?.toLowerCase() !== "success") {
     return previewUrl?.trim() ?? null;
   }
-  const fromDb = previewUrl?.trim();
-  if (fromDb) return fromDb;
   const sid = shortId?.trim();
-  if (!sid) return null;
-  return buildPublicPreviewUrl(sid);
+  if (sid) {
+    return buildPublicPreviewUrl(sid);
+  }
+  return previewUrl?.trim() ?? null;
 };
