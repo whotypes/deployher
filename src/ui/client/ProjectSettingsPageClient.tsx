@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "@/spa/routerCompat";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -89,11 +89,13 @@ const mapApiToRows = (list: ProjectEnv[]): EnvRowModel[] =>
 const GeneralSection = ({
   project,
   projectId,
-  onToast
+  onToast,
+  onRequestSettingsRefetch
 }: {
   project: Project;
   projectId: string;
   onToast: (message: string, variant: "success" | "error" | "warning") => void;
+  onRequestSettingsRefetch?: () => void;
 }): React.ReactElement => {
   const { t } = useTranslation();
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -160,7 +162,7 @@ const GeneralSection = ({
         throw new Error(await parseApiError(response, t("projectSettings.updateFailed")));
       }
       onToast(t("projectSettings.updated"), "success");
-      window.setTimeout(() => window.location.reload(), 500);
+      window.setTimeout(() => onRequestSettingsRefetch?.(), 500);
     } catch (err) {
       onToast(err instanceof Error ? err.message : t("projectSettings.updateFailed"), "error");
     }
@@ -1031,6 +1033,7 @@ const DangerSection = ({
   onToast: (message: string, variant: "success" | "error" | "warning") => void;
 }): React.ReactElement => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [busy, setBusy] = React.useState(false);
 
   const handleDelete = async (): Promise<void> => {
@@ -1043,7 +1046,7 @@ const DangerSection = ({
       }
       onToast(t("projectSettings.danger.deleted"), "success");
       window.setTimeout(() => {
-        window.location.href = "/projects";
+        navigate("/projects");
       }, 500);
     } catch (err) {
       onToast(err instanceof Error ? err.message : t("projectSettings.danger.deleteFailed"), "error");
@@ -1074,7 +1077,13 @@ const DangerSection = ({
   );
 };
 
-export const ProjectSettingsPageClient = ({ data }: { data: ProjectSettingsData }): React.ReactElement => {
+export const ProjectSettingsPageClient = ({
+  data,
+  onRequestSettingsRefetch
+}: {
+  data: ProjectSettingsData;
+  onRequestSettingsRefetch?: () => void;
+}): React.ReactElement => {
   const notifRef = React.useRef<HTMLDivElement>(null);
   const { project, activeSection } = data;
   const projectId = project.id;
@@ -1087,7 +1096,14 @@ export const ProjectSettingsPageClient = ({ data }: { data: ProjectSettingsData 
   return (
     <>
       <div ref={notifRef} aria-live="polite" className={PAGE_TOAST_HIDDEN_CLASS} />
-      {activeSection === "general" && <GeneralSection project={project} projectId={projectId} onToast={onToast} />}
+      {activeSection === "general" && (
+        <GeneralSection
+          project={project}
+          projectId={projectId}
+          onToast={onToast}
+          onRequestSettingsRefetch={onRequestSettingsRefetch}
+        />
+      )}
       {activeSection === "env" && <EnvSection projectId={projectId} onToast={onToast} />}
       {activeSection === "danger" && <DangerSection project={project} projectId={projectId} onToast={onToast} />}
     </>

@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { navigateSpa } from "@/spa/spaNavigationBridge";
 import { fetchWithCsrf } from "./fetchWithCsrf";
 import { showPageToast } from "./pageNotifications";
 import { useProjectGlyphImage } from "./useProjectGlyphImage";
@@ -52,9 +53,11 @@ const notify = (message: string, variant: "success" | "error"): void => {
 };
 
 export const ProjectDetailSetCurrentRoot = ({
-  projectId
+  projectId,
+  onAfterSetCurrent
 }: {
   projectId: string;
+  onAfterSetCurrent?: () => void;
 }): React.ReactElement | null => {
   const { t } = useTranslation();
   const [pendingDeploymentId, setPendingDeploymentId] = React.useState<string | null>(null);
@@ -82,7 +85,7 @@ export const ProjectDetailSetCurrentRoot = ({
           }
           notify(t("projectDetail.setCurrentSuccess"), "success");
           window.setTimeout(() => {
-            window.location.reload();
+            onAfterSetCurrent?.();
           }, 400);
         } catch (err) {
           notify(err instanceof Error ? err.message : t("projectDetail.setCurrentFailed"), "error");
@@ -93,7 +96,7 @@ export const ProjectDetailSetCurrentRoot = ({
     };
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
-  }, [projectId, t]);
+  }, [projectId, t, onAfterSetCurrent]);
 
   React.useEffect(() => {
     document.querySelectorAll<HTMLElement>("[data-set-current-deployment]").forEach((node) => {
@@ -266,7 +269,8 @@ export const ProjectDetailDeployTrigger = ({
       }
       notify(t("projectDetail.deploymentStartedToast"), "success");
       window.setTimeout(() => {
-        window.location.href = `/deployments/${data.id ?? ""}`;
+        const id = data.id ?? "";
+        if (id) navigateSpa(`/deployments/${id}`);
       }, 500);
     } catch (err) {
       notify(err instanceof Error ? err.message : t("projectDetail.deployCreateFailed"), "error");

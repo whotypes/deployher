@@ -9,9 +9,9 @@ import {
 } from "./ProjectDetailPageClient";
 import { LazyRepoCodeExplorer } from "./repo-code-explorer-lazy";
 
-type Props = { bootstrap: ProjectDetailBootstrap };
+type Props = { bootstrap: ProjectDetailBootstrap; onRequestDetailRefetch?: () => void };
 
-export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
+export const ProjectDetailInteractiveMount = ({ bootstrap, onRequestDetailRefetch }: Props) => {
   const siteMeta = bootstrap.siteMeta;
   const siteIconUrl = siteMeta?.siteIconUrl ?? "";
   const siteOgImageUrl = siteMeta?.siteOgImageUrl ?? "";
@@ -45,7 +45,7 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
     const setCurrentRoot = document.getElementById("project-detail-set-current-root");
     if (setCurrentRoot) {
       const r = createRoot(setCurrentRoot);
-      r.render(<ProjectDetailSetCurrentRoot projectId={projectId} />);
+      r.render(<ProjectDetailSetCurrentRoot projectId={projectId} onAfterSetCurrent={onRequestDetailRefetch} />);
       roots.push(r);
     }
 
@@ -109,7 +109,8 @@ export const ProjectDetailInteractiveMount = ({ bootstrap }: Props) => {
     siteIconUrl,
     siteOgImageUrl,
     siteMetaFetchedAt,
-    siteMetaError
+    siteMetaError,
+    onRequestDetailRefetch
   ]);
 
   return null;
