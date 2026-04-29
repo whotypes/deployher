@@ -58,8 +58,6 @@ else
     LANDING_MATCH="$LANDING_MATCH $h"
   done
 
-  ESC_PRIMARY=$(printf '%s' "$PRIMARY" | sed 's/\./\\\\./g')
-
   {
     echo '{'
     echo '  admin off'
@@ -73,13 +71,8 @@ else
     echo '    reverse_proxy app-api:3000'
     echo '  }'
     echo ''
-    echo "  @tenant_sid header_regexp Host ^[0-9a-z]{9,10}\\\\.${ESC_PRIMARY}\$"
-    echo '  handle @tenant_sid {'
-    echo '    reverse_proxy app-api:3000'
-    echo '  }'
-    echo ''
-    echo "  @tenant_uuid header_regexp Host ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\\\.${ESC_PRIMARY}\$"
-    echo '  handle @tenant_uuid {'
+    echo "  @dash host $DASH_HOST"
+    echo '  handle @dash {'
     echo '    reverse_proxy app-api:3000'
     echo '  }'
     echo ''
@@ -88,8 +81,8 @@ else
     echo '    reverse_proxy marketing:80'
     echo '  }'
     echo ''
-    echo "  @dash host $DASH_HOST"
-    echo '  handle @dash {'
+    echo "  @previews host *.$PRIMARY"
+    echo '  handle @previews {'
     echo '    reverse_proxy app-api:3000'
     echo '  }'
     echo ''
