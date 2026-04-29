@@ -22,7 +22,6 @@ services:
     env_file:
       - .env
     environment:
-      APP_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
       DEPLOYHER_API_ONLY: "1"
@@ -131,7 +130,6 @@ services:
     env_file:
       - .env
     environment:
-      APP_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
       DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
