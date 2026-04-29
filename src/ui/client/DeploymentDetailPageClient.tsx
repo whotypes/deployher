@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "@/spa/routerCompat";
 import { AlertCircle, Loader2, RotateCcw, Server } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -73,9 +73,11 @@ const statusBadgePresentation = (
 };
 
 export const DeploymentDetailPageClient = ({
-  initialData
+  initialData,
+  onRequestDeploymentRefetch
 }: {
   initialData: DeploymentDetailData;
+  onRequestDeploymentRefetch?: () => void;
 }): React.ReactElement => {
   const { t, i18n } = useTranslation();
   const data = initialData;
@@ -472,7 +474,7 @@ export const DeploymentDetailPageClient = ({
       if (!response.ok) {
         throw new Error(payload.error ?? t("deployment.setCurrentFailed"));
       }
-      window.location.reload();
+      onRequestDeploymentRefetch?.();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : t("deployment.setCurrentFailed"));
     } finally {

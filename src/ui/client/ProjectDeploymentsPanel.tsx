@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { ChevronDown, ExternalLink, MoreHorizontal, Search } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/spa/routerCompat";
 import type { ProjectDeploymentRowBootstrap } from "./ProjectDetailPageClient";
 
 const STATUS_ORDER = ["success", "failed", "building", "queued"] as const;
