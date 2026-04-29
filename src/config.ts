@@ -180,6 +180,9 @@ const withOptionalPort = (protocol: string, domain: string, port: number) => {
   return normalizedPort === defaultPort ? `${protocol}://${domain}` : `${protocol}://${domain}:${normalizedPort}`;
 };
 
+const isLocalhostStylePreviewDomain = (domain: string): boolean =>
+  domain === "localhost" || domain.endsWith(".localhost");
+
 const getPublicPortForProd = (): number => {
   const proto = config.prodProtocol;
   const defaultPort = proto === "https" ? 443 : 80;
@@ -252,10 +255,16 @@ export const buildDevSubdomainUrl = (label: string) => withOptionalPort(
   config.port
 );
 
-export const buildPublicPreviewUrl = (label: string): string =>
-  config.env === "development"
-    ? buildDevSubdomainUrl(label)
-    : originForPublicHostname(`${label}.${config.prodDomain}`);
+export const buildPublicPreviewUrl = (label: string): string => {
+  if (config.env === "development") {
+    return buildDevSubdomainUrl(label);
+  }
+  const host = `${label}.${config.prodDomain}`;
+  if (isLocalhostStylePreviewDomain(config.prodDomain)) {
+    return withOptionalPort(config.devProtocol, host, config.port);
+  }
+  return originForPublicHostname(host);
+};
 
 export const resolveProjectDomains = (project: { id: string; name: string }) => {
   const slug = project.name
