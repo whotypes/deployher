@@ -287,8 +287,11 @@ export const serveSubdomainPreview = async (
   assetPath = resolvePreviewAssetPathForStrategy(assetPath, deployment.serveStrategy);
 
   try {
+    const started = Date.now();
     const response = await serveDeploymentByStrategy(req, deployment, assetPath);
-    maybeLogPreviewTraffic(req, deployment, assetPath, response.status);
+    maybeLogPreviewTraffic(req, deployment, assetPath, response.status, {
+      durationMs: Date.now() - started
+    });
     return response;
   } catch (err) {
     console.error("Subdomain preview error:", err);
@@ -323,8 +326,11 @@ export const servePathBasedPreview = async (
   );
 
   try {
+    const started = Date.now();
     const response = await serveDeploymentByStrategy(req, deployment, assetPath);
-    maybeLogPreviewTraffic(req, deployment, assetPath, response.status);
+    maybeLogPreviewTraffic(req, deployment, assetPath, response.status, {
+      durationMs: Date.now() - started
+    });
     return response;
   } catch (err) {
     console.error("Path-based preview error:", err);
