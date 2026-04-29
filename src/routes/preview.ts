@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { buildDevSubdomainUrl, config } from "../config";
+import { buildPublicPreviewUrl, config } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { badRequest, json, notFound, type RequestWithParams } from "../http/helpers";
@@ -338,8 +338,7 @@ export const servePathBasedPreview = async (
   }
 };
 
-export const buildSubdomainPreviewUrl = (deploymentId: string) =>
-  buildDevSubdomainUrl(deploymentId);
+export const buildSubdomainPreviewUrl = (deploymentId: string) => buildPublicPreviewUrl(deploymentId);
 
 export const servePreview = async (req: RequestWithParams) => {
   const url = new URL(req.url);
