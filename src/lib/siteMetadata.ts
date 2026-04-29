@@ -260,6 +260,26 @@ export const siteMetadataIndexHtmlUrl = (publicPreviewUrl: string): string | nul
 
 type LinkCandidate = { href: string; rel: string; sizesScore: number };
 
+const extractLinkAttribute = (tag: string, attr: "rel" | "href" | "sizes"): string | null => {
+  const esc = attr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const d = new RegExp(`\\b${esc}\\s*=\\s*"([^"]*)"`, "i").exec(tag);
+  if (d?.[1] != null) {
+    const v = d[1].trim();
+    return v ? v : null;
+  }
+  const s = new RegExp(`\\b${esc}\\s*=\\s*'([^']*)'`, "i").exec(tag);
+  if (s?.[1] != null) {
+    const v = s[1].trim();
+    return v ? v : null;
+  }
+  const u = new RegExp(`\\b${esc}\\s*=\\s*([^\\s>]+)`, "i").exec(tag);
+  if (u?.[1] != null) {
+    const v = u[1].trim();
+    return v ? v : null;
+  }
+  return null;
+};
+
 const linkSizesScore = (sizesAttr: string | null): number => {
   if (!sizesAttr) return 0;
   let best = 0;
@@ -282,23 +302,23 @@ const parseRelTokens = (rel: string): string[] =>
     .filter(Boolean);
 
 export const extractIconFromHtml = (html: string, baseUrl: string): string | null => {
-  const linkRe = /<link\b[^>]*>/gi;
+  const linkRe = /<link\b[\s\S]*?>/gi;
   const candidates: LinkCandidate[] = [];
   let m: RegExpExecArray | null;
   while ((m = linkRe.exec(html)) !== null) {
     const tag = m[0];
-    const relM = tag.match(/\brel\s*=\s*"([^"]*)"/i) ?? tag.match(/\brel\s*=\s*'([^']*)'/i);
-    const hrefM = tag.match(/\bhref\s*=\s*"([^"]*)"/i) ?? tag.match(/\bhref\s*=\s*'([^']*)'/i);
-    if (!relM?.[1] || !hrefM?.[1]) continue;
-    const rel = relM[1];
+    const relRaw = extractLinkAttribute(tag, "rel");
+    const hrefRaw = extractLinkAttribute(tag, "href");
+    if (!relRaw || !hrefRaw) continue;
+    const rel = relRaw;
     const tokens = parseRelTokens(rel);
     if (tokens.includes("mask-icon") || tokens.includes("maskicon")) continue;
     const isApple = tokens.some((t) => t === "apple-touch-icon" || t === "apple-touch-icon-precomposed");
     const isIcon = tokens.some((t) => t === "icon" || t === "shortcut" || t === "shortcut icon");
     if (!isApple && !isIcon) continue;
-    const sizesM = tag.match(/\bsizes\s*=\s*"([^"]*)"/i) ?? tag.match(/\bsizes\s*=\s*'([^']*)'/i);
-    const sizesScore = linkSizesScore(sizesM?.[1] ?? null);
-    const resolved = resolveHref(hrefM[1], baseUrl);
+    const sizesAttr = extractLinkAttribute(tag, "sizes");
+    const sizesScore = linkSizesScore(sizesAttr);
+    const resolved = resolveHref(hrefRaw, baseUrl);
     if (!resolved) continue;
     candidates.push({ href: resolved, rel: rel.toLowerCase(), sizesScore });
   }
@@ -398,6 +418,7 @@ export const fetchPreviewDeploymentAsset = async (
 const COMMON_PREVIEW_ICON_PATHS = [
   "/apple-touch-icon.png",
   "/favicon.ico",
+  "/favicon.webp",
   "/favicon.svg",
   "/icon.png"
 ] as const;
