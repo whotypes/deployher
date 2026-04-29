@@ -48,7 +48,8 @@ export const auth = betterAuth({
         disableOriginCheck: false,
         defaultCookieAttributes: {
             sameSite: "lax",
-            secure: config.env === "production" && new URL(clientURL).protocol === "https:"
+            secure: config.env === "production" && new URL(clientURL).protocol === "https:",
+            ...(config.deployher.cookieDomain ? { domain: config.deployher.cookieDomain } : {})
         }
     },
     database: drizzleAdapter(db, {
