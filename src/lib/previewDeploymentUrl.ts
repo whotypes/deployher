@@ -10,7 +10,7 @@ export const effectiveDeploymentPreviewUrl = (
   previewUrl: string | null | undefined,
   shortId: string | null | undefined
 ): string | null => {
-  if (status?.toLowerCase() !== "success") {
+  if (status?.trim().toLowerCase() !== "success") {
     return previewUrl?.trim() ?? null;
   }
   const sid = shortId?.trim();
