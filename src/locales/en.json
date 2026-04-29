@@ -48,12 +48,24 @@
     "whyDocumentTitle": "Manifesto - {{appName}}",
     "projectFallbackTitle": "Project · {{appName}}",
     "deploymentFallbackTitle": "Deployment · {{appName}}",
+    "deploymentNotFoundDocumentTitle": "Deployment not found · {{appName}}",
+    "projectNotFoundDocumentTitle": "Project not found · {{appName}}",
     "settingsFallbackTitle": "Settings · {{appName}}",
     "observabilityFallbackTitle": "Observability · {{appName}}"
   },
   "routes": {
     "missingDeploymentId": "Missing deployment id",
-    "missingProjectId": "Missing project id"
+    "missingProjectId": "Missing project id",
+    "deploymentNotFoundEyebrow": "Deployment",
+    "deploymentNotFoundTitle": "We couldn't find this deployment",
+    "deploymentNotFoundBody": "It may have been deleted with its project, or the link might be wrong.",
+    "deploymentNotFoundCta": "Back to dashboard",
+    "deploymentNotFoundSecondaryCta": "All projects",
+    "projectNotFoundEyebrow": "Workspace",
+    "projectNotFoundTitle": "Project not found",
+    "projectNotFoundBody": "This project may have been deleted, or the link might be wrong.",
+    "projectNotFoundCta": "Back to dashboard",
+    "projectNotFoundSecondaryCta": "All projects"
   },
   "shell": {
     "closeMenu": "Close menu",
@@ -377,7 +389,9 @@
     "title": "Page not found",
     "body": "The path you requested is not mapped to an app route. Double-check the URL or return to the dashboard.",
     "backDashboard": "Back to dashboard",
-    "goDashboardAria": "Go to dashboard"
+    "goDashboardAria": "Go to dashboard",
+    "browseProjects": "All projects",
+    "browseProjectsAria": "Browse all projects"
   },
   "layoutPrefs": {
     "triggerAria": "Workspace display settings",
