@@ -3,9 +3,15 @@ import { Command } from "commander";
 import pc from "picocolors";
 import pkg from "../package.json" with { type: "json" };
 import { buildContext, type BuildContextOptions } from "./context";
+import { registerDetect } from "./commands/detect";
 import { registerDoctor } from "./commands/doctor";
+import { registerLink } from "./commands/link";
+import { registerLogin } from "./commands/login";
 import { registerLogs } from "./commands/logs";
+import { registerLogout } from "./commands/logout";
 import { registerGrantOperator } from "./commands/grant-operator";
+import { registerRemoteDeploy } from "./commands/remote-deploy";
+import { registerWhoami } from "./commands/whoami";
 import { registerMigrate, registerSeed } from "./commands/migrate";
 import { registerNexus } from "./commands/nexus-cmd";
 import { registerStart } from "./commands/start";
@@ -52,6 +58,7 @@ ${pc.dim("Examples (repo root):")}
 
 ${pc.dim("Migrate, seed, and grant-operator use")} ${pc.cyan("oven/bun")} ${pc.dim("in Docker — no Bun on the host required.")}
 ${pc.dim("Grant admin:")} ${pc.cyan("deployher grant-operator <github-username>")}
+${pc.dim("Remote (API):")} ${pc.cyan("deployher login")} ${pc.dim("→")} ${pc.cyan("deployher link")} ${pc.dim("→")} ${pc.cyan("deployher deploy")}
 ${pc.dim("Global flags before the subcommand:")} ${pc.cyan("bun cli/index.ts --verbose start")}
 `,
     );
@@ -63,6 +70,12 @@ ${pc.dim("Global flags before the subcommand:")} ${pc.cyan("bun cli/index.ts --v
   registerMigrate(program, getCtx);
   registerGrantOperator(program, getCtx);
   registerSeed(program, getCtx);
+  registerLogin(program);
+  registerLogout(program);
+  registerWhoami(program);
+  registerDetect(program, getCtx);
+  registerLink(program);
+  registerRemoteDeploy(program);
   registerLogs(program, getCtx);
   registerNexus(program, getCtx);
   registerDoctor(program, getCtx);

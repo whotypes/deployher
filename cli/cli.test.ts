@@ -32,4 +32,22 @@ describe("deployher CLI", () => {
     });
     expect(await proc.exited).toBe(0);
   });
+
+  test("login --help exits 0", async () => {
+    const proc = Bun.spawn(["bun", cliEntry, "login", "--help"], {
+      cwd: repoRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await proc.exited).toBe(0);
+  });
+
+  test("detect --help exits 0", async () => {
+    const proc = Bun.spawn(["bun", cliEntry, "detect", "--help"], {
+      cwd: repoRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await proc.exited).toBe(0);
+  });
 });
