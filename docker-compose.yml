@@ -1,10 +1,13 @@
 services:
-  app:
+  app-api:
     build:
       context: .
       dockerfile: Dockerfile
-      target: release
-    container_name: deployher-app
+      target: release-api
+      args:
+        VITE_PUBLIC_API_ORIGIN: ${VITE_PUBLIC_API_ORIGIN:-}
+        VITE_PUBLIC_DASH_ORIGIN: ${VITE_PUBLIC_DASH_ORIGIN:-}
+    container_name: deployher-app-api
     user: "0:0"
     restart: unless-stopped
     depends_on:
@@ -22,6 +25,7 @@ services:
       APP_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
+      DEPLOYHER_API_ONLY: "1"
       SKIP_CLIENT_BUILD: "1"
       RUN_MIGRATIONS: "1"
       DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
@@ -29,8 +33,40 @@ services:
       S3_ENDPOINT: http://garage:3900
       BUILD_WORKERS: "0"
       RUNNER_URL: http://preview-runner:8787
+
+  marketing:
+    build:
+      context: .
+      dockerfile: docker/marketing.Dockerfile
+      args:
+        VITE_PUBLIC_API_ORIGIN: ${VITE_PUBLIC_API_ORIGIN:-}
+        VITE_PUBLIC_DASH_ORIGIN: ${VITE_PUBLIC_DASH_ORIGIN:-}
+    container_name: deployher-marketing
+    restart: unless-stopped
+
+  edge:
+    image: caddy:2.8-alpine
+    container_name: deployher-edge
+    restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DEPLOYHER_EDGE_USE_PATH_ROUTING: ${DEPLOYHER_EDGE_USE_PATH_ROUTING:-1}
+      DEPLOYHER_LANDING_HOSTNAME: ${DEPLOYHER_LANDING_HOSTNAME:-localhost}
+      DEPLOYHER_LANDING_HOSTNAMES: ${DEPLOYHER_LANDING_HOSTNAMES:-}
+      DEPLOYHER_DASH_HOSTNAME: ${DEPLOYHER_DASH_HOSTNAME:-localhost}
+      DEPLOYHER_API_HOSTNAME: ${DEPLOYHER_API_HOSTNAME:-localhost}
+      DEPLOYHER_PRIMARY_DOMAIN: ${DEPLOYHER_PRIMARY_DOMAIN:-}
+    volumes:
+      - ./docker/edge-entry.sh:/etc/caddy/edge-entry.sh:ro
+    entrypoint: ["/bin/sh", "/etc/caddy/edge-entry.sh"]
+    depends_on:
+      app-api:
+        condition: service_started
+      marketing:
+        condition: service_started
 
   preview-runner:
     build:
@@ -65,7 +101,7 @@ services:
       PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS: ${PREVIEW_RUNNER_IMAGE_GC_INTERVAL_MS:-900000}
       PREVIEW_RUNNER_IMAGE_MAX_AGE_MS: ${PREVIEW_RUNNER_IMAGE_MAX_AGE_MS:-604800000}
       # Ask the app to prewarm images + start preview containers (retries until app listens; unset if runner is not on the compose network).
-      PREVIEW_REHYDRATE_TRIGGER_URL: http://app:3000/internal/trigger-preview-rehydrate
+      PREVIEW_REHYDRATE_TRIGGER_URL: http://app-api:3000/internal/trigger-preview-rehydrate
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:

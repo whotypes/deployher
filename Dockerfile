@@ -12,12 +12,16 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
 FROM base AS builder
+ARG VITE_PUBLIC_API_ORIGIN=
+ARG VITE_PUBLIC_DASH_ORIGIN=
+ENV VITE_PUBLIC_API_ORIGIN=$VITE_PUBLIC_API_ORIGIN
+ENV VITE_PUBLIC_DASH_ORIGIN=$VITE_PUBLIC_DASH_ORIGIN
 COPY --from=deps-dev /usr/src/app/node_modules ./node_modules
 COPY . .
 ENV NODE_ENV=production
-RUN bun run build:client
+RUN bun run build:web
 
-FROM base AS release
+FROM base AS release-api
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
 ENV APP_ENV=production
@@ -25,6 +29,7 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV SKIP_CLIENT_BUILD=1
 ENV RUN_MIGRATIONS=1
+ENV DEPLOYHER_API_ONLY=1
 
 COPY --from=deps-prod /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/config ./config
