@@ -1,6 +1,6 @@
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getStartedAt, getServer } from "../appContext";
-import { buildDevSubdomainUrl, config, getDevProjectUrlPattern, getProdProjectUrlPattern } from "../config";
+import { buildPublicPreviewUrl, config, getDevProjectUrlPattern, getProdProjectUrlPattern } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { getBuildContainerConfig } from "../admin/buildSettings";
@@ -72,7 +72,7 @@ export const buildHealthCore = (): Omit<HealthData, "pathname" | "user" | "sideb
   };
 };
 
-const buildPreviewUrl = (shortId: string) => buildDevSubdomainUrl(shortId);
+const buildPreviewUrl = (shortId: string) => buildPublicPreviewUrl(shortId);
 
 export const buildDashboardData = async (
   user: SessionUserForPage,
