@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "@/spa/routerCompat";
 import { fetchWithCsrf } from "@/ui/client/fetchWithCsrf";
 
 type FlowState = "loading" | "needs_login" | "ready" | "submitting" | "done" | "error";

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "@/spa/routerCompat";
 import { ChevronRight, Menu, PanelLeft, Plus } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { DeployherSidebar } from "@/ui/DeployherSidebar";

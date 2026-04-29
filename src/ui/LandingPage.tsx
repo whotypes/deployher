@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "@/spa/routerCompat";
 import { LandingTerminalDemo } from "./client/landing-page";
 import { GitHubMark } from "./GitHubMark";
 import { LandingBento } from "./landing/landing-bento";
@@ -60,13 +60,13 @@ const LandingPage = ({ authenticated }: LandingPageProps) => {
                 </div>
                 <h1
                   id="landing-hero-heading"
-                  className="deployher-enter deployher-enter-delay-1 font-serif text-pretty text-3xl font-semibold tracking-[-0.03em] leading-[1.16] sm:text-4xl sm:leading-[1.14] md:text-5xl md:leading-[1.12] lg:text-6xl lg:leading-[1.1] xl:text-7xl xl:leading-[1.08] 2xl:text-8xl 2xl:leading-[1.06]"
+                  className="deployher-enter deployher-enter-delay-1 font-serif text-pretty text-4xl font-semibold tracking-[-0.03em] leading-[1.16] sm:text-4xl sm:leading-[1.14] md:text-5xl md:leading-[1.12] lg:text-5xl lg:leading-[1.1] xl:text-6xl xl:leading-[1.08] 2xl:text-7xl 2xl:leading-[1.06]"
                 >
                   <span className="bg-linear-to-b from-foreground via-foreground to-muted-foreground/80 bg-clip-text text-transparent">
                     {t("landing.heroTitle")}
                   </span>
                 </h1>
-                <p className="deployher-enter deployher-enter-delay-2 text-base leading-snug text-muted-foreground sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl">
+                <p className="deployher-enter deployher-enter-delay-2 text-xl leading-snug text-muted-foreground sm:text-lg md:text-xl lg:text-2xl 2xl:text-2xl">
                   {t("landing.heroSubtitle")}
                 </p>
                 <div className="deployher-enter deployher-enter-delay-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -98,7 +98,7 @@ const LandingPage = ({ authenticated }: LandingPageProps) => {
                       "radial-gradient(ellipse 80% 60% at 50% 80%, color-mix(in oklab, var(--chart-2) 30%, transparent), transparent 70%)"
                   }}
                 />
-                <div className="border-border/50 bg-card relative flex min-h-0 flex-1 flex-col rounded-2xl border p-2 shadow-2xl backdrop-blur-xl sm:p-4">
+                <div className="border-border/50 bg-card relative flex min-h-[min(42rem,62vh)] flex-1 flex-col rounded-2xl border p-2 shadow-2xl backdrop-blur-xl sm:p-4">
                   <div
                     id="landing-terminal-root"
                     className="flex min-h-0 flex-1 flex-col"
