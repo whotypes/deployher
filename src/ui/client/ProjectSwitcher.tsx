@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "@/spa/routerCompat";
 type Bootstrap = ProjectSwitcherInput & {
   user?: unknown;
 };
