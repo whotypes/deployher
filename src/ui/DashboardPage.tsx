@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "@/spa/routerCompat";
 import type { HealthData } from "../health/HealthPage";
 import { getDateFnsLocale } from "@/lib/dateLocale";
 import type { WorkspaceDashboardCharts } from "../lib/workspaceDashboardMetrics";

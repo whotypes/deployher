@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "@/spa/routerCompat";
 
 const softSpringEasing = "cubic-bezier(0.25, 1.1, 0.4, 1)";
 
@@ -315,6 +315,7 @@ const SidebarGroup = ({ group, pathname, muted }: { group: NavGroup; pathname: s
 
 const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const collapsed = useShellSidebarCollapsed();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -333,7 +334,7 @@ const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
         throw new Error(data.error ?? t("sidebar.failedCreateDeployment"));
       }
       if (data.id) {
-        window.location.href = `/deployments/${data.id}`;
+        navigate(`/deployments/${data.id}`);
         return;
       }
       throw new Error(t("sidebar.deploymentNoId"));
