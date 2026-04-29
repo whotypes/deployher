@@ -8,7 +8,7 @@ import { finished } from "node:stream/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { getBuildContainerConfig, type BuildContainerConfig } from "../admin/buildSettings";
-import { buildDevSubdomainUrl, config } from "../config";
+import { buildPublicPreviewUrl, config } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { publishDeploymentEvent } from "../deploymentEvents";
@@ -66,8 +66,7 @@ import {
     hasFreshWorkerHeartbeat
 } from "./workerTiming";
 
-const buildPreviewUrl = (shortId: string) =>
-  buildDevSubdomainUrl(shortId);
+const buildPreviewUrl = (shortId: string) => buildPublicPreviewUrl(shortId);
 
 const resolveCanonicalServeStrategy = (
   previewMode: typeof schema.projects.$inferSelect.previewMode,
