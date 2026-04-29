@@ -1,4 +1,7 @@
-import { resolveProjectGlyphIconSrc, resolveProjectGlyphSiteIconOnly } from "@/lib/previewSiteIcon";
+import {
+  resolveProjectGlyphIconFaviconIcoFallback,
+  resolveProjectGlyphIconSrc
+} from "@/lib/previewSiteIcon";
 import { useEffect, useMemo, useState } from "react";
 
 export const useProjectGlyphImage = (
@@ -11,7 +14,7 @@ export const useProjectGlyphImage = (
     [siteIconUrl, previewUrl]
   );
   const secondarySrc = useMemo(
-    () => resolveProjectGlyphSiteIconOnly(siteIconUrl, previewUrl),
+    () => resolveProjectGlyphIconFaviconIcoFallback(siteIconUrl, previewUrl),
     [siteIconUrl, previewUrl]
   );
   const [overrideSrc, setOverrideSrc] = useState<string | null>(null);
