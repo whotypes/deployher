@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
   type ReactNode
@@ -21,6 +22,12 @@ export interface TerminalLine {
 
 export interface TabContent {
   label: string;
+  /** Shown in the command line before the typed command (default `$`). */
+  prompt?: string;
+  /** Main window chrome title; falls back to `TerminalAnimationTitleBar` `productName` when omitted. */
+  windowTitle?: string;
+  /** When false, no blinking prompt line after output completes (default true). */
+  showTrailingPrompt?: boolean;
   command: string;
   lines: TerminalLine[];
 }
@@ -47,6 +54,7 @@ interface TerminalAnimationContextValue {
   visibleLines: number;
   currentTab: TabContent;
   tabs: TabContent[];
+  idPrefix: string;
 }
 
 const TerminalAnimationContext = createContext<TerminalAnimationContextValue | undefined>(undefined);
@@ -94,6 +102,8 @@ export function TerminalAnimationRoot({
   const timeoutRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const onTabAnimationCompleteRef = useRef(onTabAnimationComplete);
   onTabAnimationCompleteRef.current = onTabAnimationComplete;
+  const reactId = useId();
+  const idPrefix = `term-${reactId.replace(/:/g, "")}`;
 
   const clearTimeouts = useCallback(() => {
     for (const t of timeoutRef.current) {
@@ -180,7 +190,8 @@ export function TerminalAnimationRoot({
     showCursor,
     visibleLines,
     currentTab,
-    tabs
+    tabs,
+    idPrefix
   };
 
   return (
@@ -261,7 +272,8 @@ export function TerminalAnimationWindow({
     <div
       ref={windowRef}
       className={cn(
-        "relative flex flex-col overflow-hidden rounded-t-xl border border-border/60 bg-card/90 shadow-xl backdrop-blur-md transition-[opacity,transform] duration-500",
+        "group/terminal relative flex flex-col overflow-hidden rounded-t-xl border border-border/60 bg-card/90 shadow-xl shadow-black/6 backdrop-blur-md transition-[opacity,transform,box-shadow] duration-500 dark:shadow-black/25",
+        "hover:border-border/70 hover:shadow-2xl hover:shadow-black/8 dark:hover:shadow-black/35",
         animateOnVisible && !hasAnimated && "translate-y-4 opacity-0",
         animateOnVisible && hasAnimated && "translate-y-0 opacity-100",
         className
@@ -272,10 +284,84 @@ export function TerminalAnimationWindow({
   );
 }
 
-export type TerminalAnimationContentProps = React.ComponentProps<"div">;
+export type TerminalAnimationTitleBarProps = React.ComponentProps<"div"> & {
+  productName?: string;
+};
 
-export function TerminalAnimationContent({ className, ...props }: TerminalAnimationContentProps) {
-  return <div className={cn("flex flex-1 flex-col px-5 py-5 sm:px-8 sm:py-7", className)} {...props} />;
+export function TerminalAnimationTitleBar({
+  productName = "Terminal",
+  className,
+  ...props
+}: TerminalAnimationTitleBarProps) {
+  const { currentTab } = useTerminalAnimationContext();
+  const chromeTitle = currentTab.windowTitle ?? productName;
+  const chromeKey = `${chromeTitle}-${currentTab.label}`;
+
+  return (
+    <div
+      className={cn(
+        "select-none flex shrink-0 items-center gap-2 border-b border-border/50 bg-linear-to-b from-muted/30 to-transparent px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5",
+        className
+      )}
+      {...props}
+    >
+      <div className="flex w-11 shrink-0 items-center gap-1 sm:w-[52px] sm:gap-1.5" aria-hidden="true">
+        <span className="size-2.5 rounded-full bg-[#ff5f57] ring-1 ring-black/10 transition duration-200 hover:brightness-110 active:scale-90 sm:size-3" />
+        <span className="size-2.5 rounded-full bg-[#febc2e] ring-1 ring-black/10 transition duration-200 hover:brightness-110 active:scale-90 sm:size-3" />
+        <span className="size-2.5 rounded-full bg-[#28c840] ring-1 ring-black/10 transition duration-200 hover:brightness-110 active:scale-90 sm:size-3" />
+      </div>
+      <div className="min-w-0 flex-1 text-center">
+        <div
+          key={chromeKey}
+          className="truncate font-mono text-[11px] font-semibold tracking-tight text-foreground/90 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300 sm:text-xs"
+        >
+          {chromeTitle}
+        </div>
+        <div className="relative h-3.5 overflow-hidden sm:h-4" aria-live="polite">
+          <span
+            key={currentTab.label}
+            className="absolute inset-x-0 top-0 block truncate font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/75 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300 sm:text-[11px] sm:tracking-[0.18em]"
+          >
+            {currentTab.label}
+          </span>
+        </div>
+      </div>
+      <div className="w-11 shrink-0 sm:w-[52px]" aria-hidden="true" />
+    </div>
+  );
+}
+
+export type TerminalAnimationContentProps = React.ComponentProps<"div"> & {
+  tabPanel?: boolean;
+};
+
+export function TerminalAnimationContent({ className, tabPanel = false, children, ...rest }: TerminalAnimationContentProps) {
+  const { activeTab, idPrefix } = useTerminalAnimationContext();
+
+  return (
+    <div
+      className={cn(
+        "relative isolate flex flex-1 flex-col overflow-hidden px-5 py-5 sm:px-8 sm:py-7",
+        "selection:bg-primary/15",
+        className
+      )}
+      id={tabPanel ? `${idPrefix}-panel` : undefined}
+      role={tabPanel ? "tabpanel" : undefined}
+      aria-labelledby={tabPanel ? `${idPrefix}-tab-${activeTab}` : undefined}
+      {...rest}
+    >
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
+        <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_-20%,color-mix(in_oklab,var(--chart-2)_12%,transparent),transparent_65%)] opacity-90" />
+        <div
+          className={cn(
+            "absolute inset-0 bg-size-[24px_24px] bg-[linear-gradient(color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] opacity-[0.12] transition-opacity duration-500",
+            "group-hover/terminal:opacity-[0.18] motion-reduce:opacity-[0.08]"
+          )}
+        />
+      </div>
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
+    </div>
+  );
 }
 
 export type TerminalAnimationBlinkingCursorProps = React.ComponentProps<"span">;
@@ -294,13 +380,14 @@ export type TerminalAnimationCommandBarProps = React.ComponentProps<"div"> & {
 };
 
 export function TerminalAnimationCommandBar({ className, cursor, ...props }: TerminalAnimationCommandBarProps) {
-  const { commandTyped, isTypingCommand, showCursor } = useTerminalAnimationContext();
+  const { commandTyped, isTypingCommand, showCursor, currentTab } = useTerminalAnimationContext();
+  const prompt = currentTab.prompt ?? "$";
 
   const defaultCursor = <TerminalAnimationBlinkingCursor className="h-4" aria-hidden />;
 
   return (
     <div className={cn("font-mono text-sm leading-relaxed text-foreground", className)} {...props}>
-      <span className="text-chart-2">$ </span>
+      <span className="text-chart-2">{prompt.endsWith(" ") ? prompt : `${prompt} `}</span>
       <span className="text-foreground/95">{commandTyped}</span>
       {isTypingCommand && showCursor ? (cursor ?? defaultCursor) : null}
     </div>
@@ -317,7 +404,14 @@ export function TerminalAnimationOutputLine({ line, visible, className, ...props
     return null;
   }
   return (
-    <div className={cn("font-mono text-sm leading-relaxed", line.color ?? "text-muted-foreground", className)} {...props}>
+    <div
+      className={cn(
+        "font-mono text-sm leading-relaxed motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-left-2 motion-safe:duration-300",
+        line.color ?? "text-muted-foreground",
+        className
+      )}
+      {...props}
+    >
       {line.text || "\u00A0"}
     </div>
   );
@@ -356,9 +450,12 @@ export type TerminalAnimationTrailingPromptProps = React.ComponentProps<"div">;
 
 export function TerminalAnimationTrailingPrompt({ className, ...props }: TerminalAnimationTrailingPromptProps) {
   const { isTypingCommand, showCursor, visibleLines, currentTab } = useTerminalAnimationContext();
+  const prompt = currentTab.prompt ?? "$";
+  const promptSpan = prompt.endsWith(" ") ? prompt : `${prompt} `;
+  const trailingEnabled = currentTab.showTrailingPrompt !== false;
 
   const show =
-    !isTypingCommand && showCursor && visibleLines >= currentTab.lines.length;
+    trailingEnabled && !isTypingCommand && showCursor && visibleLines >= currentTab.lines.length;
 
   if (!show) {
     return null;
@@ -366,7 +463,7 @@ export function TerminalAnimationTrailingPrompt({ className, ...props }: Termina
 
   return (
     <div className={cn("font-mono mt-2 text-sm text-muted-foreground", className)} {...props}>
-      <span className="text-chart-2">$ </span>
+      <span className="text-chart-2">{promptSpan}</span>
       <TerminalAnimationBlinkingCursor className="h-4" aria-hidden />
     </div>
   );
@@ -374,8 +471,52 @@ export function TerminalAnimationTrailingPrompt({ className, ...props }: Termina
 
 export type TerminalAnimationTabListProps = React.ComponentProps<"div">;
 
-export function TerminalAnimationTabList({ className, ...props }: TerminalAnimationTabListProps) {
-  return <div className={cn("flex flex-wrap gap-2", className)} role="tablist" {...props} />;
+export function TerminalAnimationTabList({ className, onKeyDown, ...props }: TerminalAnimationTabListProps) {
+  const { activeTab, setActiveTab } = useTerminalAnimationContext();
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    onKeyDown?.(e);
+    if (e.defaultPrevented) {
+      return;
+    }
+    const navKeys = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End"];
+    if (!navKeys.includes(e.key)) {
+      return;
+    }
+    const list = e.currentTarget;
+    const tabButtons = Array.from(list.querySelectorAll<HTMLButtonElement>('button[role="tab"]'));
+    if (tabButtons.length === 0) {
+      return;
+    }
+    const focused = document.activeElement;
+    let i = tabButtons.findIndex((btn) => btn === focused);
+    if (i < 0) {
+      i = activeTab;
+    }
+    let next = i;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      next = (i + 1) % tabButtons.length;
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      next = (i - 1 + tabButtons.length) % tabButtons.length;
+    } else if (e.key === "Home") {
+      next = 0;
+    } else if (e.key === "End") {
+      next = tabButtons.length - 1;
+    }
+    e.preventDefault();
+    setActiveTab(next);
+    tabButtons[next]?.focus();
+  };
+
+  return (
+    <div
+      className={cn("flex flex-wrap gap-2", className)}
+      role="tablist"
+      aria-orientation="horizontal"
+      onKeyDown={handleKeyDown}
+      {...props}
+    />
+  );
 }
 
 export type TerminalAnimationTabTriggerProps = React.ComponentPropsWithoutRef<"button"> & {
@@ -392,11 +533,15 @@ export function TerminalAnimationTabTrigger({
   onClick,
   ...props
 }: TerminalAnimationTabTriggerProps) {
-  const { activeTab, setActiveTab } = useTerminalAnimationContext();
+  const { activeTab, setActiveTab, idPrefix } = useTerminalAnimationContext();
   const isActive = activeTab === index;
+  const tabId = `${idPrefix}-tab-${index}`;
+  const panelId = `${idPrefix}-panel`;
 
   const mergedClassName = cn(
-    "rounded-md border border-border/60 px-3 py-2 text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-200",
+    "rounded-md border border-border/60 px-3 py-2 text-sm font-medium outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-200",
+    "hover:-translate-y-px active:translate-y-0 active:scale-[0.98]",
+    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
     isActive
       ? "border-primary/50 bg-primary/18 text-foreground shadow-sm ring-2 ring-inset ring-primary/30"
       : "bg-background/40 text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground",
@@ -413,8 +558,11 @@ export function TerminalAnimationTabTrigger({
   if (asChild) {
     return (
       <Slot
+        id={tabId}
         role="tab"
+        tabIndex={isActive ? 0 : -1}
         aria-selected={isActive}
+        aria-controls={panelId}
         data-state={isActive ? "active" : "inactive"}
         className={mergedClassName}
         onClick={handleClick as React.MouseEventHandler<HTMLElement>}
@@ -428,8 +576,11 @@ export function TerminalAnimationTabTrigger({
   return (
     <button
       type={type}
+      id={tabId}
       role="tab"
+      tabIndex={isActive ? 0 : -1}
       aria-selected={isActive}
+      aria-controls={panelId}
       data-state={isActive ? "active" : "inactive"}
       className={mergedClassName}
       onClick={handleClick}
