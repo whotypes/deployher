@@ -2,10 +2,15 @@ import type { Command } from "commander";
 import pc from "picocolors";
 import type { CliContext } from "../types";
 import { assertBackendEnvExists } from "../lib/bun-docker";
+import { upsertEnvValue } from "../lib/env-file";
 import { clearGarageLocalData, ensureGarageEnv } from "../lib/garage";
 import { createBootstrapTasks, runBootstrapWithListr } from "../lib/bootstrap-tasks";
 import { resetVolumes } from "../lib/stack";
 import { createListr } from "../ui";
+
+const ensureViteDevApiUrl = async (ctx: CliContext): Promise<void> => {
+  await upsertEnvValue(ctx.backendEnvFile, "VITE_DEV_API_URL", "http://127.0.0.1:3000");
+};
 
 export const registerStart = (program: Command, getCtx: (cmd: Command) => CliContext): void => {
   program
@@ -13,6 +18,7 @@ export const registerStart = (program: Command, getCtx: (cmd: Command) => CliCon
     .description("Start infra, run migrations + seed, then app and deployment-worker")
     .action(async function (this: Command) {
       const ctx = getCtx(this);
+      await ensureViteDevApiUrl(ctx);
       await runBootstrapWithListr(ctx);
       if (ctx.logLevel !== "quiet") {
         console.log(
@@ -42,6 +48,7 @@ export const registerStart = (program: Command, getCtx: (cmd: Command) => CliCon
       }
 
       await assertBackendEnvExists(ctx.backendEnvFile);
+      await ensureViteDevApiUrl(ctx);
 
       const listr = createListr(ctx, [
         {

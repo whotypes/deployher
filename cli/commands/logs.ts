@@ -14,7 +14,7 @@ export const registerLogs = (program: Command, getCtx: (cmd: Command) => CliCont
     .description(
       "Docker compose logs (default) or remote deployment build logs (--remote, requires login + link)"
     )
-    .argument("[services...]", "optional compose service names (e.g. app postgres)")
+    .argument("[services...]", "optional compose service names (e.g. edge app-api postgres)")
     .option("--tail <n>", "pass --tail to docker compose logs (lines from end)")
     .option("--no-follow", "do not stream new lines (compose logs only)")
     .option(

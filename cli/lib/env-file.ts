@@ -30,3 +30,34 @@ export const readNexusEnvFromFile = async (
   if (!registry || !user || !password) return null;
   return { registry, user, password };
 };
+
+export const upsertEnvValue = async (
+  envFilePath: string,
+  key: string,
+  value: string,
+): Promise<void> => {
+  let content = "";
+  try {
+    content = await fs.readFile(envFilePath, "utf8");
+  } catch {
+    await fs.writeFile(envFilePath, `${key}=${value}\n`, "utf8");
+    return;
+  }
+
+  const lines = content.split(/\r?\n/);
+  let updated = false;
+  const out = lines.map((line) => {
+    if (line.startsWith(`${key}=`)) {
+      updated = true;
+      return `${key}=${value}`;
+    }
+    return line;
+  });
+
+  if (!updated) {
+    if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+    out.push(`${key}=${value}`);
+  }
+
+  await fs.writeFile(envFilePath, `${out.join("\n")}\n`, "utf8");
+};

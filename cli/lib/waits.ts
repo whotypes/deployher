@@ -4,6 +4,31 @@ import { runCommand } from "./run";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const GARAGE_ADMIN_HEALTH_URL = "http://127.0.0.1:3903/health";
+
+const throwIfDockerDaemonUnreachable = (text: string): void => {
+  if (
+    text.includes("Cannot connect to the Docker daemon") ||
+    text.includes("docker.sock") ||
+    text.includes("permission denied")
+  ) {
+    throw new Error(`Docker does not seem available.\n${text}`);
+  }
+};
+
+const fetchGarageAdminHealthOk = async (): Promise<boolean> => {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 2500);
+  try {
+    const res = await fetch(GARAGE_ADMIN_HEALTH_URL, { signal: ctrl.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(tid);
+  }
+};
+
 export const waitForPostgres = async (ctx: CliContext, onLog: (m: string) => void): Promise<void> => {
   onLog("Waiting for Postgres...");
   for (let i = 0; i < 30; i++) {
@@ -30,33 +55,32 @@ export const waitForRedis = async (ctx: CliContext, onLog: (m: string) => void):
   throw new Error("Redis failed to start in time.");
 };
 
-const GARAGE_NEEDLES = [
-  "Listening on 0.0.0.0:3901",
-  "S3 API server listening on http://0.0.0.0:3900",
-  "K2V API server listening on http://0.0.0.0:3904",
-  "Web server listening on http://0.0.0.0:3902",
-  "Admin API server listening on http://0.0.0.0:3903",
-] as const;
-
 export const waitForGarage = async (ctx: CliContext, onLog: (m: string) => void): Promise<void> => {
   onLog("Waiting for Garage...");
-  for (let i = 0; i < 30; i++) {
-    const logs = await compose(ctx, ["logs", "--no-color", "--tail", "200", "garage"]);
-    const text = `${logs.stdout}${logs.stderr}`;
-
-    if (
-      text.includes("Cannot connect to the Docker daemon") ||
-      text.includes("docker.sock") ||
-      text.includes("permission denied")
-    ) {
-      throw new Error(`Docker does not seem available (can't read container logs).\n${text}`);
-    }
-
-    const ok = GARAGE_NEEDLES.every((n) => text.includes(n));
-    if (ok) {
+  for (let i = 0; i < 60; i++) {
+    if (await fetchGarageAdminHealthOk()) {
       onLog("Garage ready.");
       return;
     }
+
+    const direct = await runCommand(["docker", "exec", "garage", "/garage", "status"], {
+      cwd: ctx.repoRoot,
+    });
+    const directText = `${direct.stdout}${direct.stderr}`;
+    throwIfDockerDaemonUnreachable(directText);
+    if (direct.ok) {
+      onLog("Garage ready.");
+      return;
+    }
+
+    const viaCompose = await compose(ctx, ["exec", "-T", "garage", "/garage", "status"]);
+    const composeText = `${viaCompose.stdout}${viaCompose.stderr}`;
+    throwIfDockerDaemonUnreachable(composeText);
+    if (viaCompose.ok) {
+      onLog("Garage ready.");
+      return;
+    }
+
     await sleep(1000);
   }
   throw new Error("Garage failed to become healthy in time.");
@@ -71,8 +95,8 @@ export const waitForApp = async (ctx: CliContext, onLog: (m: string) => void): P
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
-      if (services.includes("app")) {
-        onLog("App container running.");
+      if (services.includes("edge") && services.includes("app-api") && services.includes("marketing")) {
+        onLog("Edge, API, and marketing containers running.");
         return;
       }
     }
@@ -90,11 +114,13 @@ export const waitForApp = async (ctx: CliContext, onLog: (m: string) => void): P
       "--no-color",
       "--tail",
       "200",
-      "app",
+      "edge",
+      "app-api",
+      "marketing",
     ],
     { cwd: ctx.repoRoot },
   );
-  throw new Error("App container failed to start in time.");
+  throw new Error("App stack (edge + app-api + marketing) failed to start in time.");
 };
 
 export const waitForDeploymentWorker = async (

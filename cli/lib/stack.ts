@@ -30,7 +30,17 @@ export const ensureInfraStack = async (
 export const ensureAppStack = async (ctx: CliContext, onLog: (m: string) => void): Promise<void> => {
   await ensureNexusLoginAndImages(ctx, onLog);
   onLog("Building and starting app services...");
-  const up = await compose(ctx, ["up", "-d", "--build", "node-build-image", "bun-build-image", "app", "deployment-worker"]);
+  const up = await compose(ctx, [
+    "up",
+    "-d",
+    "--build",
+    "node-build-image",
+    "bun-build-image",
+    "app-api",
+    "marketing",
+    "edge",
+    "deployment-worker",
+  ]);
   if (!up.ok) {
     throw new Error(up.stderr || up.stdout || "docker compose up app stack failed");
   }
