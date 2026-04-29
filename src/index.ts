@@ -1,33 +1,38 @@
 import path from "path";
-import { config } from "./config";
 import { setServer, setStartedAt } from "./appContext";
 import { buildClient, clientOutDir } from "./client/build";
+import { config } from "./config";
 import { json } from "./http/helpers";
-import { extractDeploymentIdFromHost } from "./routes/preview";
-import { router } from "./router";
 import { rehydratePreviewRunnerAfterAppStart } from "./lib/previewRunnerRehydrate";
 import { startQueueStallAlertScheduler } from "./lib/projectAlerts";
+import { router } from "./router";
+import { extractDeploymentIdFromHost } from "./routes/preview";
 import { checkStorageConnectivity, isStorageConfigured } from "./storage";
 
 setStartedAt(Date.now());
 
 const start = async () => {
-  const buildResult = await buildClient();
-  if (buildResult.skipped) {
-    console.log("Skipping client asset build at startup (SKIP_CLIENT_BUILD enabled).");
-  } else if (!buildResult.success) {
-    console.warn("Client assets may be missing; /assets/* will 404 until build succeeds.");
-  }
-  const indexHtml = path.join(clientOutDir, "index.html");
-  if (!(await Bun.file(indexHtml).exists())) {
-    console.warn(
-      `Missing ${indexHtml}: SPA shell missing. Run \`bun run build:client\` or unset SKIP_CLIENT_BUILD.`
-    );
+  const isDevelopment = config.env === "development";
+  if (!isDevelopment) {
+    const buildResult = await buildClient();
+    if (buildResult.skipped) {
+      console.log("Skipping client asset build at startup (SKIP_CLIENT_BUILD enabled).");
+    } else if (!buildResult.success) {
+      console.warn("Client assets may be missing; /assets/* will 404 until build succeeds.");
+    }
+    const indexHtml = path.join(clientOutDir, "index.html");
+    if (!(await Bun.file(indexHtml).exists())) {
+      console.warn(
+        `Missing ${indexHtml}: SPA shell missing. Run \`bun run build:client\` or unset SKIP_CLIENT_BUILD.`
+      );
+    }
+  } else {
+    console.log("Development mode detected: skipping startup client build; use Vite for UI HMR.");
   }
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,
-    development: config.env !== "production",
+    development: config.env !== "production" ? { hmr: true } : false,
     idleTimeout: 255,
     fetch: async (req, srv) => {
       const host = req.headers.get("host") ?? "";
