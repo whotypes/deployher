@@ -8,19 +8,16 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, configDir, "");
   const devApiTarget =
-    env.VITE_DEV_API_URL ?? `http://127.0.0.1:${env.PORT ?? "3001"}`;
+    env.VITE_DEV_API_URL ?? `http://127.0.0.1:${env.PORT ?? "3000"}`;
 
   return {
     plugins: [react()],
     root: ".",
-    publicDir: "public",
+    publicDir: path.resolve(configDir, "public/web"),
     build: {
       outDir: "dist/client",
       emptyOutDir: true,
-      sourcemap: true,
-      rollupOptions: {
-        input: path.resolve(configDir, "index.html")
-      }
+      sourcemap: true
     },
     resolve: {
       alias: {
@@ -29,9 +26,9 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+      strictPort: true,
       proxy: {
         "/api": { target: devApiTarget, changeOrigin: true },
-        "/assets": { target: devApiTarget, changeOrigin: true },
         "/d": { target: devApiTarget, changeOrigin: true },
         "/preview": { target: devApiTarget, changeOrigin: true }
       }
