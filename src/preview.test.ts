@@ -22,6 +22,26 @@ describe("assertAllowedPullRef", () => {
     expect(() => assertAllowedPullRef(ref, cfg)).not.toThrow();
   });
 
+  test("accepts 127.0.0.1 when configured with localhost (loopback alias)", () => {
+    const cfg = sampleCfg({
+      registryHost: "localhost:8082",
+      allowedPullRefPrefix: "localhost:8082/docker-hosted/deployher-preview-runtime@"
+    });
+    const ref =
+      "127.0.0.1:8082/docker-hosted/deployher-preview-runtime@sha256:" + "a".repeat(64);
+    expect(() => assertAllowedPullRef(ref, cfg)).not.toThrow();
+  });
+
+  test("accepts localhost when prefix was built from 127.0.0.1 registry host", () => {
+    const cfg = sampleCfg({
+      registryHost: "127.0.0.1:8082",
+      allowedPullRefPrefix: "127.0.0.1:8082/docker-hosted/deployher-preview-runtime@"
+    });
+    const ref =
+      "localhost:8082/docker-hosted/deployher-preview-runtime@sha256:" + "a".repeat(64);
+    expect(() => assertAllowedPullRef(ref, cfg)).not.toThrow();
+  });
+
   test("rejects wrong registry", () => {
     const cfg = sampleCfg();
     const ref =

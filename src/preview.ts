@@ -35,6 +35,9 @@ export const buildRuntimeImageTagOnly = (
   return `${cfg.registryHost}/${cfg.dockerRepo}/${cfg.imageName}:${id}`;
 };
 
+const normalizeLoopbackRegistryHost = (s: string): string =>
+  s.replace(/^127\.0\.0\.1(:\d+)?\//, (head) => head.replace("127.0.0.1", "localhost"));
+
 export const assertAllowedPullRef = (pullRef: string, cfg: PreviewRuntimeRegistryConfig): void => {
   if (!cfg.registryHost.trim()) {
     throw new Error("PREVIEW_RUNTIME_REGISTRY or NEXUS_REGISTRY must be configured");
@@ -43,7 +46,9 @@ export const assertAllowedPullRef = (pullRef: string, cfg: PreviewRuntimeRegistr
   if (!ref.includes("@sha256:")) {
     throw new Error("runtime pull ref must include a sha256 digest");
   }
-  if (!ref.startsWith(cfg.allowedPullRefPrefix)) {
+  const refNorm = normalizeLoopbackRegistryHost(ref);
+  const prefixNorm = normalizeLoopbackRegistryHost(cfg.allowedPullRefPrefix);
+  if (!refNorm.startsWith(prefixNorm)) {
     throw new Error("runtime pull ref is not under the configured preview registry");
   }
   const digestPart = ref.slice(ref.indexOf("@sha256:") + "@sha256:".length);
