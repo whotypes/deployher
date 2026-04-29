@@ -12,6 +12,7 @@ import { ProjectObservabilityRoute } from "./routes/ProjectObservabilityRoute";
 import { DeploymentDetailRoute } from "./routes/DeploymentDetailRoute";
 import { AccountRoute } from "./routes/AccountRoute";
 import { AdminRoute } from "./routes/AdminRoute";
+import { DeviceAuthorizeRoute } from "./routes/DeviceAuthorizeRoute";
 import { HealthRoute } from "./routes/HealthRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
 
@@ -21,6 +22,7 @@ export const App = () => (
     <Route path="/" element={<LandingRoute />} />
     <Route path="/why" element={<WhyRoute />} />
     <Route path="/login" element={<LoginRoute />} />
+    <Route path="/device" element={<DeviceAuthorizeRoute />} />
     <Route path="/home" element={<Navigate to="/dashboard" replace />} />
     <Route path="/dashboard" element={<DashboardRoute />} />
     <Route path="/projects" element={<ProjectsRoute />} />
