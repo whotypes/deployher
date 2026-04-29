@@ -1,4 +1,5 @@
 import "./env/bootstrap";
+import { parseRunnerPreviewEnabled } from "./lib/parseRunnerPreviewEnabled";
 
 const rawEnv: Record<string, string | undefined> = { ...process.env, ...Bun.env };
 
@@ -34,12 +35,6 @@ const normalizeS3Endpoint = (value: string | undefined) => {
 const normalizeUrl = (value: string | undefined) => {
   const v = (value ?? "").trim();
   return v || undefined;
-};
-
-const parseBoolean = (value: string | undefined, fallback = false): boolean => {
-  const normalized = (value ?? "").trim().toLowerCase();
-  if (!normalized) return fallback;
-  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 };
 
 function requireEnv(name: string): string {
@@ -78,11 +73,14 @@ export const config = {
   preview: {
     assetBaseUrl: normalizeUrl(rawEnv.PREVIEW_ASSET_BASE_URL)
   },
-  runner: {
-    url: normalizeUrl(rawEnv.RUNNER_URL),
-    previewEnabled: parseBoolean(rawEnv.RUNNER_PREVIEW_ENABLED, false),
-    sharedSecret: normalizeUrl(rawEnv.RUNNER_SHARED_SECRET)
-  },
+  runner: (() => {
+    const runnerUrl = normalizeUrl(rawEnv.RUNNER_URL);
+    return {
+      url: runnerUrl,
+      previewEnabled: parseRunnerPreviewEnabled(rawEnv.RUNNER_PREVIEW_ENABLED, runnerUrl),
+      sharedSecret: normalizeUrl(rawEnv.RUNNER_SHARED_SECRET)
+    };
+  })(),
   s3: {
     endpoint: normalizeS3Endpoint(rawEnv.S3_ENDPOINT),
     region: (rawEnv.S3_REGION ?? rawEnv.AWS_REGION ?? "garage").trim() || "garage",
@@ -91,7 +89,7 @@ export const config = {
     secretAccessKey: (rawEnv.S3_SECRET_ACCESS_KEY ?? rawEnv.AWS_SECRET_ACCESS_KEY ?? "").trim() || undefined
   },
   observability: {
-    trustProxy: parseBoolean(rawEnv.OBSERVABILITY_TRUST_PROXY, false),
+    trustProxy: true,
     previewTrafficSampleRate: Math.min(
       1,
       Math.max(0, Number.parseFloat(rawEnv.PREVIEW_TRAFFIC_SAMPLE_RATE ?? "0.02") || 0.02)
