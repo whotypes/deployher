@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { buildDevSubdomainUrl } from "../config";
+import { buildPublicPreviewUrl } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 
@@ -13,7 +13,7 @@ export type LivePreviewDeploymentRow = {
 export const resolveLivePreviewPageUrl = (dep: {
   previewUrl: string | null;
   shortId: string;
-}): string => dep.previewUrl?.trim() || buildDevSubdomainUrl(dep.shortId);
+}): string => dep.previewUrl?.trim() || buildPublicPreviewUrl(dep.shortId);
 
 export const selectLivePreviewDeploymentForProject = async (
   projectId: string
