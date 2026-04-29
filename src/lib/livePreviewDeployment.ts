@@ -13,7 +13,13 @@ export type LivePreviewDeploymentRow = {
 export const resolveLivePreviewPageUrl = (dep: {
   previewUrl: string | null;
   shortId: string;
-}): string => dep.previewUrl?.trim() || buildPublicPreviewUrl(dep.shortId);
+}): string => {
+  const sid = dep.shortId?.trim();
+  if (sid) {
+    return buildPublicPreviewUrl(sid);
+  }
+  return dep.previewUrl?.trim() ?? "";
+};
 
 export const selectLivePreviewDeploymentForProject = async (
   projectId: string
