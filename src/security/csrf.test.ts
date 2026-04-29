@@ -28,12 +28,25 @@ mock.module("../config", () => ({
     },
     redis: {
       url: undefined
+    },
+    deployher: {
+      primaryDomain: "deployher.example.com",
+      landingHostnames: ["deployher.example.com"],
+      dashHostname: "dash.deployher.example.com",
+      apiHostname: "api.deployher.example.com",
+      cookieDomain: ".deployher.example.com",
+      extraTrustedOrigins: []
     }
   },
   getDevBaseUrl: () => "http://localhost:3001",
   getProdBaseUrl: () => "https://deployher.example.com",
   getAuthBaseUrl: () => "http://localhost:3001",
-  getTrustedAppOrigins: () => ["http://localhost:3001", "https://deployher.example.com"],
+  getTrustedAppOrigins: () => [
+    "http://localhost:3001",
+    "https://deployher.example.com",
+    "https://dash.deployher.example.com",
+    "https://api.deployher.example.com"
+  ],
   getDevProjectUrlPattern: () => "http://{project}.localhost:3001",
   getProdProjectUrlPattern: () => "https://{project}.deployher.example.com",
   buildDevSubdomainUrl: (label: string) => `http://${label}.localhost:3001`,
@@ -57,6 +70,22 @@ describe("csrf validation", () => {
         cookie: `deployher_csrf=${token}`,
         origin: "http://localhost:3001",
         "sec-fetch-site": "same-origin",
+        "x-csrf-token": token
+      }
+    });
+
+    const result = await validateMutationRequest(request, token);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("accepts same-site (subdomain) mutation requests for credentialed API calls", async () => {
+    const token = "csrf-token-samesite";
+    const request = new Request("https://api.deployher.example.com/api/projects", {
+      method: "POST",
+      headers: {
+        cookie: `deployher_csrf=${token}`,
+        origin: "https://dash.deployher.example.com",
+        "sec-fetch-site": "same-site",
         "x-csrf-token": token
       }
     });

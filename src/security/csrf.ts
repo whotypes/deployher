@@ -1,4 +1,4 @@
-import { getDevBaseUrl, getProdBaseUrl } from "../config";
+import { config, getTrustedAppOrigins } from "../config";
 
 const CSRF_COOKIE_NAME = "deployher_csrf";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -9,6 +9,7 @@ type CookieOptions = {
   secure?: boolean;
   httpOnly?: boolean;
   maxAge?: number;
+  domain?: string;
 };
 
 const parseCookies = (header: string | null): Record<string, string> => {
@@ -41,11 +42,11 @@ const serializeCookie = (
   }
   if (options.secure) parts.push("Secure");
   if (options.httpOnly) parts.push("HttpOnly");
+  if (options.domain) parts.push(`Domain=${options.domain}`);
   return parts.join("; ");
 };
 
-const allowedOrigins = (): Set<string> =>
-  new Set([getDevBaseUrl(), getProdBaseUrl()]);
+const allowedOrigins = (): Set<string> => new Set(getTrustedAppOrigins());
 
 const extractRequestOrigin = (value: string | null): string | null => {
   if (!value) return null;
@@ -94,7 +95,8 @@ export const ensureCsrfToken = (req: Request): { token: string; cookieValue: str
     sameSite: "Lax",
     secure: secureCookieRequired(url),
     httpOnly: false,
-    maxAge: 60 * 60 * 24 * 30
+    maxAge: 60 * 60 * 24 * 30,
+    domain: config.deployher.cookieDomain
   });
 
   return {
@@ -122,7 +124,12 @@ export const validateMutationRequest = async (
   }
 
   const fetchSite = (req.headers.get("sec-fetch-site") ?? "").trim().toLowerCase();
-  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+  if (
+    fetchSite &&
+    fetchSite !== "same-origin" &&
+    fetchSite !== "same-site" &&
+    fetchSite !== "none"
+  ) {
     return { ok: false, reason: "Cross-site requests are not allowed" };
   }
 
