@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
-import { buildDevSubdomainUrl } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
+import { resolveLivePreviewPageUrl, selectLivePreviewDeploymentForProject } from "./livePreviewDeployment";
 import { clearSiteMetadataFetchCacheForProject, fetchSiteMetadata } from "./siteMetadata";
 
 export type RefreshProjectSiteMetadataOptions = {
@@ -23,39 +23,17 @@ export const refreshProjectSiteMetadata = async (
   let previewPageUrl = options?.previewPageUrl?.trim() ?? "";
 
   if (!previewPageUrl) {
-    const [row] = await db
-      .select({ currentDeploymentId: schema.projects.currentDeploymentId })
-      .from(schema.projects)
-      .where(eq(schema.projects.id, projectId))
-      .limit(1);
+    const dep = await selectLivePreviewDeploymentForProject(projectId);
 
-    if (!row?.currentDeploymentId) {
+    if (!dep) {
       await db
         .update(schema.projects)
-        .set({ siteMetaError: "No current deployment", updatedAt: new Date() })
+        .set({ siteMetaError: "No live preview deployment", updatedAt: new Date() })
         .where(eq(schema.projects.id, projectId));
-      return { ok: false, error: "No current deployment" };
+      return { ok: false, error: "No live preview deployment" };
     }
 
-    const [dep] = await db
-      .select({
-        previewUrl: schema.deployments.previewUrl,
-        shortId: schema.deployments.shortId,
-        status: schema.deployments.status
-      })
-      .from(schema.deployments)
-      .where(eq(schema.deployments.id, row.currentDeploymentId))
-      .limit(1);
-
-    if (!dep || dep.status !== "success") {
-      await db
-        .update(schema.projects)
-        .set({ siteMetaError: "Current deployment is not live", updatedAt: new Date() })
-        .where(eq(schema.projects.id, projectId));
-      return { ok: false, error: "Current deployment is not live" };
-    }
-
-    previewPageUrl = dep.previewUrl?.trim() || buildDevSubdomainUrl(dep.shortId);
+    previewPageUrl = resolveLivePreviewPageUrl(dep);
   }
 
   const result = await fetchSiteMetadata(previewPageUrl);
