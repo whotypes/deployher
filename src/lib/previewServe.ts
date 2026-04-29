@@ -6,6 +6,7 @@ import { getRedisClient } from "../redis";
 import { getJson } from "../storage";
 import { guessContentType } from "../utils/contentType";
 import { getClientIpFromRequest } from "./clientIp";
+import { normalizePreviewTrafficPathForLog } from "./previewTrafficPath";
 
 const PREVIEW_MANIFEST_CACHE_KEY_PREFIX = "deployments:preview-manifest:";
 const HASHED_ASSET_PATTERN = /\.[a-f0-9]{8,}\.(js|css|woff2?|ttf|eot)$/i;
@@ -197,7 +198,8 @@ export const maybeLogPreviewTraffic = (
   req: Request,
   deployment: { id: string; projectId: string },
   assetPath: string,
-  statusCode: number
+  statusCode: number,
+  timing?: { durationMs: number }
 ): void => {
   const rate = config.observability.previewTrafficSampleRate;
   if (rate <= 0) return;
@@ -206,6 +208,13 @@ export const maybeLogPreviewTraffic = (
   const clientIp = getClientIpFromRequest(req, config.observability.trustProxy);
   const method = req.method || "GET";
   const pathBucket = bucketAssetPath(assetPath);
+  const pathForDb = normalizePreviewTrafficPathForLog(assetPath);
+
+  let durationMs: number | null = null;
+  if (timing !== undefined && Number.isFinite(timing.durationMs)) {
+    const d = Math.round(timing.durationMs);
+    if (d >= 0 && d <= 86_400_000) durationMs = d;
+  }
 
   void db
     .insert(schema.previewTrafficEvents)
@@ -215,7 +224,9 @@ export const maybeLogPreviewTraffic = (
       clientIp,
       method,
       statusCode,
-      pathBucket
+      pathBucket,
+      path: pathForDb,
+      durationMs
     })
     .catch((err) => {
       console.error("preview traffic log insert failed:", err);
