@@ -1,7 +1,7 @@
 /**
- * Icon in switcher/sidebar/lists: match project-detail hero — when we have a live preview base,
- * use `/favicon.ico` there first. (Stored `siteIconUrl` can be stale or point off-preview; img
- * onError would otherwise show the letter fallback.)
+ * Icon in switcher/sidebar/lists: match project-detail hero — prefer HTML-derived `siteIconUrl`
+ * (e.g. `/favicon.webp`) when set; fall back to `/favicon.ico` on the preview origin so we still
+ * show something when metadata was never refreshed.
  */
 export const resolveProjectGlyphSiteIconOnly = (
   siteIconUrl: string | null | undefined,
@@ -26,13 +26,29 @@ export const resolveProjectGlyphIconSrc = (
   siteIconUrl: string | null | undefined,
   previewUrl: string | null | undefined
 ): string | null => {
+  const fromMeta = resolveProjectGlyphSiteIconOnly(siteIconUrl, previewUrl);
+  if (fromMeta) return fromMeta;
   const base = previewUrl?.trim();
-  if (base) {
-    try {
-      return new URL("/favicon.ico", base).href;
-    } catch {
-      /* fall through to siteIconUrl */
-    }
+  if (!base) return null;
+  try {
+    return new URL("/favicon.ico", base).href;
+  } catch {
+    return null;
   }
-  return resolveProjectGlyphSiteIconOnly(siteIconUrl, previewUrl);
+};
+
+export const resolveProjectGlyphIconFaviconIcoFallback = (
+  siteIconUrl: string | null | undefined,
+  previewUrl: string | null | undefined
+): string | null => {
+  const meta = resolveProjectGlyphSiteIconOnly(siteIconUrl, previewUrl);
+  if (!meta) return null;
+  const base = previewUrl?.trim();
+  if (!base) return null;
+  try {
+    const ico = new URL("/favicon.ico", base).href;
+    return ico !== meta ? ico : null;
+  } catch {
+    return null;
+  }
 };
