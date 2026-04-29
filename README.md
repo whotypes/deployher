@@ -158,3 +158,4 @@ SKIP_CLIENT_BUILD=1 ./dist/deployher
 
 - **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, **`deployher`** CLI (migrate/seed via **`oven/bun` in Docker**, no Bun on host), both dev workflows, env vars, ports, CLI reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **troubleshooting**.
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Monorepo workspace/app roots, runtime image modes, Dockerfile-first server deploys, Nexus-aware Docker build args, and security notes.
+- **[docs/SPLIT_DOMAIN.md](docs/SPLIT_DOMAIN.md)**: Production split-domain setup — apex marketing, `dash.` SPA, `api.` auth/API, DNS (e.g. Spaceship), `.env`, GitHub OAuth callback, `VITE_PUBLIC_*` rebuild, TLS proxy headers.
