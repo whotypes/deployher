@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "@/spa/routerCompat";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

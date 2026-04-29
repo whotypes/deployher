@@ -4,6 +4,7 @@ import {
   readLayoutDisplayPref,
   writeLayoutDisplayPref
 } from "@/lib/layoutDisplayPrefs";
+import { navigateSpa } from "@/spa/spaNavigationBridge";
 
 const STORAGE_KEY = "deployher-sidebar-collapsed";
 const SIDEBAR_STATE_COOKIE = "sidebar_state";
@@ -134,7 +135,7 @@ export const initLayout = (): void => {
     signoutForm.addEventListener("submit", (e) => {
       e.preventDefault();
       fetch("/api/auth/sign-out", { method: "POST", credentials: "include" }).then(() => {
-        window.location.href = "/login";
+        navigateSpa("/login");
       });
     });
   }
