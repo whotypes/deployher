@@ -106,11 +106,6 @@ export const createDeployment = async (req: RequestWithParamsAndSession) => {
     return notFound("Deployment not found");
   }
 
-  await db
-    .update(schema.projects)
-    .set({ currentDeploymentId: deployment.id, updatedAt: new Date() })
-    .where(eq(schema.projects.id, project.id));
-
   try {
     let repoCredentialId: string | undefined;
     if (project.repoUrl.includes("github.com/")) {
