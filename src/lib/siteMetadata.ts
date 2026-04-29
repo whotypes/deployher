@@ -45,43 +45,57 @@ const isLocalDevPreviewHost = (hostname: string): boolean => {
 };
 
 /**
- * When SITE_META_FETCH_ORIGIN is unset, try the public preview URL first, then common loopback /
- * Docker DNS targets with the same Host header so workers and the app can reach the HTTP server
- * without per-env env vars.
+ * Ordered TCP targets for preview HTML/asset fetches. When SITE_META_FETCH_ORIGIN is set, try it
+ * first (e.g. in-network Compose), then fall back to the public preview URL and loopback targets
+ * with the tenant Host header so host-run apps still succeed if the override is unreachable.
  */
 export const buildSiteMetaFetchAttempts = (
   publicPreviewUrl: string,
   fetchOriginOverride?: string | null
 ): { url: string; hostHeader: string }[] | { error: string } => {
-  const resolved = resolveMetadataFetchRequest(publicPreviewUrl, fetchOriginOverride);
-  if ("error" in resolved) return resolved;
-  if ((fetchOriginOverride ?? "").trim()) {
-    return [resolved];
-  }
   let publicUrl: URL;
   try {
     publicUrl = new URL(publicPreviewUrl);
   } catch {
     return { error: "Invalid preview URL" };
   }
-  if (!isLocalDevPreviewHost(publicUrl.hostname)) {
-    return [resolved];
+  if (publicUrl.protocol !== "http:" && publicUrl.protocol !== "https:") {
+    return { error: "Preview URL must be http(s)" };
   }
+
+  const direct = resolveMetadataFetchRequest(publicPreviewUrl, null);
+  if ("error" in direct) return direct;
+
+  const overrideTrim = (fetchOriginOverride ?? "").trim();
+  const seen = new Set<string>();
+  const out: { url: string; hostHeader: string }[] = [];
+  const pushEntry = (entry: { url: string; hostHeader: string }): void => {
+    if (seen.has(entry.url)) return;
+    seen.add(entry.url);
+    out.push(entry);
+  };
+
+  if (overrideTrim) {
+    const viaOverride = resolveMetadataFetchRequest(publicPreviewUrl, fetchOriginOverride);
+    if ("error" in viaOverride) return viaOverride;
+    pushEntry(viaOverride);
+  }
+
+  pushEntry(direct);
+
+  if (!isLocalDevPreviewHost(publicUrl.hostname)) {
+    return out;
+  }
+
   const pathAndQuery = `${publicUrl.pathname}${publicUrl.search}`;
   const portPart = publicUrl.port ? `:${publicUrl.port}` : "";
   const proto = publicUrl.protocol;
   const hostHeader = publicUrl.host;
-  const seen = new Set<string>();
-  const out: { url: string; hostHeader: string }[] = [];
-  const push = (url: string): void => {
-    if (seen.has(url)) return;
-    seen.add(url);
-    out.push({ url, hostHeader });
-  };
-  push(resolved.url);
-  push(`${proto}//127.0.0.1${portPart}${pathAndQuery}`);
-  push(`${proto}//app${portPart}${pathAndQuery}`);
-  push(`${proto}//host.docker.internal${portPart}${pathAndQuery}`);
+
+  pushEntry({ url: `${proto}//127.0.0.1${portPart}${pathAndQuery}`, hostHeader });
+  pushEntry({ url: `${proto}//app${portPart}${pathAndQuery}`, hostHeader });
+  pushEntry({ url: `${proto}//host.docker.internal${portPart}${pathAndQuery}`, hostHeader });
+
   return out;
 };
 
