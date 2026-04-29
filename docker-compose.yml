@@ -28,7 +28,6 @@ services:
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
       BUILD_WORKERS: "0"
-      RUNNER_PREVIEW_ENABLED: "1"
       RUNNER_URL: http://preview-runner:8787
     ports:
       - "3000:3000"
@@ -105,7 +104,6 @@ services:
       BUILD_WORKDIR: /tmp/deployher-builds
       DEV_DOMAIN: localhost
       DEV_PROTOCOL: http
-      RUNNER_PREVIEW_ENABLED: "1"
       RUNNER_URL: http://preview-runner:8787
       PREVIEW_RUNTIME_REGISTRY: ${PREVIEW_RUNTIME_DOCKER_DAEMON_REGISTRY:-127.0.0.1:8082}
       PREVIEW_RUNTIME_DOCKER_REPO: ${PREVIEW_RUNTIME_DOCKER_REPO:-docker-hosted}
