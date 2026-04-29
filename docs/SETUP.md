@@ -75,20 +75,21 @@ bun run deployher start
 # ./dist/deployher-cli start
 ```
 
-It starts Postgres, Redis, Garage, Nexus, runs migrations and seed **in Docker** (`oven/bun` by default), syncs build images to Nexus when configured, then builds and starts the app and deployment-worker. **No Bun on the host** — only Docker.
+It starts Postgres, Redis, Garage, Nexus, runs migrations and seed **in Docker** (`oven/bun` by default), syncs build images to Nexus when configured, then builds and starts **edge**, **app-api**, **marketing**, and deployment-worker. **No Bun on the host** — only Docker.
 
 > [!WARNING]
 > Do not commit `.env`. It will contain secrets after bootstrap and OAuth setup.
 
-4. OAuth callback URL must match how you open the app:
+4. OAuth callback URL must point at the **API** public origin (path `/api/auth/callback/github`):
 
 - Host Bun dev: `http://localhost:3001/api/auth/callback/github` (or your chosen port).
-- App in Docker: `http://localhost:3000/api/auth/callback/github`.
+- Docker (default path routing, **edge** on 3000): `http://localhost:3000/api/auth/callback/github` (traffic reaches **`app-api`** via Caddy).
+- **Multi-host production:** `https://api.yourdomain.com/api/auth/callback/github` — set **`BETTER_AUTH_URL=https://api.yourdomain.com`** and match in GitHub OAuth app settings.
 - **VM / remote IP:** `http://<host-or-vm-ip>:3000/api/auth/callback/github` (see [Troubleshooting](#troubleshooting)).
 
-The app derives the auth base URL from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT` in development (and `PROD_*` in production). Ensure these match how you reach the app.
+In development, the auth base URL comes from `DEV_PROTOCOL`, `DEV_DOMAIN`, and `PORT` unless **`BETTER_AUTH_URL`** is set. In production, prefer **`BETTER_AUTH_URL`** to the **api** host; **`getTrustedAppOrigins`** includes landing, dash, and api origins when **`DEPLOYHER_PRIMARY_DOMAIN`** is set (see **`.env.example`**).
 
-- `BETTER_AUTH_URL`: if your Better Auth config expects it, set to your app URL. For host Bun dev, use `http://localhost:3001`. For the Docker app, use `http://localhost:3000` (or your VM/public URL).
+- `BETTER_AUTH_URL`: set to the **public API origin** (e.g. `https://api.deployher.com` or `http://localhost:3000` for local Docker through **edge**).
 
 ## Workflow A: Full stack in Docker (no Bun)
 
@@ -111,7 +112,7 @@ This also builds dedicated Node and Bun build images (`deployher-node-build-imag
 3. Logs (app + worker):
 
 ```bash
-docker compose logs -f app deployment-worker
+docker compose logs -f edge app-api marketing deployment-worker
 ```
 
 4. Stop everything:
@@ -123,13 +124,13 @@ docker compose down
 5. Stop only app + deployment-worker (keep Postgres, Redis, Garage):
 
 ```bash
-docker compose stop app deployment-worker
+docker compose stop edge app-api marketing deployment-worker
 ```
 
 6. Restart app + deployment-worker:
 
 ```bash
-docker compose up -d --build node-build-image bun-build-image app deployment-worker
+docker compose up -d --build node-build-image bun-build-image app-api marketing edge deployment-worker
 ```
 
 > [!NOTE]
@@ -142,7 +143,7 @@ Good for: daily development with fast feedback. Requires [bun] on the host.
 1. After [one-time bootstrap](#one-time-bootstrap), stop Docker app services so host processes own app and queue consumption:
 
 ```bash
-docker compose stop app deployment-worker
+docker compose stop edge app-api marketing deployment-worker
 ```
 
 If OrbStack or another non-Compose service is already listening on the app port, that command is still required but not sufficient. Host Bun dev should use `PORT=3001` so it does not compete with the existing listener.
@@ -173,7 +174,7 @@ bun run dev
 bun run start:worker
 ```
 
-5. App API URL: `http://localhost:3001` (Better Auth, `/api/*`, `/health`). The **web UI** is a Vite SPA: in a **third** terminal run `bun run dev:vite` and open **`http://localhost:5173`**. Vite proxies `/api`, `/assets`, `/d`, and `/preview` to the Bun server (default `http://127.0.0.1:3001`; override with **`VITE_DEV_API_URL`** if needed).
+5. App API URL: `http://localhost:3000` (Better Auth, `/api/*`, `/health`) when using host Bun, or through **edge** on `:3000` in Docker. The **dashboard** is a **Vite SPA**: in a **third** terminal run `bun run dev:vite` and open **`http://localhost:5173`**. Vite proxies `/api`, `/d`, and `/preview` to the Bun server (default `http://127.0.0.1:3000`; override with **`VITE_DEV_API_URL`** if needed). Optional: **`bun run dev:marketing`** for the Astro landing site (default **4321**).
 
 6. Stop host app/worker (and Vite) with Ctrl+C. Infra (Postgres, Redis, Garage) keeps running.
 
@@ -211,8 +212,8 @@ In the command table, **`deployher`** means **`bun run deployher`**, **`./dist/d
 
 | Command | Description |
 |---------|-------------|
-| `deployher start` | Start Postgres, Redis, Garage, Nexus; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; run **`migrate.ts`** and **`seed.ts`** inside **`oven/bun`** (Docker); sync Nexus images when `NEXUS_*` are set; build and start app and deployment-worker; verify Docker access from deployment-worker. **No Bun on the host.** |
-| `deployher stop` | Stop all compose services (including app and deployment-worker). |
+| `deployher start` | Start Postgres, Redis, Garage, Nexus; wait for healthy deps; ensure Garage layout/bucket/key; inject S3 vars into `.env`; run **`migrate.ts`** and **`seed.ts`** inside **`oven/bun`** (Docker); sync Nexus images when `NEXUS_*` are set; build and start **edge**, **app-api**, **marketing**, and deployment-worker; verify Docker access from deployment-worker. **No Bun on the host.** |
+| `deployher stop` | Stop all compose services (including **edge**, **app-api**, **marketing**, and deployment-worker). |
 | `deployher reset` | `docker compose down -v`, clear Garage data and secrets, then full `start` again (migrate + seed in Docker, then app + workers). Confirm unless `--yes` / `CI=1`. |
 | `deployher migrate` | Ensure stack is up, then run `migrate.ts` in Docker (`oven/bun`). |
 | `deployher grant-operator <githubLogin>` | Ensure core infra is up, run `migrate.ts` (unless `--skip-migrate`), then set `users.role` to `operator` for whoever signed in with that GitHub account (resolves login via the GitHub API, matches `accounts.account_id`). The user must have completed GitHub sign-in at least once. Optional **`GITHUB_TOKEN`** in `.env` raises GitHub API rate limits. |
@@ -283,7 +284,7 @@ Deployments can be viewed in two ways:
 
 After a successful deployment, the build worker fetches the live preview HTML and stores **favicon / touch icon** and **`og:image`** URLs on the project for the sidebar and project switcher. You can re-run the fetch from **Project settings → General → Refresh from live preview**.
 
-For **`*.localhost`** preview URLs, the app **automatically** retries the metadata fetch against **`127.0.0.1`**, the **`app`** hostname (Docker Compose), and **`host.docker.internal`**, each with the public preview URL in the **`Host`** header, so you usually do not need **`SITE_META_FETCH_ORIGIN`**. Override it only when your network needs a different gateway (for example a custom internal URL). Optional tunables: **`SITE_META_FETCH_TIMEOUT_MS`**, **`SITE_META_MAX_HTML_BYTES`**.
+For **`*.localhost`** preview URLs, the app **automatically** retries the metadata fetch against **`127.0.0.1`**, the **`app-api`** hostname (Docker Compose), and **`host.docker.internal`**, each with the public preview URL in the **`Host`** header, so you usually do not need **`SITE_META_FETCH_ORIGIN`**. Override it only when your network needs a different gateway (for example a custom internal URL). Optional tunables: **`SITE_META_FETCH_TIMEOUT_MS`**, **`SITE_META_MAX_HTML_BYTES`**.
 
 ### Server previews (isolated preview runner)
 
@@ -350,15 +351,18 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 | `./dist/deployher-cli <cmd>` | Run the compiled infra CLI (after **`build:cli`**). |
 | `bun run test` | Run CLI unit tests (`bun test cli`). |
 | `bun run dev` | Start app with hot reload (`bun --hot src/index.ts`). |
-| `bun run dev:vite` | Vite dev server for the SPA (port **5173**); proxies API paths to Bun. Pair with `bun run dev`. |
-| `bun run check:server-ui` | Ensures Bun server `.ts` files do not import React / `react-dom` / streaming SSR APIs. |
+| `bun run dev:vite` | Vite dev server for the dashboard SPA (port **5173**); proxies `/api`, `/d`, `/preview` to Bun. Pair with `bun run dev`. |
+| `bun run dev:marketing` | Astro dev server for the marketing site (default port **4321**). |
+| `bun run check:server-ui` | Ensures Bun API/control-plane `.ts` files do not import React / `react-dom` / streaming SSR APIs (Vite client under `src/spa/**` is excluded). |
 | `bun run start` | Start app without hot reload. |
 | `bun run start:worker` | Start the standalone build worker process. |
 | `bun run start:preview-runner` | Start the isolated preview runner (Docker socket + S3 env required). |
 | `bun run migrate` | Run `migrate.ts` (apply migrations). |
 | `bun run seed` | Run `seed.ts` (insert demo project/deployment). Optional; skip in production. |
-| `bun run build:client` | Build client assets into `dist/client`. |
-| `bun run build:exe` | Build single-file executable for current platform. |
+| `bun run build:web` | Vite production build of the dashboard SPA to `dist/client`. |
+| `bun run build:marketing` | Static Astro build to `apps/marketing/dist` (nginx **marketing** image). |
+| `bun run build:client` | Alias for `bun run build:web` for older scripts. |
+| `bun run build:exe` | Experimental; Docker + Bun runtime is the supported production path. |
 | `bun run build:exe:linux-x64` / `build:exe:linux-arm64` | Cross-compile Linux executable. |
 | `bun run db:generate` | Generate Drizzle migration (requires `DATABASE_URL`). |
 | `bun run db:studio` | Open Drizzle Studio. |
@@ -386,7 +390,7 @@ Free space with `docker builder prune -af` and `docker system prune -af` (destru
 
 ### App container `Restarting` — `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
 
-The app throws on load if GitHub OAuth vars are missing. Set both in `.env` and ensure **`DEV_*` / `PORT`** produce a valid client URL. Restart: `docker compose up -d app` or `docker compose restart app`.
+The app throws on load if GitHub OAuth vars are missing. Set both in `.env` and ensure **`DEV_*` / `PORT`** produce a valid client URL. Restart: `docker compose up -d edge app-api marketing` or `docker compose restart edge app-api marketing`.
 
 ### Better Auth secret
 
@@ -398,10 +402,29 @@ From your **PC**, open **`http://<vm-ip>:3000`**, not `http://localhost:3000` (t
 
 ## Production deployment
 
-- Use the same `Dockerfile`, `docker/build-worker.Dockerfile`, and `docker-compose.yml` (or equivalent). Deploy both `app` and `deployment-worker` with production `.env` (or injected secrets).
-- The app listens on port 3000 inside the container. Expose it via a reverse proxy (e.g. Caddy, Nginx, Traefik) for TLS and single entrypoint.
+- Use the same `Dockerfile`, `docker/build-worker.Dockerfile`, and `docker-compose.yml` (or equivalent). Deploy **`edge`**, **`app-api`**, **`marketing`**, and **`deployment-worker`** with production `.env` (or injected secrets).
+- **`edge`** publishes port **3000** by default. Put TLS and public DNS in front of **`edge`**, or configure host-based routing via **`docker/edge-entry.sh`** and env (see **`.env.example`**).
 - Migrations run on startup when `RUN_MIGRATIONS=1`. For zero-downtime deploys, consider running migrations in a separate step before rolling new app containers.
-- Optional: build a single-file executable for non-Docker hosts; see [README](../README.md#build-a-single-file-executable).
+- Docker + Bun runtime is the supported production path. Single-file executable builds are optional and must be revalidated before relying on them.
+
+### Hetzner Ubuntu VPS with Nginx
+
+Run Docker Compose on the VPS and proxy public DNS (`deployher.com`, `dash.deployher.com`, `api.deployher.com`, preview `*.deployher.com`) to **`deployher-edge`** on port **3000**, or terminate TLS on the proxy and forward HTTP to **`edge`**. Use **`DEPLOYHER_EDGE_USE_PATH_ROUTING=0`** and the **`DEPLOYHER_*`** host env vars when routing by **Host** (see **`docs/DEPLOYMENT.md`**).
+
+- `deployher.com` → landing / marketing (static **Astro** via **`marketing`**).
+- `dash.deployher.com` → authenticated app (SSR). Client `fetch` calls go to **`api.`** when **`VITE_PUBLIC_API_ORIGIN`** is set at build time.
+- `api.deployher.com` → **`app-api`** (Better Auth + API). Set **`BETTER_AUTH_URL=https://api…`**.
+- `*.deployher.com` → deployment previews; edge must match preview subdomains to **`app-api`** before any catch-all to SSR.
+
+Nginx must preserve the incoming `Host` header because Bun uses it to distinguish dashboard/API hosts from deployment preview hosts. Also forward `X-Forwarded-Host`, `X-Forwarded-Proto`, and `X-Forwarded-For`.
+
+Disable buffering and use long timeouts for long-lived paths:
+
+- `/d/*`
+- `/preview/*`
+- `/deployments/*/log/stream`
+- `/deployments/*/runtime-log/stream`
+- server preview traffic proxied through the preview runner
 
 > [!IMPORTANT]
 > In production, set `PROD_PROTOCOL` and `PROD_DOMAIN` (and optionally `BETTER_AUTH_URL`) to your public app URL (HTTPS). GitHub OAuth callback URL must be `https://<your-domain>/api/auth/callback/github`. Do not rely on default or dev values for auth or OAuth redirects.

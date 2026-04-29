@@ -57,12 +57,12 @@ Each deployment emits a container image tarball (`runtime-image.tar`, Docker sav
 docker compose up -d --build
 ```
 
-App: `http://localhost:3000`. Migrations run in the app container; **seed** is not re-run by Compose — use **`deployher seed`** (Docker) or `bun run seed` on the host when using hot-reload dev below.
+App (**via `deployher-edge`**): `http://localhost:3000`. Migrations run in **`app-api`** on startup; **seed** is not re-run by Compose — use **`deployher seed`** (Docker) or `bun run seed` on the host when using hot-reload dev below.
 
 **Infra in Docker, app + worker on the host (hot reload, requires Bun):**
 
 ```bash
-docker compose stop app deployment-worker
+docker compose stop edge app-api marketing deployment-worker
 # terminal 1
 bun run dev
 # terminal 2
@@ -70,7 +70,7 @@ bun run start:worker
 # terminal 3 (server previews): bun run start:preview-runner — needs Docker + same S3 env as the app; set RUNNER_DOCKER_NETWORK to your compose default network (e.g. deployher_default) if the runner runs in a container
 ```
 
-Docker app: `http://localhost:3000`. Host Bun API (default from `config/default.toml`): `http://localhost:3001`. For the **Vite SPA** in dev, run **`bun run dev:vite`** (default `http://localhost:5173`); it proxies `/api` and `/assets` to the Bun server (`VITE_DEV_API_URL` overrides the proxy target if needed). If OrbStack or another service already owns `3000`, `docker compose stop app deployment-worker` only frees the Compose app ports; it does not stop unrelated listeners already bound on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows, env reference, and troubleshooting: **[docs/SETUP.md](docs/SETUP.md)**.
+Docker app (via **edge** on `http://localhost:3000`) proxies the Bun **API** and dashboard **SPA** (`dist/client`). For **local HMR**, run **`bun run dev`** (API) and **`bun run dev:vite`** (default `http://localhost:5173`); Vite proxies `/api`, `/d`, and `/preview` to the Bun server (`VITE_DEV_API_URL` overrides the proxy target). Marketing: **`bun run dev:marketing`** (Astro, default port **4321**) or the **`marketing`** compose service (static nginx). If OrbStack or another service already owns `3000`, `docker compose stop edge app-api marketing deployment-worker` frees the Compose **edge** port; it does not stop unrelated listeners on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows: **[docs/SETUP.md](docs/SETUP.md)**.
 
 Server previews are enabled when **`RUNNER_URL`** points at the preview-runner. Set **`RUNNER_PREVIEW_ENABLED=0`** to turn them off without removing `RUNNER_URL`. Match S3 (and optional registry) credentials on the runner. Optional **`RUNNER_SHARED_SECRET`** is sent as **`x-deployher-runner-secret`**.
 
@@ -94,7 +94,7 @@ See `examples/README.md` for usage.
 | Layer | Technology |
 |-------|-------------|
 | Runtime | [bun][bun-docs] |
-| HTTP / SSR | Bun.serve, React server-rendered pages |
+| HTTP / UI | Bun.serve front door; **Vite** dashboard SPA (`dist/client`); **Astro** marketing site (`apps/marketing`) |
 | Auth | [Better Auth][better-auth] (session, GitHub OAuth) |
 | Database | [postgres] with [drizzle] |
 | Queue | [redis] (Streams + consumer groups) |
@@ -107,7 +107,10 @@ See `examples/README.md` for usage.
 |------|---------|
 | `src/index.ts` | HTTP server entrypoint |
 | `src/router.ts` | Route table and request handling |
-| `src/routes/` | API and page handlers (projects, deployments, GitHub, account) |
+| `src/routes/` | API handlers and Bun front-door page/API contracts (projects, deployments, GitHub, account) |
+| `apps/marketing/` | Astro static site for apex landing and `/why` (nginx **marketing** image) |
+| `apps/marketing/public/` | Marketing-only static assets (e.g. hero image) copied into the Astro output |
+| `public/web/` | Dashboard-only static assets for the Vite client build |
 | `src/workers/buildWorker.ts` | Core build-job processor (clone, install, build, upload) |
 | `src/workers/runBuildWorker.ts` | Standalone build worker entrypoint |
 | `src/ui/` | React pages and client-side entrypoints |
@@ -122,7 +125,7 @@ See `examples/README.md` for usage.
 
 ## Build a single-file executable
 
-Bun can compile the server into one binary. Client assets must be built first and are embedded.
+Bun can compile the server into one binary, but this path is optional. Docker + Bun runtime is the supported production path (API + static `dist/client` + optional **marketing** image).
 
 **Current platform:**
 

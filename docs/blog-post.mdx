@@ -125,7 +125,7 @@ The `package.json` is refreshingly clean. The total dependency list:
 }
 ```
 
-Seven dependencies. For a full deployment platform with auth, database, container orchestration, and SSR. Compare that to a typical Next.js `node_modules` and weep.
+Seven dependencies. For a full deployment platform with auth, database, container orchestration, and a React dashboard. Compare that to a typical Next.js `node_modules` and weep.
 
 ## The entrypoint: 40 lines to a server
 
@@ -356,7 +356,7 @@ The route table is split into two arrays:
 - `/api/admin/examples` — example project management
 - `/api/admin/build-settings` — build container configuration
 
-There's also a dual API pattern—most resources are available both as HTML pages (for the SSR UI) and as JSON endpoints under `/api/`. The router checks the request's `Accept` header via `wantsHtml()` to decide whether to return a rendered page or a 404 JSON response.
+There's also a dual API pattern—HTML shells (SPA `index.html` or streamed bodies) and JSON under `/api/`. The router checks the request's `Accept` header via `wantsHtml()` to decide whether to return HTML or a 404 JSON response where that split still applies.
 
 ## The database: Drizzle + Postgres 18
 
@@ -922,7 +922,7 @@ The dashboard is a **single-page application** built with **Vite**, **React**, a
 
 Browser navigations receive the same `index.html` shell (with optional CSRF meta injection); the client loads route chunks and fetches data with `fetch(..., { credentials: "include" })`. Styles ship as hashed CSS under `/assets/*` from `vite build`.
 
-For **local development**, run the API with `bun run dev` (Bun) and the Vite dev server in another terminal (`bun run dev:vite`); Vite **proxies** `/api`, `/assets`, and preview paths to the Bun backend so the browser stays on a single origin (see `vite.config.ts` and `VITE_DEV_API_URL`).
+For **local development**, run the API with `bun run dev` (Bun) and the Vite dev server in another terminal (`bun run dev:vite`); Vite **proxies** `/api`, `/d`, and `/preview` to the Bun backend while hashed assets stay on the Vite origin (see `vite.config.ts` and `VITE_DEV_API_URL`). The static marketing site lives under `apps/marketing` (`bun run dev:marketing`).
 
 <Rabbit>
 Keeping React off the server keeps the Bun binary small, avoids streaming HTML from React, and makes caching and CSRF boundaries predictable. The tradeoff is first paint after load—mitigated with loading states and the same API the UI already needs for interactivity.
@@ -1074,9 +1074,9 @@ If your queue semantics are "FIFO with consumer groups and crash recovery," Redi
 
 No 47-package AWS SDK. No credential provider chain complexity. No `@smithy/middleware-retry` transitive dependency. Just `import { S3Client } from "bun"` and go. The multipart upload writer API is particularly nice for streaming large files.
 
-### React SSR without hydration is underrated
+### Static marketing + SPA dashboard is a fine split
 
-Not everything needs to be a SPA. A deployment dashboard is fundamentally a list of things with a detail view. Server render the HTML, sprinkle in some `<script>` tags for the interactive bits (log streaming, deploy buttons), and you're done. Zero JS bundle on most pages. Instant navigation. No hydration mismatch bugs.
+The apex site is a small **Astro** build with React islands for the landing copy; the product UI is a **Vite** SPA on the dash host. Same design system imports, but nginx serves marketing HTML without touching the Bun API process, and the dashboard shell stays one `index.html` plus route-level chunks.
 
 ### Hand-rolling a router is fine, actually
 
