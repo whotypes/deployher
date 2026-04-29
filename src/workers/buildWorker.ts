@@ -1483,6 +1483,7 @@ const buildProject = async (
             log: (line: string) => logLine(ctx, line),
             appendLogChunk: (content: string) => appendBuildLogChunk(ctx, content),
             env: combinedBuildEnv,
+            repoRootDir: roots.repoRoot,
             repoDir: roots.projectDir,
             workspaceDir: roots.workspaceDir,
             repoRelativeDir: roots.projectRelative,
