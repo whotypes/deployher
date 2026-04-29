@@ -1,7 +1,7 @@
 import { frameworkList } from "@vercel/frameworks";
 import { detectFrameworkRecord, LocalFileSystemDetector } from "@vercel/fs-detectors";
 import Docker from "dockerode";
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { cp, mkdir, mkdtemp, readdir, rm, stat } from "fs/promises";
 import { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
@@ -1853,10 +1853,37 @@ const processJob = async (job: DeploymentJob) => {
       })
       .where(eq(schema.deployments.id, deployment.id));
 
-    if (status === "success" && previewUrl) {
-      void refreshProjectSiteMetadata(deployment.projectId, { previewPageUrl: previewUrl }).catch((err) => {
-        console.error("Failed to refresh project site metadata:", err);
-      });
+    if (status === "success") {
+      await db
+        .update(schema.projects)
+        .set({ currentDeploymentId: deployment.id, updatedAt: new Date() })
+        .where(eq(schema.projects.id, deployment.projectId));
+      if (previewUrl) {
+        void refreshProjectSiteMetadata(deployment.projectId, { previewPageUrl: previewUrl }).catch((err) => {
+          console.error("Failed to refresh project site metadata:", err);
+        });
+      }
+    } else {
+      const [projRow] = await db
+        .select({ currentDeploymentId: schema.projects.currentDeploymentId })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, deployment.projectId))
+        .limit(1);
+      if (projRow?.currentDeploymentId === deployment.id) {
+        const [fallback] = await db
+          .select({ id: schema.deployments.id })
+          .from(schema.deployments)
+          .where(and(eq(schema.deployments.projectId, deployment.projectId), eq(schema.deployments.status, "success")))
+          .orderBy(desc(schema.deployments.finishedAt), desc(schema.deployments.createdAt))
+          .limit(1);
+        await db
+          .update(schema.projects)
+          .set({
+            currentDeploymentId: fallback?.id ?? null,
+            updatedAt: new Date()
+          })
+          .where(eq(schema.projects.id, deployment.projectId));
+      }
     }
 
     await publishDeploymentEvent(deployment.id, { type: "status", status });
