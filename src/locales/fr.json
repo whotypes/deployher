@@ -48,12 +48,24 @@
     "whyDocumentTitle": "Manifeste - {{appName}}",
     "projectFallbackTitle": "Projet · {{appName}}",
     "deploymentFallbackTitle": "Déploiement · {{appName}}",
+    "deploymentNotFoundDocumentTitle": "Déploiement introuvable · {{appName}}",
+    "projectNotFoundDocumentTitle": "Projet introuvable · {{appName}}",
     "settingsFallbackTitle": "Paramètres · {{appName}}",
     "observabilityFallbackTitle": "Observabilité · {{appName}}"
   },
   "routes": {
     "missingDeploymentId": "Identifiant de déploiement manquant",
-    "missingProjectId": "Identifiant de projet manquant"
+    "missingProjectId": "Identifiant de projet manquant",
+    "deploymentNotFoundEyebrow": "Déploiement",
+    "deploymentNotFoundTitle": "Nous n'avons pas trouvé ce déploiement",
+    "deploymentNotFoundBody": "Il a peut-être été supprimé avec son projet, ou le lien est incorrect.",
+    "deploymentNotFoundCta": "Retour au tableau de bord",
+    "deploymentNotFoundSecondaryCta": "Tous les projets",
+    "projectNotFoundEyebrow": "Espace de travail",
+    "projectNotFoundTitle": "Projet introuvable",
+    "projectNotFoundBody": "Ce projet a peut-être été supprimé, ou le lien est incorrect.",
+    "projectNotFoundCta": "Retour au tableau de bord",
+    "projectNotFoundSecondaryCta": "Tous les projets"
   },
   "shell": {
     "closeMenu": "Fermer le menu",
@@ -377,7 +389,9 @@
     "title": "Page introuvable",
     "body": "Le chemin demandé ne correspond à aucune route. Vérifiez l’URL ou revenez au tableau de bord.",
     "backDashboard": "Retour au tableau de bord",
-    "goDashboardAria": "Aller au tableau de bord"
+    "goDashboardAria": "Aller au tableau de bord",
+    "browseProjects": "Tous les projets",
+    "browseProjectsAria": "Parcourir tous les projets"
   },
   "layoutPrefs": {
     "triggerAria": "Paramètres d’affichage de l’espace de travail",
