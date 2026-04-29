@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { listLocalExamples, parseExampleRepoUrl, toExampleRepoUrl } from "../examples";
+import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
 
 export type ExampleDeploymentSummary = {
   id: string;
@@ -26,7 +27,11 @@ const toDeploymentSummary = (
   status: deployment.status,
   createdAt: deployment.createdAt.toISOString(),
   finishedAt: deployment.finishedAt?.toISOString() ?? null,
-  previewUrl: deployment.previewUrl
+  previewUrl: effectiveDeploymentPreviewUrl(
+    deployment.status,
+    deployment.previewUrl,
+    deployment.shortId
+  )
 });
 
 export const buildExampleRowsForUser = async (userId: string): Promise<ExampleRow[]> => {
