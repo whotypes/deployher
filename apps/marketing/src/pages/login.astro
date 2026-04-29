@@ -1,0 +1,19 @@
+---
+import { getMarketingDashOrigin } from "@/lib/marketingDashOrigin";
+
+const dash = getMarketingDashOrigin();
+const target = `${dash}${Astro.url.pathname}${Astro.url.search}${Astro.url.hash}`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charSet="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting…</title>
+    <meta http-equiv="refresh" content={`0;url=${target}`} />
+    <link rel="canonical" href={target} />
+  </head>
+  <body>
+    <p><a href={target}>Continue to sign in</a></p>
+  </body>
+</html>
