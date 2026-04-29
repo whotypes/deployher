@@ -7,5 +7,6 @@ infra/.garage.env
 config/local.toml
 .deployher-venv
 .deployher-venv-*
+.deployher/
 logs/
 .cursor/
