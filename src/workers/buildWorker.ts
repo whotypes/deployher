@@ -166,8 +166,23 @@ const isLongQuietPackageBuildCommand = (cmd: string[]): boolean => {
   );
 };
 
+const isQuietDependencyInstallCommand = (cmd: string[]): boolean => {
+  const j = cmd.join(" ").toLowerCase();
+  return (
+    j.includes("bun install") ||
+    j.includes("npm install") ||
+    j.includes("npm ci") ||
+    j.includes("pnpm install") ||
+    j.includes("yarn install") ||
+    /\buv\s+sync\b/.test(j) ||
+    /\bpoetry\s+install\b/.test(j) ||
+    /\bpip\s+install\b/.test(j) ||
+    /\bpython3?\s+-m\s+pip\s+install\b/.test(j)
+  );
+};
+
 export const resolveDockerCommandInactivityTimeoutMs = (cmd: string[]): number => {
-  if (!isLongQuietPackageBuildCommand(cmd)) {
+  if (!isLongQuietPackageBuildCommand(cmd) && !isQuietDependencyInstallCommand(cmd)) {
     return BUILD_COMMAND_INACTIVITY_TIMEOUT_MS;
   }
   if (
@@ -373,7 +388,7 @@ const readProcessStream = async (
 
 const describeSilentCommandHint = (cmd: string[]): string | null => {
   const joined = cmd.join(" ").toLowerCase();
-  if (joined.includes("bun install") || joined.includes("npm install") || joined.includes("npm ci") || joined.includes("pnpm install")) {
+  if (isQuietDependencyInstallCommand(cmd)) {
     return "Dependency installs can go quiet during native module builds like node-gyp, canvas, or sharp.";
   }
   if (isLongQuietPackageBuildCommand(cmd)) {

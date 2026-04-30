@@ -46,8 +46,9 @@ describe("resolveDockerCommandInactivityTimeoutMs", () => {
     expect(resolveDockerCommandInactivityTimeoutMs(["bun", "run", "build"])).toBe(300000);
   });
 
-  it("uses the standard timeout for dependency installs", () => {
-    expect(resolveDockerCommandInactivityTimeoutMs(["bun", "install"])).toBe(30000);
+  it("uses a long quiet-window timeout for dependency installs inside Docker", () => {
+    expect(resolveDockerCommandInactivityTimeoutMs(["bun", "install"])).toBe(300000);
+    expect(resolveDockerCommandInactivityTimeoutMs(["npm", "ci"])).toBe(300000);
   });
 
   it("uses a long quiet-window timeout for next build", () => {
