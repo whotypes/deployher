@@ -1,7 +1,7 @@
 "use client";
 
 import type { TFunction } from "i18next";
-import { Eye, EyeOff, Mail, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Rocket } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useSearchParams } from "@/spa/routerCompat";
@@ -411,7 +411,7 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
               className="flex w-fit items-center gap-2 rounded-full border border-black/10 bg-white/90 px-3 py-2 text-lg font-semibold text-black shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
             >
               <span className="flex size-8 items-center justify-center rounded-lg bg-black text-white">
-                <Sparkles className="size-4" />
+                <Rocket className="size-4" aria-hidden />
               </span>
               <span>{t("common.deployherBrand")}</span>
             </Link>
@@ -647,7 +647,7 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
           <div className="w-full max-w-[420px]">
             <div className="mb-12 flex items-center justify-center gap-2 text-lg font-semibold lg:hidden">
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
-                <Sparkles className="size-4 text-primary" />
+                <Rocket className="size-4 text-primary" aria-hidden />
               </span>
               <span>{t("common.deployherBrand")}</span>
             </div>
@@ -745,7 +745,7 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
             </form>
 
             {!showLoggedInOauthRecovery ? (
-              <div className="mt-6 space-y-3">
+              <div className="mt-6">
                 <Button
                   id="sign-in"
                   type="button"
@@ -757,10 +757,6 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
                   <GitHubMark className="mr-2 size-5" />
                   {t("login.signInGithub")}
                 </Button>
-                <p className="text-center font-mono text-xs leading-relaxed text-muted-foreground">
-                  <Mail className="mr-1 inline size-3.5" aria-hidden />
-                  {t("common.oauthRepoScopedAccess")}
-                </p>
               </div>
             ) : null}
 

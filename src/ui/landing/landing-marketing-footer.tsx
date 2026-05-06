@@ -1,3 +1,4 @@
+import { Rocket } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Link } from "@/spa/routerCompat"
 
@@ -21,7 +22,12 @@ export const LandingMarketingFooter = ({ authenticated }: LandingMarketingFooter
         </h2>
         <div className="grid gap-12 md:grid-cols-4">
           <div className="md:col-span-1">
-            <p className="font-serif text-2xl font-semibold tracking-tight">{t("common.deployherBrand")}</p>
+            <p className="font-serif flex items-center gap-2.5 text-2xl font-semibold tracking-tight">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                <Rocket className="size-[18px] text-primary" aria-hidden />
+              </span>
+              {t("common.deployherBrand")}
+            </p>
             <p className="text-muted-foreground mt-3 text-base leading-relaxed">{t("landing.footer.tagline")}</p>
           </div>
           <div>

@@ -1,9 +1,8 @@
-import type { ComponentType } from "react";
-import { useMemo } from "react";
+import { useMemo, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@/spa/routerCompat";
 import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import { ProjectSettingsPageClient } from "./client/ProjectSettingsPageClient";
 import { FolderKanban, KeyRound, Settings, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -82,25 +81,28 @@ export const ProjectSettingsPage = ({
     [t]
   );
 
-  return (
-    <AppShell
-      title={t("meta.settingsTitle", { name: project.name, appName: t("common.appName") })}
-      pathname={data.pathname}
-      user={data.user ?? null}
-      sidebarProjects={data.sidebarProjects}
-      sidebarContext={{
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.settingsTitle", { name: project.name, appName: t("common.appName") }),
+      breadcrumbs: [
+        { label: t("common.projects"), href: "/projects" },
+        { label: project.name, href: `/projects/${project.id}` },
+        { label: t("projectSettings.breadcrumbSettings") }
+      ],
+      sidebarContext: {
         project: {
           id: project.id,
           name: project.name
         },
         deployment: data.sidebarFeaturedDeployment
-      }}
-      breadcrumbs={[
-        { label: t("common.projects"), href: "/projects" },
-        { label: project.name, href: `/projects/${project.id}` },
-        { label: t("projectSettings.breadcrumbSettings") }
-      ]}
-    >
+      }
+    }),
+    [t, project.id, project.name, data.sidebarFeaturedDeployment]
+  );
+  useWorkspaceChrome(chrome);
+
+  return (
+    <>
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -148,6 +150,6 @@ export const ProjectSettingsPage = ({
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 };

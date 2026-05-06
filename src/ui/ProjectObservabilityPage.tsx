@@ -1,7 +1,8 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@/spa/routerCompat";
 import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import { ProjectObservabilityPageClient } from "./client/ProjectObservabilityPageClient";
 import { Activity, FolderKanban } from "lucide-react";
 
@@ -36,22 +37,25 @@ export const ProjectObservabilityPage = ({ data }: { data: ProjectObservabilityD
     runtimeLogs: data.runtimeLogs
   };
 
-  return (
-    <AppShell
-      title={t("meta.observabilityTitle", { name: project.name, appName: t("common.appName") })}
-      pathname={data.pathname}
-      user={data.user ?? null}
-      sidebarProjects={data.sidebarProjects}
-      sidebarContext={{
-        project: { id: project.id, name: project.name },
-        deployment: data.sidebarFeaturedDeployment
-      }}
-      breadcrumbs={[
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.observabilityTitle", { name: project.name, appName: t("common.appName") }),
+      breadcrumbs: [
         { label: t("common.projects"), href: "/projects" },
         { label: project.name, href: `/projects/${project.id}` },
         { label: t("projectObservability.pageHeading") }
-      ]}
-    >
+      ],
+      sidebarContext: {
+        project: { id: project.id, name: project.name },
+        deployment: data.sidebarFeaturedDeployment
+      }
+    }),
+    [t, project.id, project.name, data.sidebarFeaturedDeployment]
+  );
+  useWorkspaceChrome(chrome);
+
+  return (
+    <>
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -77,6 +81,6 @@ export const ProjectObservabilityPage = ({ data }: { data: ProjectObservabilityD
       <div id="project-observability-root" className="space-y-8">
         <ProjectObservabilityPageClient bootstrap={bootstrap} />
       </div>
-    </AppShell>
+    </>
   );
 };

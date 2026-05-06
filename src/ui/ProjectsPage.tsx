@@ -3,13 +3,13 @@ import { useMemo } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Link } from "@/spa/routerCompat";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
 import { ProjectSiteGlyph } from "./client/ProjectSiteGlyph";
 
 type FrameworkHint = "auto" | "nextjs" | "node" | "python" | "static";
@@ -395,17 +395,19 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
 
 export const ProjectsPage = ({ data }: { data: ProjectsPageData }) => {
   const { t } = useTranslation();
-  return (
-    <AppShell
-      title={t("meta.titleWithApp", {
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.titleWithApp", {
         page: t("projects.pageTitle"),
         appName: t("common.appName")
-      })}
-      pathname={data.pathname}
-      user={data.user ?? null}
-      sidebarProjects={data.sidebarProjects}
-      breadcrumbs={[{ label: t("projects.pageTitle") }]}
-    >
+      }),
+      breadcrumbs: [{ label: t("projects.pageTitle") }]
+    }),
+    [t]
+  );
+  useWorkspaceChrome(chrome);
+  return (
+    <>
       <div className="mb-6 space-y-4 rounded-lg border border-border/70 bg-card/20 p-4 md:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{t("projects.pageTitle")}</h1>
@@ -436,6 +438,6 @@ export const ProjectsPage = ({ data }: { data: ProjectsPageData }) => {
           ))}
         </div>
       )}
-    </AppShell>
+    </>
   );
 };

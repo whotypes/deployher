@@ -1,12 +1,13 @@
 import { formatDistanceToNow } from "date-fns";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "@/spa/routerCompat";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import type { HealthData } from "../health/HealthPage";
 import { getDateFnsLocale } from "@/lib/dateLocale";
 import type { WorkspaceDashboardCharts } from "../lib/workspaceDashboardMetrics";
 import { formatBytes, formatDuration } from "../utils/format";
 import type { LayoutUser, SidebarProjectSummary } from "./layoutUser";
-import { AppShell } from "./AppShell";
 import { DashboardPageClient } from "./client/DashboardPageClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,15 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
     appName: t("common.appName")
   });
 
+  const chrome = useMemo(
+    () => ({
+      title: pageTitle,
+      breadcrumbs: [{ label: t("dashboard.pageTitle") }]
+    }),
+    [pageTitle, t]
+  );
+  useWorkspaceChrome(chrome);
+
   const deploymentStatusLabel = (status: string): string => {
     const s = status.toLowerCase();
     if (s === "building") return t("projects.status.building");
@@ -85,13 +95,7 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
   };
 
   return (
-    <AppShell
-      title={pageTitle}
-      pathname={data.pathname}
-      user={data.user ?? null}
-      sidebarProjects={data.sidebarProjects}
-      breadcrumbs={[{ label: t("dashboard.pageTitle") }]}
-    >
+    <>
       <div className="mb-6 flex flex-col gap-4 rounded-lg border border-border/70 bg-card/20 p-4 md:flex-row md:items-center md:justify-between md:p-5">
         <div className="min-w-0 space-y-1">
           <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{t("dashboard.pageTitle")}</h1>
@@ -341,7 +345,7 @@ const DashboardPage = ({ data }: { data: DashboardData }) => {
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 };
 

@@ -170,6 +170,7 @@ const publicRoutes: PublicRoute[] = [
 const protectedRoutes: ProtectedRoute[] = [
   { pattern: "/api/cli/whoami", methods: { GET: cliApi.getCliWhoamiApi } },
   { pattern: "/api/workspace/dashboard", methods: { GET: uiApi.getWorkspaceDashboardApi } },
+  { pattern: "/api/ui/workspace-shell", methods: { GET: uiApi.getUiWorkspaceShellApi } },
   { pattern: "/api/ui/projects-page", methods: { GET: uiApi.getUiProjectsPageApi } },
   { pattern: "/api/ui/new-project", methods: { GET: uiApi.getUiNewProjectApi } },
   { pattern: "/api/ui/projects/:id/detail", methods: { GET: uiApi.getUiProjectDetailApi } },

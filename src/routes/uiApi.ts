@@ -47,6 +47,14 @@ export const getWorkspaceDashboardApi = async (req: RequestWithParamsAndSession)
   return json(data);
 };
 
+export const getUiWorkspaceShellApi = async (req: RequestWithParamsAndSession) => {
+  const sidebarProjects = await listSidebarProjectSummariesForUser(req.session.user.id);
+  return json({
+    user: pageData.toLayoutUser(sessionUser(req)),
+    sidebarProjects
+  });
+};
+
 export const getUiProjectsPageApi = async (req: RequestWithParamsAndSession) => {
   const pathname = new URL(req.url).pathname;
   const data = await pageData.buildProjectsPageData(sessionUser(req), pathname, req.csrfToken ?? "");

@@ -73,17 +73,17 @@ const LandingPage = ({ authenticated }: LandingPageProps) => {
                   <Link
                     id="sign-in"
                     to="/login"
-                    className="inline-flex h-14 items-center justify-center gap-2.5 rounded-md bg-primary px-8 text-lg font-semibold text-primary-foreground no-underline shadow-[0_14px_40px_-18px_color-mix(in_oklab,var(--primary)_88%,black)] ring-1 ring-primary/35 transition-opacity duration-200 hover:no-underline hover:opacity-95"
+                    className="inline-flex h-14 items-center justify-center rounded-md bg-primary px-8 text-lg font-semibold text-primary-foreground no-underline shadow-[0_14px_40px_-18px_color-mix(in_oklab,var(--primary)_88%,black)] ring-1 ring-primary/35 transition-opacity duration-200 hover:no-underline hover:opacity-95"
                     aria-label={t("landing.signInGithubAria")}
                   >
-                    <GitHubMark className="size-5 text-primary-foreground" />
                     {t("landing.signInGithub")}
                   </Link>
                   <a
                     href={GITHUB_URL}
-                    className="border-input bg-background/60 text-foreground hover:bg-accent/80 inline-flex h-14 items-center justify-center rounded-md border px-8 text-lg font-medium no-underline backdrop-blur transition-colors hover:no-underline"
+                    className="border-input bg-background/60 text-foreground hover:bg-accent/80 inline-flex h-14 items-center justify-center gap-2.5 rounded-md border px-8 text-lg font-medium no-underline backdrop-blur transition-colors hover:no-underline"
                     rel="noopener noreferrer"
                   >
+                    <GitHubMark className="size-5 shrink-0 text-foreground" />
                     {t("landing.githubRepo")}
                   </a>
                 </div>

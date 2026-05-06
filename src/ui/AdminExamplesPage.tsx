@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import { AdminExamplesPageClient } from "./client/AdminExamplesPageClient";
 
 type BuildSettings = {
@@ -35,14 +36,16 @@ export type AdminExamplesPageData = {
 
 export const AdminExamplesPage = ({ data }: { data: AdminExamplesPageData }) => {
   const { t } = useTranslation();
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.adminExamplesTitle"),
+      breadcrumbs: [{ label: t("dashboard.admin") }]
+    }),
+    [t]
+  );
+  useWorkspaceChrome(chrome);
   return (
-    <AppShell
-      title={t("meta.adminExamplesTitle")}
-      pathname={data.pathname}
-      user={data.user ?? null}
-      breadcrumbs={[{ label: t("dashboard.admin") }]}
-      sidebarProjects={data.sidebarProjects}
-    >
+    <>
       <div
         id="notification"
         aria-live="polite"
@@ -52,6 +55,6 @@ export const AdminExamplesPage = ({ data }: { data: AdminExamplesPageData }) => 
         initialExamples={data.examples}
         initialBuildSettings={data.buildSettings}
       />
-    </AppShell>
+    </>
   );
 };

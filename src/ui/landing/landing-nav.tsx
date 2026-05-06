@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Languages } from "lucide-react"
+import { Languages, Rocket } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Link } from "@/spa/routerCompat"
 
@@ -85,8 +85,7 @@ export const LandingNav = ({ authenticated }: LandingNavProps) => {
     { href: "#landing-features", label: t("landing.nav.features") },
     { href: "#landing-workflow", label: t("landing.nav.workflow") },
     { href: "#landing-pricing", label: t("landing.nav.pricing") },
-    { href: DOCS_URL, label: t("landing.nav.docs"), external: true },
-    { href: "/why", label: t("landing.whySelfHost") }
+    { href: DOCS_URL, label: t("landing.nav.docs"), external: true }
   ]
 
   return (
@@ -100,8 +99,11 @@ export const LandingNav = ({ authenticated }: LandingNavProps) => {
         <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-6 md:gap-10">
           <Link
             to="/"
-            className="font-serif shrink-0 text-lg font-semibold tracking-tight text-foreground no-underline hover:no-underline md:text-xl"
+            className="font-serif inline-flex shrink-0 items-center gap-2 text-lg font-semibold tracking-tight text-foreground no-underline hover:no-underline md:text-xl"
           >
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
+              <Rocket className="size-4 text-primary" aria-hidden />
+            </span>
             {t("common.deployherBrand")}
           </Link>
 

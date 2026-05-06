@@ -1,7 +1,8 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@/spa/routerCompat";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
 import { AccountDeleteSection, AccountWorkspacePreferences } from "./client/AccountPageClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -21,14 +22,16 @@ const providerLabel = (providerId: string, t: (key: string) => string): string =
 
 export const AccountPage = ({ data }: { data: AccountPageData }) => {
   const { t } = useTranslation();
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.titleWithApp", { page: t("account.pageTitle"), appName: t("common.appName") }),
+      breadcrumbs: [{ label: t("account.pageTitle") }]
+    }),
+    [t]
+  );
+  useWorkspaceChrome(chrome);
   return (
-    <AppShell
-      title={t("meta.titleWithApp", { page: t("account.pageTitle"), appName: t("common.appName") })}
-      pathname={data.pathname}
-      user={data.user}
-      breadcrumbs={[{ label: t("account.pageTitle") }]}
-      sidebarProjects={data.sidebarProjects}
-    >
+    <>
       <div className="mb-8">
         <p className="eyebrow-label mb-2">{t("account.eyebrow")}</p>
         <h1 className="font-serif text-3xl font-semibold tracking-tight md:text-4xl">{t("account.heading")}</h1>
@@ -202,6 +205,6 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
           </CardContent>
         </Card>
       </div>
-    </AppShell>
+    </>
   );
 };

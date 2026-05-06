@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { AppErrorBoundary } from "./AppErrorBoundary";
+import { WorkspaceLayout } from "./WorkspaceLayout";
 import { setSpaNavigate } from "./spaNavigationBridge";
 import { LandingRoute } from "./routes/LandingRoute";
 import { DashboardRoute } from "./routes/DashboardRoute";
@@ -40,18 +41,20 @@ export const App = () => (
       <Route path="/login" element={<LoginRoute />} />
       <Route path="/device" element={<DeviceAuthorizeRoute />} />
       <Route path="/home" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/dashboard" element={<DashboardRoute />} />
-      <Route path="/projects" element={<ProjectsRoute />} />
-      <Route path="/projects/new" element={<NewProjectRoute />} />
-      <Route path="/projects/:id" element={<ProjectDetailRoute />} />
-      <Route path="/projects/:id/settings" element={<ProjectSettingsRoute section="general" />} />
-      <Route path="/projects/:id/settings/env" element={<ProjectSettingsRoute section="env" />} />
-      <Route path="/projects/:id/settings/danger" element={<ProjectSettingsRoute section="danger" />} />
-      <Route path="/projects/:id/observability" element={<ProjectObservabilityRoute />} />
-      <Route path="/deployments/:id" element={<DeploymentDetailRoute />} />
-      <Route path="/account" element={<AccountRoute />} />
-      <Route path="/admin" element={<AdminRoute />} />
-      <Route path="/health" element={<HealthRoute />} />
+      <Route element={<WorkspaceLayout />}>
+        <Route path="/dashboard" element={<DashboardRoute />} />
+        <Route path="/projects" element={<ProjectsRoute />} />
+        <Route path="/projects/new" element={<NewProjectRoute />} />
+        <Route path="/projects/:id" element={<ProjectDetailRoute />} />
+        <Route path="/projects/:id/settings" element={<ProjectSettingsRoute section="general" />} />
+        <Route path="/projects/:id/settings/env" element={<ProjectSettingsRoute section="env" />} />
+        <Route path="/projects/:id/settings/danger" element={<ProjectSettingsRoute section="danger" />} />
+        <Route path="/projects/:id/observability" element={<ProjectObservabilityRoute />} />
+        <Route path="/deployments/:id" element={<DeploymentDetailRoute />} />
+        <Route path="/account" element={<AccountRoute />} />
+        <Route path="/admin" element={<AdminRoute />} />
+        <Route path="/health" element={<HealthRoute />} />
+      </Route>
       <Route path="*" element={<NotFoundRoute />} />
     </Routes>
   </AppErrorBoundary>

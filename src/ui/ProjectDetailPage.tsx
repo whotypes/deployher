@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@/spa/routerCompat";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
 import type { ProjectDetailBootstrap } from "./client/ProjectDetailPageClient";
 import { ProjectDetailInteractiveMount } from "./client/ProjectDetailInteractiveMount";
 import { ProjectDeploymentsPanel } from "./client/ProjectDeploymentsPanel";
@@ -149,30 +149,33 @@ export const ProjectDetailPage = ({
     deploymentStatusesKey
   ]);
 
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.projectTitle", { name: data.project.name, appName: t("common.appName") }),
+      breadcrumbs: [
+        { label: t("common.projects"), href: "/projects" },
+        { label: data.project.name }
+      ],
+      sidebarContext: {
+        project: {
+          id: data.project.id,
+          name: data.project.name
+        },
+        deployment: pickFeaturedDeploymentFromSortedDesc(
+          deployments.map((d) => ({
+            id: d.id,
+            shortId: d.shortId,
+            status: d.status
+          }))
+        )
+      }
+    }),
+    [t, data.project.id, data.project.name, deploymentStatusesKey]
+  );
+  useWorkspaceChrome(chrome);
+
   return (
-  <AppShell
-    title={t("meta.projectTitle", { name: data.project.name, appName: t("common.appName") })}
-    pathname={data.pathname}
-    user={data.user ?? null}
-    sidebarProjects={data.sidebarProjects}
-    sidebarContext={{
-      project: {
-        id: data.project.id,
-        name: data.project.name
-      },
-      deployment: pickFeaturedDeploymentFromSortedDesc(
-        deployments.map((d) => ({
-          id: d.id,
-          shortId: d.shortId,
-          status: d.status
-        }))
-      )
-    }}
-    breadcrumbs={[
-      { label: t("common.projects"), href: "/projects" },
-      { label: data.project.name }
-    ]}
-  >
+    <>
     <div
       id="notification"
       aria-live="polite"
@@ -456,6 +459,6 @@ export const ProjectDetailPage = ({
       <div id="project-detail-repo-explorer-root" className="min-w-0" />
     </div>
     <ProjectDetailInteractiveMount bootstrap={interactiveBootstrap} onRequestDetailRefetch={onRequestDetailRefetch} />
-  </AppShell>
+    </>
   );
 };

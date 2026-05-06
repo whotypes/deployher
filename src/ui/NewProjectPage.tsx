@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
 import { NewProjectPageClient } from "./client/NewProjectPageClient";
 
 export type NewProjectPageData = {
@@ -16,20 +17,22 @@ export type NewProjectPageData = {
 
 export const NewProjectPage = ({ data }: { data: NewProjectPageData }) => {
   const { t } = useTranslation();
-  return (
-    <AppShell
-      title={t("meta.titleWithApp", {
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.titleWithApp", {
         page: t("newProject.pageTitle"),
         appName: t("common.appName")
-      })}
-      pathname={data.pathname}
-      user={data.user ?? null}
-      sidebarProjects={data.sidebarProjects}
-      breadcrumbs={[
+      }),
+      breadcrumbs: [
         { label: t("common.projects"), href: "/projects" },
         { label: t("newProject.breadcrumbNew") }
-      ]}
-    >
+      ]
+    }),
+    [t]
+  );
+  useWorkspaceChrome(chrome);
+  return (
+    <>
       <div
         id="notification"
         aria-live="polite"
@@ -54,6 +57,6 @@ export const NewProjectPage = ({ data }: { data: NewProjectPageData }) => {
           />
         </div>
       </div>
-    </AppShell>
+    </>
   );
 };

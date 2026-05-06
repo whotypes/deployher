@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AppShell } from "./AppShell";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import { DeploymentDetailPageClient } from "./client/DeploymentDetailPageClient";
 
 type Deployment = {
@@ -46,31 +47,37 @@ export const DeploymentDetailPage = ({
   onRequestDeploymentRefetch?: () => void;
 }) => {
   const { t } = useTranslation();
-  return (
-    <AppShell
-      title={t("meta.deploymentTitle", { shortId: data.deployment.shortId, appName: t("common.appName") })}
-      pathname={data.pathname}
-      user={data.user ?? null}
-      sidebarProjects={data.sidebarProjects}
-      sidebarContext={{
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.deploymentTitle", { shortId: data.deployment.shortId, appName: t("common.appName") }),
+      breadcrumbs: [
+        { label: t("common.projects"), href: "/projects" },
+        { label: data.project.name, href: `/projects/${data.project.id}` },
+        { label: data.deployment.shortId }
+      ],
+      sidebarContext: {
         project: {
           id: data.project.id,
           name: data.project.name
         },
         deployment: data.sidebarFeaturedDeployment
-      }}
-      breadcrumbs={[
-        { label: t("common.projects"), href: "/projects" },
-        { label: data.project.name, href: `/projects/${data.project.id}` },
-        { label: data.deployment.shortId }
-      ]}
-    >
-      <div id="deployment-detail-client-root">
-        <DeploymentDetailPageClient
-          initialData={data}
-          onRequestDeploymentRefetch={onRequestDeploymentRefetch}
-        />
-      </div>
-    </AppShell>
+      }
+    }),
+    [
+      t,
+      data.deployment.shortId,
+      data.project.id,
+      data.project.name,
+      data.sidebarFeaturedDeployment
+    ]
+  );
+  useWorkspaceChrome(chrome);
+  return (
+    <div id="deployment-detail-client-root">
+      <DeploymentDetailPageClient
+        initialData={data}
+        onRequestDeploymentRefetch={onRequestDeploymentRefetch}
+      />
+    </div>
   );
 };

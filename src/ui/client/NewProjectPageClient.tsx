@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight, CircleHelp, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useSearchParams } from "@/spa/routerCompat";
@@ -305,6 +306,7 @@ const SetupStepRail = ({
 export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProjectPageClientProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const routerLocation = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [createMode, setCreateMode] = React.useState<"import" | "manual">(() =>
@@ -542,13 +544,17 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     [fullNameMap, loadBranchesForRepo]
   );
 
-  const finishCreate = (projectId?: string) => {
-    if (!projectId) {
-      navigate("/projects");
-      return;
-    }
-    navigate(readOpenAfterCreate() ? `/projects/${projectId}` : "/projects");
-  };
+  const finishCreate = React.useCallback(
+    (projectId?: string) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-shell"] });
+      if (!projectId) {
+        navigate("/projects");
+        return;
+      }
+      navigate(readOpenAfterCreate() ? `/projects/${projectId}` : "/projects");
+    },
+    [navigate, queryClient]
+  );
 
   React.useEffect(() => {
     if (createMode !== "import") return;

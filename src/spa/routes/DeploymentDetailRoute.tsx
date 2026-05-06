@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "@/spa/routerCompat";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { DeploymentDetailData } from "@/ui/DeploymentDetailPage";
 import { DeploymentDetailPage } from "@/ui/DeploymentDetailPage";
-import { ResourceNotFoundHero } from "@/ui/resource-not-found-hero";
+import {
+  WorkspaceDeploymentNotFoundHero,
+  WorkspaceFetchErrorCard,
+  WorkspaceRouteMessage
+} from "../workspaceRouteChrome";
 import { FetchJsonError, fetchJson } from "../api";
 
 export const DeploymentDetailRoute = () => {
@@ -42,11 +44,11 @@ export const DeploymentDetailRoute = () => {
   }, [notFound, t]);
 
   if (!id) {
-    return <div className="text-destructive p-6">{t("routes.missingDeploymentId")}</div>;
+    return <WorkspaceRouteMessage variant="destructive" message={t("routes.missingDeploymentId")} />;
   }
   if (notFound) {
     return (
-      <ResourceNotFoundHero
+      <WorkspaceDeploymentNotFoundHero
         eyebrow={t("routes.deploymentNotFoundEyebrow")}
         title={t("routes.deploymentNotFoundTitle")}
         description={t("routes.deploymentNotFoundBody")}
@@ -56,21 +58,7 @@ export const DeploymentDetailRoute = () => {
     );
   }
   if (error) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center p-6">
-        <Card className="w-full max-w-md border-destructive/30">
-          <CardHeader>
-            <CardTitle className="text-lg text-destructive">{t("common.fetchFailed")}</CardTitle>
-            <CardDescription className="text-muted-foreground">{error}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" onClick={() => setDetailRefresh((n) => n + 1)}>
-              {t("common.refresh")}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <WorkspaceFetchErrorCard error={error} onRetry={() => setDetailRefresh((n) => n + 1)} />;
   }
   if (!data) {
     return <div className="text-muted-foreground p-6">{t("common.loading")}</div>;

@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { LayoutUser, SidebarProjectSummary } from "../ui/layoutUser";
-import { AppShell } from "../ui/AppShell";
+import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import { HealthPageClient } from "../ui/client/HealthPageClient";
 
 export type HealthData = {
@@ -36,18 +37,16 @@ export type HealthData = {
 
 export const HealthPage = ({ data }: { data: HealthData }) => {
   const { t } = useTranslation();
-  return (
-    <AppShell
-      title={t("meta.healthTitle", { appName: t("common.appName") })}
-      pathname={data.pathname ?? "/health"}
-      user={data.user ?? null}
-      breadcrumbs={[
+  const chrome = useMemo(
+    () => ({
+      title: t("meta.healthTitle", { appName: t("common.appName") }),
+      breadcrumbs: [
         { label: t("dashboard.pageTitle"), href: "/dashboard" },
         { label: t("health.breadcrumb") }
-      ]}
-      sidebarProjects={data.sidebarProjects}
-    >
-      <HealthPageClient initialData={data} />
-    </AppShell>
+      ]
+    }),
+    [t]
   );
+  useWorkspaceChrome(chrome);
+  return <HealthPageClient initialData={data} />;
 };
