@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isPdployApiPathOnTenantHost } from "./router";
+import { isPdployApiPathOnTenantHost } from "./lib/deployherHosts";
 
 describe("isPdployApiPathOnTenantHost", () => {
   test("matches known dashboard API prefixes for tenant preview host", () => {

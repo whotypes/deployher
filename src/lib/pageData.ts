@@ -1,6 +1,5 @@
 import { and, count, desc, eq, inArray } from "drizzle-orm";
-import { getStartedAt, getServer } from "../appContext";
-import { buildPublicPreviewUrl, config, getDevProjectUrlPattern, getProdProjectUrlPattern } from "../config";
+import { buildPublicPreviewUrl, config } from "../config";
 import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { getBuildContainerConfig } from "../admin/buildSettings";
@@ -22,6 +21,7 @@ import {
   getSidebarFeaturedDeploymentForProject,
   listSidebarProjectSummariesForUser
 } from "../routes/projects";
+import { buildHealthCore } from "./healthCore";
 
 export type SessionUserForPage = {
   id: string;
@@ -38,39 +38,7 @@ export const toLayoutUser = (user: SessionUserForPage): LayoutUser => ({
   role: user.role
 });
 
-export const buildHealthCore = (): Omit<HealthData, "pathname" | "user" | "sidebarProjects"> => {
-  const memory = process.memoryUsage();
-  const cpu = process.cpuUsage();
-  const server = getServer();
-  const startedAt = getStartedAt();
-  return {
-    status: "ok",
-    environment: config.env,
-    uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
-    startedAt: new Date(startedAt).toISOString(),
-    now: new Date().toISOString(),
-    bunVersion: Bun.version,
-    hostname: server?.hostname ?? config.hostname,
-    port: server?.port ?? config.port,
-    pid: process.pid,
-    pendingRequests: server?.pendingRequests ?? 0,
-    pendingWebSockets: server?.pendingWebSockets ?? 0,
-    memory: {
-      rss: memory.rss,
-      heapTotal: memory.heapTotal,
-      heapUsed: memory.heapUsed,
-      external: memory.external
-    },
-    cpu: {
-      user: cpu.user,
-      system: cpu.system
-    },
-    domains: {
-      dev: getDevProjectUrlPattern(),
-      prod: getProdProjectUrlPattern()
-    }
-  };
-};
+export { buildHealthCore };
 
 const buildPreviewUrl = (shortId: string) => buildPublicPreviewUrl(shortId);
 

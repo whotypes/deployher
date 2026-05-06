@@ -34,10 +34,7 @@ export const getSessionApi = async (req: Request) => {
   });
 };
 
-export const getHealthApi = () => {
-  const core = pageData.buildHealthCore();
-  return json(core as Omit<HealthData, "pathname" | "user" | "sidebarProjects">);
-};
+export { getHealthApi } from "./uiApiHealth";
 
 export const getLandingSessionApi = async (req: Request) => {
   const session = await getSession(req);

@@ -21,3 +21,23 @@ export const canonicalWhyOnLandingUrl = (): string | null => {
   }
   return `${base}/why`;
 };
+
+/**
+ * Subset of `/api/*` that may be invoked on a **tenant preview host** (e.g. `shortId.localhost`).
+ * Every other path there is deployment content (including arbitrary `/api/...` from static sites).
+ * On the **main app host**, all `/api/*` (except `/api/auth`) is dispatched — new routes do not need
+ * to be listed here unless they must work from the tenant origin too.
+ */
+export const isPdployApiPathOnTenantHost = (pathname: string): boolean => {
+  if (!pathname.startsWith("/api/")) return false;
+  if (pathname.startsWith("/api/auth")) return false;
+  if (pathname === "/api/csrf" || pathname === "/api/session" || pathname === "/api/health") return true;
+  if (pathname.startsWith("/api/ui/")) return true;
+  if (pathname.startsWith("/api/workspace/")) return true;
+  if (pathname.startsWith("/api/github/")) return true;
+  if (pathname === "/api/projects" || pathname.startsWith("/api/projects/")) return true;
+  if (pathname.startsWith("/api/admin")) return true;
+  if (pathname.startsWith("/api/deployments/")) return true;
+  if (pathname.startsWith("/api/cli/")) return true;
+  return false;
+};

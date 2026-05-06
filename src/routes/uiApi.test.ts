@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { setStartedAt } from "../appContext";
-import { getHealthApi } from "./uiApi";
+import { getHealthApi } from "./uiApiHealth";
 
 describe("uiApi", () => {
   beforeAll(() => {
