@@ -5,6 +5,7 @@ infra/meta
 infra/data
 infra/.garage.env
 .env
+.env.secrets
 .env.prod
 config/local.toml
 .deployher-venv

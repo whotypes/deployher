@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run check:server-ui
+      - run: bun test
+
+      - name: Smoke build dashboard + marketing
+        env:
+          VITE_PUBLIC_API_ORIGIN: https://api.deployher.com
+          VITE_PUBLIC_DASH_ORIGIN: https://dash.deployher.com
+        run: bun run build:web && bun run build:marketing
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Trust host key
+        run: mkdir -p ~/.ssh && ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Pull and rebuild on VPS
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'set -euo pipefail
+            cd /root/apps/deployher
+            git fetch origin
+            git checkout main
+            git reset --hard "origin/main"
+            docker compose up -d --build'

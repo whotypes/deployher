@@ -9,6 +9,7 @@ const target = `${dash}${Astro.url.pathname}${Astro.url.search}${Astro.url.hash}
   <head>
     <meta charSet="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.webp" type="image/webp" />
     <title>Redirecting…</title>
     <meta http-equiv="refresh" content={`0;url=${target}`} />
     <link rel="canonical" href={target} />

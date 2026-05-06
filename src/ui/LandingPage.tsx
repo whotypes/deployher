@@ -43,7 +43,7 @@ const LandingPage = ({ authenticated }: LandingPageProps) => {
             aria-labelledby="landing-hero-heading"
             className="mx-auto flex w-full max-w-[min(92rem,calc(100vw-2rem))] flex-col px-5 pb-28 pt-14 md:px-10 md:pb-36 md:pt-20"
           >
-            <div className="grid items-stretch gap-16 lg:grid-cols-2 lg:gap-24">
+            <div className="grid items-start gap-16 lg:grid-cols-2 lg:gap-24">
               <div className="flex flex-col gap-8">
                 <div className="deployher-enter flex flex-wrap items-center gap-3">
                   <span className="border-border/60 bg-background/60 supports-backdrop-filter:bg-background/40 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs tracking-tight text-muted-foreground backdrop-blur">
@@ -89,19 +89,11 @@ const LandingPage = ({ authenticated }: LandingPageProps) => {
                 </div>
               </div>
 
-              <div className="deployher-enter deployher-enter-delay-4 animate-float-soft relative flex w-full min-h-[min(26rem,52svh)] flex-col lg:h-full lg:min-h-0 lg:justify-self-end">
-                <div
-                  className="pointer-events-none absolute -inset-12 opacity-[0.85] blur-3xl"
-                  aria-hidden
-                  style={{
-                    background:
-                      "radial-gradient(ellipse 80% 60% at 50% 80%, color-mix(in oklab, var(--chart-2) 30%, transparent), transparent 70%)"
-                  }}
-                />
-                <div className="border-border/50 bg-card relative flex min-h-[min(42rem,62vh)] flex-1 flex-col rounded-2xl border p-2 shadow-2xl backdrop-blur-xl sm:p-4">
+              <div className="deployher-enter deployher-enter-delay-4 animate-float-soft relative flex w-full flex-col lg:justify-self-end">
+                <div className="border-border/50 bg-card relative flex w-full flex-col rounded-2xl border p-2 shadow-2xl backdrop-blur-xl sm:p-4">
                   <div
                     id="landing-terminal-root"
-                    className="flex min-h-0 flex-1 flex-col"
+                    className="flex flex-col"
                     aria-busy="true"
                     aria-label={t("landing.terminalDemoAria")}
                   >

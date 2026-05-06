@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { setSpaNavigate } from "./spaNavigationBridge";
-import { AppHomeRoute } from "./routes/AppHomeRoute";
+import { LandingRoute } from "./routes/LandingRoute";
 import { DashboardRoute } from "./routes/DashboardRoute";
 import { LoginRoute } from "./routes/LoginRoute";
 import { ProjectsRoute } from "./routes/ProjectsRoute";
@@ -16,6 +16,7 @@ import { AdminRoute } from "./routes/AdminRoute";
 import { DeviceAuthorizeRoute } from "./routes/DeviceAuthorizeRoute";
 import { HealthRoute } from "./routes/HealthRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
+import { WhyRoute } from "./routes/WhyRoute";
 
 const SpaNavigationRegister = () => {
   const navigate = useNavigate();
@@ -34,7 +35,8 @@ export const App = () => (
   <AppErrorBoundary>
     <SpaNavigationRegister />
     <Routes>
-      <Route path="/" element={<AppHomeRoute />} />
+      <Route path="/" element={<LandingRoute />} />
+      <Route path="/why" element={<WhyRoute />} />
       <Route path="/login" element={<LoginRoute />} />
       <Route path="/device" element={<DeviceAuthorizeRoute />} />
       <Route path="/home" element={<Navigate to="/dashboard" replace />} />

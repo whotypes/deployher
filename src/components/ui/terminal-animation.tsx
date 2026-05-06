@@ -379,6 +379,27 @@ export type TerminalAnimationCommandBarProps = React.ComponentProps<"div"> & {
   cursor?: ReactNode;
 };
 
+export type TerminalAnimationViewportProps = React.ComponentProps<"div">;
+
+export function TerminalAnimationViewport({ className, children, ...props }: TerminalAnimationViewportProps) {
+  const { activeTab, commandTyped, isTypingCommand, visibleLines } = useTerminalAnimationContext();
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, [activeTab, commandTyped, isTypingCommand, visibleLines]);
+
+  return (
+    <div ref={viewportRef} className={className} {...props}>
+      {children}
+    </div>
+  );
+}
+
 export function TerminalAnimationCommandBar({ className, cursor, ...props }: TerminalAnimationCommandBarProps) {
   const { commandTyped, isTypingCommand, showCursor, currentTab } = useTerminalAnimationContext();
   const prompt = currentTab.prompt ?? "$";
@@ -423,14 +444,19 @@ export type TerminalAnimationOutputProps = React.ComponentProps<"div"> & {
 
 export function TerminalAnimationOutput({ className, renderLine, ...props }: TerminalAnimationOutputProps) {
   const { isTypingCommand, visibleLines, currentTab, activeTab } = useTerminalAnimationContext();
+  const outputRef = useRef<HTMLDivElement>(null);
 
-  if (isTypingCommand) {
-    return null;
-  }
+  useEffect(() => {
+    const el = outputRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, [activeTab, currentTab, isTypingCommand, visibleLines]);
 
   return (
-    <div className={cn("mt-3 space-y-1", className)} {...props}>
-      {currentTab.lines.map((line, i) => {
+    <div ref={outputRef} className={cn("mt-3 space-y-1", className)} {...props}>
+      {isTypingCommand ? null : currentTab.lines.map((line, i) => {
         const visible = i < visibleLines;
         const key = `${activeTab}-${i}`;
         if (renderLine) {

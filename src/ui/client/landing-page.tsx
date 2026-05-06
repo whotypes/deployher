@@ -10,6 +10,7 @@ import {
   TerminalAnimationTabTrigger,
   TerminalAnimationTitleBar,
   TerminalAnimationTrailingPrompt,
+  TerminalAnimationViewport,
   TerminalAnimationWindow,
   type TabContent
 } from "@/components/ui/terminal-animation";
@@ -317,22 +318,22 @@ export const LandingTerminalDemo = () => {
       onTabAnimationComplete={handleTabAnimationComplete}
       tabAnimationCompleteDwellMs={900}
       hideCursorOnComplete={false}
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex w-full flex-col"
     >
-      <TerminalAnimationContainer className="flex min-h-0 flex-1 flex-col">
+      <TerminalAnimationContainer className="flex w-full flex-col">
         <TerminalAnimationWindow
           animateOnVisible={false}
           minHeight="min(28rem,48svh)"
-          className="flex min-h-0 flex-1 flex-col rounded-xl rounded-b-none border-border/50"
+          className="flex h-[min(28rem,48svh)] min-h-0 flex-none flex-col rounded-xl rounded-b-none border-border/50"
         >
           <TerminalAnimationTitleBar productName={t("terminal.windowTitle")} />
           <TerminalAnimationContent className="min-h-0 flex-1" tabPanel>
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="shrink-0">
+              <TerminalAnimationViewport className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <TerminalAnimationCommandBar className="text-base sm:text-lg" />
-                <TerminalAnimationOutput className="text-base sm:min-h-48 sm:text-lg" />
-              </div>
-              <div className="shrink-0 pt-1">
+                <TerminalAnimationOutput className="text-base sm:text-lg" />
+              </TerminalAnimationViewport>
+              <div className="min-h-8 shrink-0 pt-1">
                 <TerminalAnimationTrailingPrompt className="text-base sm:text-lg" />
               </div>
             </div>
