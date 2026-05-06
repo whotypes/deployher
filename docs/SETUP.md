@@ -27,6 +27,7 @@ Deployher is a Bun-based deployment platform ([deployher.com](https://deployher.
 - [npm scripts](#npm-scripts)
 - [Troubleshooting](#troubleshooting)
 - [Production deployment](#production-deployment)
+- [Continuous deployment (GitHub Actions)](#continuous-deployment-github-actions)
 
 ## Prerequisites
 
@@ -274,6 +275,10 @@ Load order: **`.env`** is read first (dotenv does not replace variables already 
 
 `GET` or `POST` `/health` returns JSON with server status, uptime, memory, and domain config. With `Accept: text/html` it returns an HTML dashboard. Use the JSON response for load balancer or orchestrator health checks; the response body includes `status` (`ok` | `degraded` | `down`), `environment`, `uptimeSeconds`, and related fields.
 
+`GET /api/health` returns a compact JSON payload (same underlying status fields without the HTML branch) and is convenient for probes that already target the API host.
+
+When **edge** uses **host-based routing** (`DEPLOYHER_EDGE_USE_PATH_ROUTING=0`), a request to `http://127.0.0.1:3000/health` **without** an `Host` header that matches your API or dashboard hostname may **404** — send the real public **API** hostname (e.g. `curl -H "Host: api.example.com" http://127.0.0.1:3000/api/health` behind Nginx, or call `https://api.example.com/api/health` from outside).
+
 ## Preview URLs
 
 Deployments can be viewed in two ways:
@@ -352,7 +357,7 @@ Schema lives in `src/db/schema.ts`: Better Auth tables (`users`, `sessions`, `ac
 | `bun run build:cli` | Compile the infra CLI to **`dist/deployher-cli`** (standalone; no Bun needed to execute it). Does not overwrite **`dist/deployher`** from **`build:exe`**. |
 | `bun run cli:link` | Symlink **`dist/deployher-cli`** → **`~/.local/bin/deployher`**. If **`~/.local/bin`** is missing from `PATH`, asks before appending an export to **`~/.zshrc`**. Non-interactive: **`bun run cli:link -- --yes`** (append) or **`CLI_LINK_NO_ZSHRC=1`** (symlink only). |
 | `./dist/deployher-cli <cmd>` | Run the compiled infra CLI (after **`build:cli`**). |
-| `bun run test` | Run CLI unit tests (`bun test cli`). |
+| `bun run test` | Run the test suite (`bun test`). |
 | `bun run dev` | Start app with hot reload (`bun --hot src/index.ts`). |
 | `bun run dev:vite` | Vite dev server for the dashboard SPA (port **5173**); proxies `/api`, `/d`, `/preview` to Bun. Pair with `bun run dev`. |
 | `bun run dev:marketing` | Astro dev server for the marketing site (default port **4321**). |
@@ -409,6 +414,28 @@ From your **PC**, open **`http://<vm-ip>:3000`**, not `http://localhost:3000` (t
 - **`edge`** publishes port **3000** by default. Put TLS and public DNS in front of **`edge`**, or configure host-based routing via **`docker/edge-entry.sh`** and env (see **`.env.example`**).
 - Migrations run on startup when `RUN_MIGRATIONS=1`. For zero-downtime deploys, consider running migrations in a separate step before rolling new app containers.
 - Docker + Bun runtime is the supported production path. Single-file executable builds are optional and must be revalidated before relying on them.
+
+### Continuous deployment (GitHub Actions)
+
+This repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml): on every push and pull request to **`main`** it installs dependencies, runs **`typecheck`**, **`check:server-ui`**, **`test`**, and smoke-builds the dashboard and marketing sites. On **push to `main`** only, after tests pass, it SSHs into your server and runs **`git fetch` / `checkout` / `reset --hard origin/main`** and **`docker compose up -d --build`**.
+
+**Self-hosters:** edit the workflow to match your layout:
+
+1. **Remote directory** — change the `cd …` path in the deploy step to the directory on the VPS that contains **`docker-compose.yml`** and a git checkout of this repo (the default in the committed workflow is an example path only).
+2. **Smoke build env** — set **`VITE_PUBLIC_API_ORIGIN`** and **`VITE_PUBLIC_DASH_ORIGIN`** in the “Smoke build dashboard + marketing” step to **your** public API and dashboard origins so CI catches broken client bundles before deploy.
+3. **Default branch** — if you do not use **`main`**, update the `on:` branches in the workflow file.
+
+**Repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Purpose |
+|--------|--------|
+| `DEPLOY_SSH_PRIVATE_KEY` | Private key whose public key is in the deploy user’s **`~/.ssh/authorized_keys`** on the server |
+| `DEPLOY_HOST` | Hostname or IP the runner uses to SSH (GitHub runners do **not** read your laptop’s **`~/.ssh/config`** aliases) |
+| `DEPLOY_USER` | SSH user (must be able to run `docker compose` in the deploy directory without interactive sudo) |
+
+On the server, **`git fetch`** must work non-interactively (deploy key, HTTPS credential, or other read access to GitHub). Application secrets (**`GITHUB_CLIENT_*`**, **`BETTER_AUTH_SECRET`**, etc.) stay in the VPS **`.env`**, not in GitHub, unless you add separate workflows that need them.
+
+**Triggering deploys of *customer* apps** (repos you host *through* Deployher) is separate: CI in those repos should run their own tests; calling Deployher’s **`POST /api/projects/:id/deployments`** with a token (same idea as after **`deployher login`**) is one way to queue a build on your instance — there is no built-in GitHub push webhook in this codebase yet.
 
 ### Hetzner Ubuntu VPS with Nginx
 

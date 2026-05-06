@@ -15,11 +15,11 @@
 
 # Deployher
 
-Deployher ([deployher.com](https://deployher.com)) is a self-hosted deployment platform for web applications. It uses [bun], [drizzle], [postgres], [redis], [garage], and [docker]. With Deployher, you can connect GitHub repos, trigger builds, and serve web applications via subdomain or path.
+Deployher ([deployher.com](https://deployher.com)) is an open-source deployment platform for web applications. The public site runs the same codebase you can run on your own VPS or in your cloud account. It uses [bun], [drizzle], [postgres], [redis], [garage], and [docker]. With Deployher, you can connect GitHub repos, trigger builds, and serve web applications via subdomain or path.
 
 ## How
 
-Deployments are processed by a dedicated deployment worker service (`deployment-worker`), not by the app process. The worker has Docker socket access and the full build toolchain, while the app container stays focused on API + web traffic.
+Deployments are processed by a dedicated deployment worker service (`deployment-worker`), not by **`app-api`**. The worker has Docker socket access and the full build toolchain, while **`app-api`** stays focused on API + dashboard static assets and related HTTP traffic.
 The worker talks to the host Docker daemon through `dockerode` over `/var/run/docker.sock`.
 The queue uses Redis Streams consumer groups, so multiple worker replicas can process deployments concurrently.
 
@@ -28,8 +28,10 @@ The queue uses Redis Streams consumer groups, so multiple worker replicas can pr
 
 The Compose stack includes:
 
-- `app`: HTTP API/web server
-- `preview-runner`: loads `runtime-image.tar` from S3, runs bounded preview containers, proxies `RUNNER_URL` `/preview/<deploymentId>/…`
+- `edge`: Caddy front door on port **3000** (routes to API, dashboard, marketing, previews)
+- `app-api`: HTTP API + prebuilt dashboard SPA (`SKIP_CLIENT_BUILD=1` in Compose; assets baked into the image)
+- `marketing`: static Astro landing site (nginx image)
+- `preview-runner`: loads `runtime-image.tar` from S3 (or registry), runs bounded preview containers; app uses `RUNNER_URL` at `/preview/<deploymentId>/…`
 - `deployment-worker`: Redis consumer that runs builds via Docker
 - `deployher-node-build-image:latest`: Node build image with `pnpm` pre-activated via Corepack
 - `deployher-bun-build-image:latest`: Bun build image with Python and native build deps for packages like `canvas`
@@ -70,7 +72,7 @@ bun run start:worker
 # terminal 3 (server previews): bun run start:preview-runner — needs Docker + same S3 env as the app; set RUNNER_DOCKER_NETWORK to your compose default network (e.g. deployher_default) if the runner runs in a container
 ```
 
-Docker app (via **edge** on `http://localhost:3000`) proxies the Bun **API** and dashboard **SPA** (`dist/client`). For **local HMR**, run **`bun run dev`** (API) and **`bun run dev:vite`** (default `http://localhost:5173`); Vite proxies `/api`, `/d`, and `/preview` to the Bun server (`VITE_DEV_API_URL` overrides the proxy target). Marketing: **`bun run dev:marketing`** (Astro, default port **4321**) or the **`marketing`** compose service (static nginx). If OrbStack or another service already owns `3000`, `docker compose stop edge app-api marketing deployment-worker` frees the Compose **edge** port; it does not stop unrelated listeners on the host. Health: `GET /health` (JSON or HTML). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows: **[docs/SETUP.md](docs/SETUP.md)**.
+Docker app (via **edge** on `http://localhost:3000`) proxies the Bun **API** and dashboard **SPA** (`dist/client`). For **local HMR**, run **`bun run dev`** (API) and **`bun run dev:vite`** (default `http://localhost:5173`); Vite proxies `/api`, `/d`, and `/preview` to the Bun server (`VITE_DEV_API_URL` overrides the proxy target). Marketing: **`bun run dev:marketing`** (Astro, default port **4321**) or the **`marketing`** compose service (static nginx). If OrbStack or another service already owns `3000`, `docker compose stop edge app-api marketing deployment-worker` frees the Compose **edge** port; it does not stop unrelated listeners on the host. **Health:** `GET` or `POST` `/health` (JSON or HTML) when path routing or a single host reaches **app-api**; with **split-domain** routing (`DEPLOYHER_EDGE_USE_PATH_ROUTING=0`), probe the **API** hostname (e.g. `GET https://api.example.com/api/health` or curl to edge with `Host: <your API hostname>`). Deployment previews: subdomain `<id>.<DEV_DOMAIN>:<PORT>` or path `/d/<id>/...`. Full workflows: **[docs/SETUP.md](docs/SETUP.md)**.
 
 Server previews are enabled when **`RUNNER_URL`** points at the preview-runner. Set **`RUNNER_PREVIEW_ENABLED=0`** to turn them off without removing `RUNNER_URL`. Match S3 (and optional registry) credentials on the runner. Optional **`RUNNER_SHARED_SECRET`** is sent as **`x-deployher-runner-secret`**.
 
@@ -119,7 +121,7 @@ See `examples/README.md` for usage.
 | `drizzle/` | Migrations |
 | [`cli/`](cli/) | Dev infra: Postgres, Redis, Garage, Nexus; migrate/seed via **`oven/bun` in Docker**; app + workers. Run with **`bun run deployher`**, **`./dist/deployher-cli`** after **`bun run build:cli`**, or **`deployher`** on `PATH`. |
 | `config/default.toml` | Committed app defaults (Compose handles in-network service wiring separately) |
-| `docker-compose.yml` | App, deployment-worker, builder images, Postgres, Redis, Garage, Nexus |
+| `docker-compose.yml` | Edge, app-api, marketing, preview-runner, deployment-worker, builder images, Postgres, Redis, Garage, Nexus |
 | `Dockerfile` | Multi-stage build for the app image |
 | `docker/build-worker.Dockerfile` | Docker image for the standalone deployment worker |
 
@@ -154,8 +156,19 @@ SKIP_CLIENT_BUILD=1 ./dist/deployher
 > [!NOTE]
 > Build workers run via `bun run start:worker` (or the `deployment-worker` Compose service). `src/workers/buildWorker.ts` contains the shared worker loop used by that entrypoint.
 
+## Self-hosting: what ships where
+
+| Surface | In this repo | Typical production |
+|--------|----------------|-------------------|
+| **Dashboard** | Vite app under `src/ui/` → `bun run build:web` → `dist/client` | Baked into **`app-api`** image; edge routes your **dash** host to `app-api` |
+| **Marketing** | `apps/marketing` (Astro) | **`marketing`** compose service; edge routes apex / landing hostnames |
+| **API + auth** | `src/` (Bun server) | Same **`app-api`** container |
+| **Hand-written docs** | `docs/*.md` (this tree) | Not a separate Compose service; publish however you like (e.g. GitHub wiki, static site, or a path on marketing) |
+
+Upgrades on your server are usually: **`git pull`** (or reset to a release tag) then **`docker compose up -d --build`** from the directory that holds **`docker-compose.yml`** and **`.env`**. Optional **GitHub Actions** for test-then-SSH-deploy: see **[docs/SETUP.md#continuous-deployment-github-actions](docs/SETUP.md#continuous-deployment-github-actions)** and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) (adjust the remote `cd` path and smoke-build `VITE_PUBLIC_*` URLs to match your domain).
+
 ## Documentation
 
-- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, **`deployher`** CLI (migrate/seed via **`oven/bun` in Docker**, no Bun on host), both dev workflows, env vars, ports, CLI reference, health endpoint, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **troubleshooting**.
+- **[docs/SETUP.md](docs/SETUP.md)**: Prerequisites, bootstrap, **`deployher`** CLI (migrate/seed via **`oven/bun` in Docker**, no Bun on host), both dev workflows, env vars, ports, CLI reference, health endpoints, preview URL formats, build pipeline and workers, database and migrations, npm scripts, production deployment, **optional CI/CD**, **troubleshooting**.
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Monorepo workspace/app roots, runtime image modes, Dockerfile-first server deploys, Nexus-aware Docker build args, and security notes.
 - **[docs/SPLIT_DOMAIN.md](docs/SPLIT_DOMAIN.md)**: Production split-domain setup — apex marketing, `dash.` SPA, `api.` auth/API, DNS (e.g. Spaceship), `.env`, GitHub OAuth callback, `VITE_PUBLIC_*` rebuild, TLS proxy headers.

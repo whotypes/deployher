@@ -92,4 +92,4 @@ Use long timeouts and disable buffering for streaming routes (see [SETUP.md](./S
 ## See also
 
 - [DEPLOYMENT.md](./DEPLOYMENT.md) — container roles and preview host routing
-- [SETUP.md](./SETUP.md) — OAuth, env, and production notes
+- [SETUP.md](./SETUP.md) — OAuth, env, production notes, and [continuous deployment with GitHub Actions](./SETUP.md#continuous-deployment-github-actions)
