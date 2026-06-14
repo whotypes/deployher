@@ -4,6 +4,7 @@ import {
   setLayoutDisplayPreference,
   syncLayoutPrefChoiceDom
 } from "@/lib/layoutDisplayPrefs";
+import { fetchWithCsrf } from "./fetchWithCsrf";
 
 const STORAGE_KEY = "deployher-sidebar-collapsed";
 const SIDEBAR_STATE_COOKIE = "sidebar_state";
@@ -147,7 +148,7 @@ export const initLayout = (): (() => void) => {
     "submit",
     (e) => {
       e.preventDefault();
-      fetch("/logout", { method: "POST", credentials: "include", redirect: "manual" }).then(() => {
+      fetchWithCsrf("/logout", { method: "POST", redirect: "manual" }).then(() => {
         window.location.assign("/");
       });
     },

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GitHubMark } from "./GitHubMark";
 import { fetchWithCsrf } from "./client/fetchWithCsrf";
+import { resolveSafeRedirect } from "../security/safeRedirect";
 
 const oauthDescriptionMaxLen = 280;
 const characterFill = "#050505";
@@ -920,8 +921,8 @@ export const LoginRouteInner = () => {
     navigate({ search: next.toString() ? `?${next.toString()}` : "" }, { replace: true });
   }, [navigate, searchParams]);
 
-  const redirect = searchParams.get("redirect") ?? "/dashboard";
-  const callbackURL = `${window.location.origin}${redirect.startsWith("/") ? redirect : `/${redirect}`}`;
+  const redirect = resolveSafeRedirect(searchParams.get("redirect"), "/dashboard");
+  const callbackURL = `${window.location.origin}${redirect}`;
 
   const oauth = {
     error: oauthCapture.error,
