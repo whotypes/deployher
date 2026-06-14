@@ -1,5 +1,6 @@
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { parse as parseToml } from "smol-toml";
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
@@ -28,7 +29,7 @@ const readTomlFileSync = (filePath: string): Record<string, unknown> => {
   if (!existsSync(filePath)) return {};
   const text = readFileSync(filePath, "utf8").trim();
   if (!text) return {};
-  return Bun.TOML.parse(text) as Record<string, unknown>;
+  return parseToml(text) as Record<string, unknown>;
 };
 
 export const loadTomlAppConfigSync = (repoRoot: string): Record<string, string> => {
