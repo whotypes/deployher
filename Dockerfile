@@ -5,10 +5,12 @@ WORKDIR /usr/src/app
 
 FROM base AS deps-dev
 COPY package.json bun.lock ./
+COPY patches ./patches
 RUN bun install --frozen-lockfile
 
 FROM base AS deps-prod
 COPY package.json bun.lock ./
+COPY patches ./patches
 RUN bun install --frozen-lockfile --production
 
 FROM base AS builder

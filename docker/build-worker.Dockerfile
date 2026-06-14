@@ -30,6 +30,7 @@ RUN apt-get update -qq \
 
 FROM base AS deps
 COPY package.json bun.lock ./
+COPY patches ./patches
 RUN bun install --production
 
 FROM base AS release
