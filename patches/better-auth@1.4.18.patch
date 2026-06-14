@@ -1,0 +1,35 @@
+diff --git a/dist/api/routes/callback.mjs b/dist/api/routes/callback.mjs
+index 3d5164a..84d919c 100644
+--- a/dist/api/routes/callback.mjs
++++ b/dist/api/routes/callback.mjs
+@@ -103,10 +103,12 @@ const callbackOAuth = createAuthEndpoint("/callback/:id", {
+ 			c.context.logger.error("Unable to link account - untrusted provider");
+ 			return redirectOnError("unable_to_link_account");
+ 		}
+-		if (userInfo.email !== link.email && c.context.options.account?.accountLinking?.allowDifferentEmails !== true) return redirectOnError("email_doesn't_match");
+-		const existingAccount = await c.context.internalAdapter.findAccount(String(userInfo.id));
++		const linkEmail = link.email ?? "";
++		const providerEmail = userInfo.email ?? "";
++		const emailsMatchCaseInsensitive = linkEmail.toLowerCase() === providerEmail.toLowerCase();
++		if (!emailsMatchCaseInsensitive && c.context.options.account?.accountLinking?.allowDifferentEmails !== true) return redirectOnError("email_doesn't_match");
++		const existingAccount = (await c.context.internalAdapter.findAccounts(link.userId)).find((account) => account.providerId === provider.id && account.accountId === String(userInfo.id));
+ 		if (existingAccount) {
+-			if (existingAccount.userId.toString() !== link.userId.toString()) return redirectOnError("account_already_linked_to_different_user");
+ 			const updateData = Object.fromEntries(Object.entries({
+ 				accessToken: await setTokenUtil(tokens.accessToken, c.context),
+ 				refreshToken: await setTokenUtil(tokens.refreshToken, c.context),
+diff --git a/dist/plugins/generic-oauth/routes.mjs b/dist/plugins/generic-oauth/routes.mjs
+index 794f090..6596694 100644
+--- a/dist/plugins/generic-oauth/routes.mjs
++++ b/dist/plugins/generic-oauth/routes.mjs
+@@ -214,9 +214,8 @@ function createGenericOAuthRoutes(options) {
+ 	})();
+ 	if (link) {
+ 		if (ctx.context.options.account?.accountLinking?.allowDifferentEmails !== true && link.email !== userInfo.email) return redirectOnError("email_doesn't_match");
+-		const existingAccount = await ctx.context.internalAdapter.findAccountByProviderId(String(userInfo.id), providerConfig.providerId);
++		const existingAccount = (await ctx.context.internalAdapter.findAccounts(link.userId)).find((account) => account.providerId === providerConfig.providerId && account.accountId === String(userInfo.id));
+ 		if (existingAccount) {
+-			if (existingAccount.userId !== link.userId) return redirectOnError("account_already_linked_to_different_user");
+ 			const updateData = Object.fromEntries(Object.entries({
+ 				accessToken: await setTokenUtil(tokens.accessToken, ctx.context),
+ 				idToken: tokens.idToken,
