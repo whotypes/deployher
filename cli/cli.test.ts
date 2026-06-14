@@ -66,8 +66,13 @@ describe("deployher CLI", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const stderr = await new Response(proc.stderr).text();
-    expect(await proc.exited).toBe(0);
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(exitCode).toBe(0);
     expect(stderr).toBe("");
+    expect(stdout).toContain("Planned deployher ops run");
   });
 });

@@ -294,10 +294,20 @@ const runStorageEnvDeploy = async (
 const addSharedOptions = (cmd: Command): Command =>
   cmd
     .option("--env <local|production>", "operation environment")
-    .option("--dry-run", "print the plan without writing files or running Docker", false)
-    .option("--yes", "skip non-production confirmation prompts", false)
-    .option("--skip-migrate", "do not run migrations before redeploy", false)
+    .option("--dry-run", "print the plan without writing files or running Docker")
+    .option("--yes", "skip non-production confirmation prompts")
+    .option("--skip-migrate", "do not run migrations before redeploy")
     .option("--services <list>", "comma-separated services to rebuild/restart");
+
+const collectOpsOpts = (cmd: Command): OpsOptions => {
+  const merged: Record<string, unknown> = {};
+  let current: Command | null = cmd;
+  while (current) {
+    Object.assign(merged, current.opts());
+    current = current.parent;
+  }
+  return merged as OpsOptions;
+};
 
 export const registerOps = (program: Command, getCtx: (cmd: Command) => CliContext): void => {
   const ops = program.command("ops").description("Guided DX operations for env, buckets, migrations, and redeploys");
@@ -310,7 +320,7 @@ export const registerOps = (program: Command, getCtx: (cmd: Command) => CliConte
     });
     if (isCancel(recipe)) process.exit(1);
     const ctx = getCtx(this);
-    await runStorageEnvDeploy(ctx, this.opts<OpsOptions>(), true);
+    await runStorageEnvDeploy(ctx, collectOpsOpts(this), true);
   });
 
   addSharedOptions(
@@ -319,7 +329,7 @@ export const registerOps = (program: Command, getCtx: (cmd: Command) => CliConte
       .description("Ensure storage buckets/env, optionally migrate, then redeploy affected services"),
   ).action(async function (this: Command) {
     const ctx = getCtx(this);
-    const opts = this.opts<OpsOptions>();
+    const opts = collectOpsOpts(this);
     const interactive = !opts.dryRun && !ctx.ci;
     await runStorageEnvDeploy(ctx, opts, interactive);
   });
