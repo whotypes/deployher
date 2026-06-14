@@ -13,6 +13,7 @@ import { json } from "./http/helpers";
 import * as pageData from "./lib/pageData";
 import * as account from "./routes/account";
 import * as admin from "./routes/admin";
+import * as avatars from "./routes/avatars";
 import * as deploymentObservability from "./routes/deploymentObservability";
 import * as deployments from "./routes/deployments";
 import * as github from "./routes/github";
@@ -34,7 +35,7 @@ import { requestUsesCliBearerAuth } from "./security/cliAuth";
 import { attachCsrfCookie, ensureCsrfToken, validateMutationRequest } from "./security/csrf";
 import {
   canonicalWhyOnLandingUrl,
-  isPdployApiPathOnTenantHost,
+  isDeployherApiPathOnTenantHost,
   requestHostIsDashApp
 } from "./lib/deployherHosts";
 import { guessContentType } from "./utils/contentType";
@@ -120,6 +121,27 @@ const loginSpa: PublicRouteHandler = async (req) => {
   return attachCsrfCookie(res, csrf);
 };
 
+const logoutPost: PublicRouteHandler = async (req) => {
+  const url = new URL(req.url);
+  const signOutUrl = new URL("/api/auth/sign-out", url.origin);
+  const authResponse = await auth.handler(
+    new Request(signOutUrl, {
+      method: "POST",
+      headers: req.headers
+    })
+  );
+  const redirect = Response.redirect(new URL("/", url.origin).toString(), 303);
+  const getSetCookie = (authResponse.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  const cookies = getSetCookie ? getSetCookie.call(authResponse.headers) : [];
+  if (cookies.length > 0) {
+    for (const cookie of cookies) redirect.headers.append("Set-Cookie", cookie);
+  } else {
+    const cookie = authResponse.headers.get("Set-Cookie");
+    if (cookie) redirect.headers.append("Set-Cookie", cookie);
+  }
+  return redirect;
+};
+
 const healthSpa: PublicRouteHandler = async (req) => {
   const accept = req.headers.get("accept") ?? "";
   if (accept.includes("text/html")) {
@@ -158,12 +180,14 @@ const publicRoutes: PublicRoute[] = [
   { pattern: "/", methods: { GET: servePublicSpa } },
   { pattern: "/why", methods: { GET: whyPublicGet } },
   { pattern: "/login", methods: { GET: loginSpa } },
+  { pattern: "/logout", methods: { POST: logoutPost } },
   { pattern: "/device", methods: { GET: servePublicSpa } },
   { pattern: "/health", methods: { GET: healthSpa } },
   { pattern: "/preview/*", methods: { GET: servePreview } },
   { pattern: "/api/csrf", methods: { GET: uiApi.getCsrfApi } },
   { pattern: "/api/session", methods: { GET: uiApi.getSessionApi } },
   { pattern: "/api/health", methods: { GET: uiApi.getHealthApi } },
+  { pattern: "/api/public/avatars/:filename", methods: { GET: avatars.getPublicAvatar } },
   { pattern: "/api/ui/landing", methods: { GET: uiApi.getLandingSessionApi } }
 ];
 
@@ -258,6 +282,7 @@ const protectedRoutes: ProtectedRoute[] = [
   },
   { pattern: "/account", methods: { GET: protectedSpa } },
   { pattern: "/account/delete", methods: { POST: account.deleteAccount } },
+  { pattern: "/api/avatar", methods: { POST: avatars.uploadCurrentUserAvatar } },
   { pattern: "/api/github/repos", methods: { GET: github.listRepos } },
   { pattern: "/api/github/branches", methods: { GET: github.listBranches } },
   { pattern: "/api/github/repo-hints", methods: { GET: github.repoHints } },
@@ -272,6 +297,10 @@ const protectedRoutes: ProtectedRoute[] = [
       PUT: projects.updateProject,
       DELETE: projects.deleteProject
     }
+  },
+  {
+    pattern: "/api/projects/:id/deployments/static-upload",
+    methods: { POST: deployments.createStaticDeploymentUpload }
   },
   {
     pattern: "/api/projects/:id/deployments",
@@ -500,7 +529,7 @@ const dispatchRequest = async (req: Request): Promise<Response> => {
   const deploymentIdInfo = extractDeploymentIdFromHost(host);
 
   if (deploymentIdInfo) {
-    if (isPdployApiPathOnTenantHost(pathname)) {
+    if (isDeployherApiPathOnTenantHost(pathname)) {
       return respondDashboardApiOr404(req);
     }
     return serveSubdomainPreview(req, deploymentIdInfo);
