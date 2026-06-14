@@ -237,29 +237,29 @@ export const LandingTerminalDemo = () => {
         ]
       },
       {
-        label: t("terminal.tabRollback"),
-        windowTitle: t("terminal.winRollback"),
-        command: "deployher rollback --to d4e5f6a",
+        label: t("terminal.tabPromote"),
+        windowTitle: t("terminal.winReleases"),
+        command: "deployher deploy --no-wait",
         lines: [
           { text: "", delay: 100 },
           {
-            text: "→  target revision d4e5f6a (image sha-9910aa)",
+            text: "→  target deployment d4e5f6a (image sha-9910aa)",
             color: "text-sky-400/90",
             delay: 360
           },
           {
-            text: "→  draining connections from rev a1b2c3d",
+            text: "→  marking project current deployment",
             color: "text-muted-foreground",
             delay: 400
           },
           {
-            text: "→  promoting d4e5f6a · health gate passed",
+            text: "→  preview URL now points at d4e5f6a",
             color: "text-muted-foreground",
             delay: 420
           },
           { text: "", delay: 90 },
           {
-            text: "✓  rollback complete · traffic on d4e5f6a",
+            text: "✓  current deployment updated",
             color: "text-emerald-400/90",
             delay: 480
           }
