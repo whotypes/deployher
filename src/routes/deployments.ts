@@ -1,3 +1,6 @@
+import { mkdtemp } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
 import { and, desc, eq } from "drizzle-orm";
 import { publishBuildCancel } from "../buildCancelChannel";
 import { type RequestWithParamsAndSession } from "../auth/session";
@@ -9,18 +12,25 @@ import {
   type DeploymentStreamEvent
 } from "../deploymentEvents";
 import * as schema from "../db/schema";
-import { config } from "../config";
+import { buildPublicPreviewUrl, config } from "../config";
 import { badRequest, json, notFound, parseJson } from "../http/helpers";
 import { getGitHubAccessToken } from "../lib/githubAccess";
 import { enqueueDeployment } from "../queue";
 import { getRedisSubscriber, isRedisConfigured } from "../redis";
 import { storeRepoCredential } from "../repoCredentials";
-import { getText, getTextFromOffset, isStorageConfigured } from "../storage";
+import { getText, getTextFromOffset, isStorageConfigured, upload } from "../storage";
 import { generateShortId } from "../utils/shortId";
 import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
 import { onDeploymentTerminalStatus } from "../lib/projectAlerts";
 import { formatRunnerRuntimeLogError } from "./runtimeLogFormatting";
 import { requestRunnerEnsurePreview } from "../lib/previewRunnerRehydrate";
+import {
+  publishStaticDirectoryAsDeploymentArtifacts,
+  safeRemoveDir,
+  writeFilesToTempRoot
+} from "../lib/staticArtifacts";
+import { sanitizeRelativePath, stripOptionalArtifactRoot } from "../lib/staticUploadPaths";
+import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
 
 const getProjectForUser = async (projectId: string, userId: string) => {
   const [project] = await db
@@ -32,6 +42,9 @@ const getProjectForUser = async (projectId: string, userId: string) => {
 };
 
 const MAX_DEPLOYMENT_ENV_FILE_BYTES = 64 * 1024;
+
+const MAX_STATIC_BUNDLE_BYTES = 80 * 1024 * 1024;
+const MAX_STATIC_BUNDLE_FILES = 8000;
 
 export const listDeployments = async (req: RequestWithParamsAndSession) => {
   const projectId = req.params["id"];
@@ -788,5 +801,224 @@ export const ensureDeploymentPreview = async (req: RequestWithParamsAndSession) 
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return json({ error: message }, { status: 502 });
+  }
+};
+
+export const createStaticDeploymentUpload = async (req: RequestWithParamsAndSession) => {
+  if (!isStorageConfigured()) {
+    return json({ error: "S3 storage is not configured" }, { status: 503 });
+  }
+
+  const projectId = req.params["id"];
+  if (!projectId) {
+    return notFound("Project not found");
+  }
+  const userId = req.session.user.id;
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) {
+    return notFound("Project not found");
+  }
+
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return badRequest("Expected multipart form data");
+  }
+
+  const incoming: { rawPath: string; file: File }[] = [];
+  for (const [, value] of form.entries()) {
+    if (typeof value === "string") {
+      continue;
+    }
+    const file = value as File;
+    if (file.size > 0) {
+      const rawPath = typeof file.name === "string" && file.name.trim() ? file.name.trim() : "file";
+      incoming.push({ rawPath, file });
+    }
+  }
+
+  if (incoming.length > MAX_STATIC_BUNDLE_FILES) {
+    return badRequest(`Too many files (max ${MAX_STATIC_BUNDLE_FILES})`);
+  }
+
+  const bySanitized = new Map<string, File>();
+  for (const item of incoming) {
+    const sanitized = sanitizeRelativePath(item.rawPath);
+    if (!sanitized) {
+      return badRequest(`Invalid path: ${item.rawPath}`);
+    }
+    bySanitized.set(sanitized, item.file);
+  }
+
+  const uniqueSanitized = [...bySanitized.keys()];
+  const strippedPaths = stripOptionalArtifactRoot(uniqueSanitized);
+  const pathPairs: { relativePath: string; file: File }[] = [];
+  for (let i = 0; i < uniqueSanitized.length; i++) {
+    const original = uniqueSanitized[i] as string;
+    const next = strippedPaths[i] as string;
+    const file = bySanitized.get(original);
+    if (!file) continue;
+    const relativePath = sanitizeRelativePath(next);
+    if (!relativePath) {
+      return badRequest(`Invalid path after normalization: ${original}`);
+    }
+    pathPairs.push({ relativePath, file });
+  }
+
+  const dedup = new Map<string, File>();
+  for (const pair of pathPairs) {
+    dedup.set(pair.relativePath, pair.file);
+  }
+  const normalizedPairs = [...dedup.entries()].map(([relativePath, file]) => ({ relativePath, file }));
+
+  let totalBytes = 0;
+  for (const { file } of normalizedPairs) {
+    totalBytes += file.size;
+    if (totalBytes > MAX_STATIC_BUNDLE_BYTES) {
+      return badRequest(`Bundle exceeds ${MAX_STATIC_BUNDLE_BYTES} bytes`);
+    }
+  }
+
+  const shortId = generateShortId();
+  const artifactPrefix = `artifacts/${project.id}/${Date.now()}`;
+
+  const [deployment] = await db
+    .insert(schema.deployments)
+    .values({
+      projectId: project.id,
+      shortId,
+      artifactPrefix,
+      status: "building",
+      buildStrategy: "static",
+      serveStrategy: "static",
+      buildPreviewMode: project.previewMode,
+      buildServerPreviewTarget: project.serverPreviewTarget
+    })
+    .returning();
+
+  if (!deployment) {
+    return json({ error: "Failed to create deployment" }, { status: 500 });
+  }
+
+  let workRoot: string | null = null;
+  try {
+    workRoot = await mkdtemp(path.join(tmpdir(), "deployher-static-"));
+    const written: { relativePath: string; data: Uint8Array }[] = [];
+    for (const { relativePath, file } of normalizedPairs) {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      written.push({ relativePath, data: buf });
+    }
+
+    await writeFilesToTempRoot(workRoot, written);
+
+    const publishResult = await publishStaticDirectoryAsDeploymentArtifacts(
+      deployment.id,
+      artifactPrefix,
+      workRoot
+    );
+
+    const logBody = `[${new Date().toISOString()}] Static bundle uploaded (${publishResult.fileCount} files)\n`;
+    const buildLogKey = `${artifactPrefix}/build.log`;
+    await upload(buildLogKey, logBody, {
+      contentType: "text/plain; charset=utf-8"
+    });
+
+    const previewUrl = buildPublicPreviewUrl(deployment.shortId);
+    const previewResolution = {
+      code: "static_index_html" as const,
+      detail: "Uploaded static bundle"
+    };
+
+    await db
+      .update(schema.deployments)
+      .set({
+        status: "success",
+        finishedAt: new Date(),
+        buildLogKey,
+        previewUrl,
+        previewManifestKey: publishResult.previewManifestKey,
+        previewResolution
+      })
+      .where(eq(schema.deployments.id, deployment.id));
+
+    await db
+      .update(schema.projects)
+      .set({ currentDeploymentId: deployment.id, updatedAt: new Date() })
+      .where(eq(schema.projects.id, project.id));
+
+    void refreshProjectSiteMetadata(project.id, { previewPageUrl: previewUrl }).catch((err) => {
+      console.error("Failed to refresh project site metadata:", err);
+    });
+
+    await publishDeploymentEvent(deployment.id, {
+      type: "log",
+      content: logBody
+    });
+    await publishDeploymentEvent(deployment.id, { type: "status", status: "success" });
+    await publishDeploymentEvent(deployment.id, { type: "done", status: "success" });
+    await onDeploymentTerminalStatus(project.id, "success");
+
+    return json(
+      {
+        ...deployment,
+        status: "success" as const,
+        previewUrl,
+        previewManifestKey: publishResult.previewManifestKey,
+        previewResolution,
+        buildLogKey,
+        finishedAt: new Date().toISOString()
+      },
+      { status: 201 }
+    );
+  } catch (err) {
+    console.error("Static deployment upload failed:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    const now = new Date();
+    await db
+      .update(schema.deployments)
+      .set({
+        status: "failed",
+        finishedAt: now,
+        previewResolution: null
+      })
+      .where(eq(schema.deployments.id, deployment.id));
+
+    await publishDeploymentEvent(deployment.id, {
+      type: "log",
+      content: `[${now.toISOString()}] Upload failed: ${message}\n`
+    });
+    await publishDeploymentEvent(deployment.id, { type: "status", status: "failed" });
+    await publishDeploymentEvent(deployment.id, { type: "done", status: "failed" });
+    await onDeploymentTerminalStatus(project.id, "failed");
+
+    const [projRow] = await db
+      .select({ currentDeploymentId: schema.projects.currentDeploymentId })
+      .from(schema.projects)
+      .where(eq(schema.projects.id, project.id))
+      .limit(1);
+    if (projRow?.currentDeploymentId === deployment.id) {
+      const [fallback] = await db
+        .select({ id: schema.deployments.id })
+        .from(schema.deployments)
+        .where(
+          and(eq(schema.deployments.projectId, project.id), eq(schema.deployments.status, "success"))
+        )
+        .orderBy(desc(schema.deployments.finishedAt), desc(schema.deployments.createdAt))
+        .limit(1);
+      await db
+        .update(schema.projects)
+        .set({
+          currentDeploymentId: fallback?.id ?? null,
+          updatedAt: new Date()
+        })
+        .where(eq(schema.projects.id, project.id));
+    }
+
+    return json({ error: message }, { status: 400 });
+  } finally {
+    if (workRoot) {
+      await safeRemoveDir(workRoot);
+    }
   }
 };
