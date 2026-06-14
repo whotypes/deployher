@@ -27,7 +27,7 @@ services:
       DEPLOYHER_API_ONLY: "1"
       SKIP_CLIENT_BUILD: "1"
       RUN_MIGRATIONS: "1"
-      DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-placeholder}
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
       BUILD_WORKERS: "0"
@@ -84,6 +84,7 @@ services:
     env_file:
       - .env
     environment:
+      APP_ENV: production
       PORT: "8787"
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
@@ -104,7 +105,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
 
   deployment-worker:
     build:
@@ -132,7 +133,7 @@ services:
     environment:
       HOSTNAME: 0.0.0.0
       PORT: 3000
-      DATABASE_URL: postgresql://app:app@postgres:5432/placeholder
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-placeholder}
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://garage:3900
       BUILD_WORKDIR: /tmp/deployher-builds
@@ -175,10 +176,10 @@ services:
     env_file:
       - ./infra/.garage.env
     ports:
-      - "3900:3900" # S3 API
-      - "3901:3901" # RPC
-      - "3902:3902" # Web UI
-      - "3903:3903" # Admin
+      - "127.0.0.1:3900:3900" # S3 API
+      - "127.0.0.1:3901:3901" # RPC
+      - "127.0.0.1:3902:3902" # Web UI
+      - "127.0.0.1:3903:3903" # Admin
     volumes:
       - ./infra/garage.dev.toml:/etc/garage.toml
       - ./infra/meta:/var/lib/garage/meta
@@ -189,8 +190,8 @@ services:
     container_name: nexus
     restart: unless-stopped
     ports:
-      - "8081:8081"
-      - "8082:8082"
+      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:8082:8082"
     volumes:
       - nexus_data:/nexus-data
 
@@ -199,11 +200,11 @@ services:
     container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: placeholder
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-placeholder}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
@@ -217,7 +218,7 @@ services:
     container_name: redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s

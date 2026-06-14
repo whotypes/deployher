@@ -13,6 +13,7 @@ COPY src/lib/proxyHeaders.ts ./src/lib/proxyHeaders.ts
 COPY src/preview.ts ./src/preview.ts
 COPY src/preview-runner ./src/preview-runner
 
+ENV APP_ENV=production
 ENV PORT=8787
 EXPOSE 8787/tcp
 

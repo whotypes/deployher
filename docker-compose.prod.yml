@@ -1,0 +1,23 @@
+# Production overrides: keep infra on the Docker network only.
+# Use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Or set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in the server .env.
+#
+# Public traffic enters via host nginx → edge (127.0.0.1:3000).
+# Nexus :8082 stays on loopback so the host Docker daemon can push/pull preview images.
+
+services:
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  garage:
+    ports: !reset []
+
+  preview-runner:
+    ports: !reset []
+
+  nexus:
+    ports: !override
+      - "127.0.0.1:8082:8082"
