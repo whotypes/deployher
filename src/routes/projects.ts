@@ -9,6 +9,11 @@ import { badRequest, json, notFound, parseJson } from "../http/helpers";
 import { parseProjectCommandForStorage } from "../lib/parseProjectCommandLine";
 import { preferPreviewOriginForExternalAsset } from "../lib/previewAssetUrl";
 import { effectiveDeploymentPreviewUrl } from "../lib/previewDeploymentUrl";
+import {
+  PREVIEW_ACCESS_QUERY_PARAM,
+  previewAccessTokenExpiresAt,
+  signPreviewAccessToken
+} from "../lib/previewAccess";
 import { parseRepoRelativePath, parseRuntimeImageMode } from "../lib/projectPaths";
 import { refreshProjectSiteMetadata } from "../lib/projectSiteMetadata";
 import { resolveLivePreviewPageUrl, selectLivePreviewDeploymentForProject } from "../lib/livePreviewDeployment";
@@ -27,6 +32,7 @@ type PreviewMode = typeof schema.projects.$inferSelect.previewMode;
 type ServerPreviewTarget = typeof schema.projects.$inferSelect.serverPreviewTarget;
 type FrameworkHint = typeof schema.projects.$inferSelect.frameworkHint;
 type RuntimeImageMode = typeof schema.projects.$inferSelect.runtimeImageMode;
+type PreviewAccess = typeof schema.projects.$inferSelect.previewAccess;
 
 const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MAX_ENV_KEY_LENGTH = 128;
@@ -35,6 +41,13 @@ const DEFAULT_RUNTIME_CONTAINER_PORT = 3000;
 const PREVIEW_MODES = new Set<PreviewMode>(["auto", "static", "server"]);
 const SERVER_PREVIEW_TARGETS = new Set<ServerPreviewTarget>(["isolated-runner"]);
 const FRAMEWORK_HINTS = new Set<FrameworkHint>(["auto", "nextjs", "node", "python", "static"]);
+const PREVIEW_ACCESS_MODES = new Set<PreviewAccess>(["public", "protected"]);
+
+const parsePreviewAccess = (value: unknown): PreviewAccess | null => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim() as PreviewAccess;
+  return PREVIEW_ACCESS_MODES.has(normalized) ? normalized : null;
+};
 
 const parsePreviewMode = (value: unknown): PreviewMode | null => {
   if (typeof value !== "string") return null;
@@ -104,11 +117,12 @@ const getProjectForUser = async (projectId: string, userId: string) => {
   return project ?? null;
 };
 
-const serializeProjectEnv = (envRow: ProjectEnv) => ({
+const serializeProjectEnv = (envRow: ProjectEnv, options: { reveal: boolean }) => ({
   id: envRow.id,
   projectId: envRow.projectId,
   key: envRow.key,
-  value: envRow.value,
+  value: options.reveal || envRow.isPublic ? envRow.value : "",
+  masked: !options.reveal && !envRow.isPublic,
   isPublic: envRow.isPublic,
   createdAt: envRow.createdAt.toISOString(),
   updatedAt: envRow.updatedAt.toISOString()
@@ -342,13 +356,16 @@ export const listProjectEnvs = async (req: RequestWithParamsAndSession) => {
     return notFound("Project not found");
   }
 
+  const url = new URL(req.url);
+  const reveal = url.searchParams.get("reveal") === "1";
+
   const rows = await db
     .select()
     .from(schema.projectEnvs)
     .where(eq(schema.projectEnvs.projectId, projectId))
     .orderBy(asc(schema.projectEnvs.key));
 
-  return json(rows.map(serializeProjectEnv));
+  return json(rows.map((row) => serializeProjectEnv(row, { reveal })));
 };
 
 type UpsertProjectEnvBody = {
@@ -356,6 +373,7 @@ type UpsertProjectEnvBody = {
   key?: unknown;
   value?: unknown;
   isPublic?: unknown;
+  preserveValue?: unknown;
 };
 
 export const upsertProjectEnv = async (req: RequestWithParamsAndSession) => {
@@ -397,6 +415,7 @@ export const upsertProjectEnv = async (req: RequestWithParamsAndSession) => {
   }
 
   const isPublic = typeof body.isPublic === "boolean" ? body.isPublic : false;
+  const preserveValue = body.preserveValue === true;
   const now = new Date();
   const envId = typeof body.id === "string" && body.id.trim() ? body.id.trim() : null;
 
@@ -426,7 +445,7 @@ export const upsertProjectEnv = async (req: RequestWithParamsAndSession) => {
       .update(schema.projectEnvs)
       .set({
         key,
-        value: body.value,
+        ...(preserveValue ? {} : { value: body.value }),
         isPublic,
         updatedAt: now
       })
@@ -437,7 +456,7 @@ export const upsertProjectEnv = async (req: RequestWithParamsAndSession) => {
       return notFound("Environment variable not found");
     }
 
-    return json(serializeProjectEnv(updated));
+    return json(serializeProjectEnv(updated, { reveal: true }));
   }
 
   const [existingByKey] = await db
@@ -461,7 +480,7 @@ export const upsertProjectEnv = async (req: RequestWithParamsAndSession) => {
       return notFound("Environment variable not found");
     }
 
-    return json(serializeProjectEnv(updated));
+    return json(serializeProjectEnv(updated, { reveal: true }));
   }
 
   const [created] = await db
@@ -478,7 +497,7 @@ export const upsertProjectEnv = async (req: RequestWithParamsAndSession) => {
     return notFound("Environment variable not found");
   }
 
-  return json(serializeProjectEnv(created), { status: 201 });
+  return json(serializeProjectEnv(created, { reveal: true }), { status: 201 });
 };
 
 export const deleteProjectEnv = async (req: RequestWithParamsAndSession) => {
@@ -527,6 +546,7 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
     installCommand?: unknown;
     buildCommand?: unknown;
     currentDeploymentId?: unknown;
+    previewAccess?: unknown;
   }>(req);
   if (!body) {
     return badRequest("Invalid JSON body");
@@ -591,6 +611,14 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
       return badRequest("previewMode must be one of: auto, static, server");
     }
     updates.previewMode = previewMode;
+  }
+
+  if (body.previewAccess !== undefined) {
+    const previewAccess = parsePreviewAccess(body.previewAccess);
+    if (!previewAccess) {
+      return badRequest("previewAccess must be one of: public, protected");
+    }
+    updates.previewAccess = previewAccess;
   }
 
   if (body.serverPreviewTarget !== undefined) {
@@ -715,6 +743,47 @@ export const updateProject = async (req: RequestWithParamsAndSession) => {
   }
 
   return json(withProjectMeta(project));
+};
+
+export const getPreviewShareLink = async (req: RequestWithParamsAndSession) => {
+  const id = req.params["id"];
+  if (!id) {
+    return notFound("Project not found");
+  }
+
+  const userId = req.session.user.id;
+  const project = await getProjectForUser(id, userId);
+  if (!project) {
+    return notFound("Project not found");
+  }
+
+  const dep = await selectLivePreviewDeploymentForProject(id);
+  if (!dep) {
+    return json({ error: "No live preview deployment" }, { status: 422 });
+  }
+
+  const previewUrl = effectiveDeploymentPreviewUrl(dep.status, dep.previewUrl, dep.shortId);
+  if (!previewUrl) {
+    return json({ error: "No live preview deployment" }, { status: 422 });
+  }
+
+  let token: string;
+  try {
+    token = signPreviewAccessToken(id);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to sign preview access token";
+    return json({ error: message }, { status: 500 });
+  }
+
+  const shareUrl = new URL(previewUrl);
+  shareUrl.searchParams.set(PREVIEW_ACCESS_QUERY_PARAM, token);
+  const expiresAt = previewAccessTokenExpiresAt(token);
+
+  return json({
+    url: shareUrl.toString(),
+    expiresAt: expiresAt?.toISOString() ?? null,
+    previewAccess: project.previewAccess
+  });
 };
 
 export const postRefreshProjectSiteMetadata = async (req: RequestWithParamsAndSession) => {
