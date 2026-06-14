@@ -1,13 +1,13 @@
 "use client";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ProjectSiteGlyph } from "@/ui/client/ProjectSiteGlyph";
 import { fetchWithCsrf } from "@/ui/client/fetchWithCsrf";
 import type {
     LayoutUser,
+    SidebarContextProject,
     SidebarFeaturedDeployment,
     SidebarProjectDeploymentStatus,
     SidebarProjectSummary
@@ -37,10 +37,7 @@ export type DeployherSidebarProps = {
   user?: LayoutUser | null;
   sidebarProjects?: SidebarProjectSummary[];
   sidebarContext?: {
-    project?: {
-      id: string;
-      name: string;
-    } | null;
+    project?: SidebarContextProject | null;
     deployment?: SidebarFeaturedDeployment | null;
   };
 };
@@ -133,8 +130,22 @@ const SidebarProjectStatusDot = ({ status }: { status: SidebarProjectDeploymentS
   );
 };
 
-const SidebarGroupLabel = ({ children }: { children: string }) => (
-  <p className="deployher-sidebar-label shrink-0 px-2 pb-1 pt-3 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 transition-[margin,opacity] duration-200 group-[.sidebar-collapsed]/shell:pointer-events-none group-[.sidebar-collapsed]/shell:-mt-6 group-[.sidebar-collapsed]/shell:opacity-0">
+const SidebarGroupLabel = ({
+  children,
+  className,
+  id
+}: {
+  children: string;
+  className?: string;
+  id?: string;
+}) => (
+  <p
+    id={id}
+    className={cn(
+      "deployher-sidebar-label shrink-0 px-2 pb-1.5 pt-3 text-[0.6875rem] font-medium text-sidebar-foreground/55 transition-[margin,opacity] duration-200 group-[.sidebar-collapsed]/shell:pointer-events-none group-[.sidebar-collapsed]/shell:-mt-6 group-[.sidebar-collapsed]/shell:opacity-0",
+      className
+    )}
+  >
     {children}
   </p>
 );
@@ -159,7 +170,7 @@ const SidebarLink = ({
           data-active={active ? "true" : "false"}
           data-slot="sidebar-menu-button"
           className={cn(
-            "deployher-sidebar-link peer/menu-button flex items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground no-underline hover:no-underline group-[.sidebar-collapsed]/shell:size-8 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:p-2 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
+            "deployher-sidebar-link peer/menu-button relative flex h-8 items-center gap-2 overflow-hidden rounded-md px-2 text-left text-[0.8125rem] outline-none ring-sidebar-ring transition-[width,padding,background-color,color,box-shadow] duration-200 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent no-underline hover:no-underline group-[.sidebar-collapsed]/shell:size-8 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:p-2 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[active=true]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--sidebar-foreground)_8%,transparent)] before:absolute before:left-0 before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-sidebar-foreground before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100 group-[.sidebar-collapsed]/shell:before:hidden [&>svg]:size-4 [&>svg]:shrink-0",
             muted && !active ? "text-sidebar-foreground/80" : "text-sidebar-foreground"
           )}
         >
@@ -210,7 +221,7 @@ const WorkspaceProjectsRow = ({
               data-active={projectsActive ? "true" : "false"}
               data-slot="sidebar-menu-button"
               className={cn(
-                "deployher-sidebar-link peer/menu-button flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground no-underline hover:no-underline data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
+                "deployher-sidebar-link peer/menu-button relative flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md px-2 text-left text-[0.8125rem] outline-none ring-sidebar-ring transition-[width,padding,background-color,color,box-shadow] duration-200 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent no-underline hover:no-underline data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[active=true]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--sidebar-foreground)_8%,transparent)] before:absolute before:left-0 before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-sidebar-foreground before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100 [&>svg]:size-4 [&>svg]:shrink-0",
                 projectsActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground"
               )}
             >
@@ -220,7 +231,7 @@ const WorkspaceProjectsRow = ({
           </CollapsedSidebarTooltip>
           <CollapsibleTrigger
             className={cn(
-              "flex h-[inherit] min-h-9 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent focus-visible:ring-2 data-[state=open]:bg-sidebar-accent/60 [&>svg]:size-4"
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:ring-2 data-[state=open]:bg-sidebar-accent/60 [&>svg]:size-4"
             )}
             aria-label={nestOpen ? t("sidebar.collapseProjectList") : t("sidebar.expandProjectList")}
           >
@@ -232,7 +243,7 @@ const WorkspaceProjectsRow = ({
         </div>
         <CollapsibleContent>
           <div
-            className="mt-1 flex flex-col gap-0.5 border-l-2 border-sidebar-border/90 pl-2.5 ml-2"
+            className="ml-4 mt-1 flex flex-col gap-0.5 border-l border-sidebar-border/90 pl-2"
             role="list"
           >
             {sidebarProjects.map((p) => {
@@ -245,9 +256,9 @@ const WorkspaceProjectsRow = ({
                   role="listitem"
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline",
+                    "flex h-7 min-w-0 items-center justify-between gap-2 rounded-md px-2 text-[0.8125rem] outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline",
                     active
-                      ? "bg-sidebar-accent/70 font-medium text-sidebar-accent-foreground"
+                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                       : "text-sidebar-foreground/90"
                   )}
                 >
@@ -257,7 +268,7 @@ const WorkspaceProjectsRow = ({
                       siteIconUrl={p.siteIconUrl}
                       previewUrl={p.previewUrl ?? null}
                       className="ring-0"
-                      letterClassName="flex size-5 items-center justify-center rounded-sm bg-sidebar-accent/50 text-[10px] font-semibold text-sidebar-foreground/90"
+                      letterClassName="flex size-4.5 items-center justify-center rounded-sm bg-sidebar-accent/50 text-[10px] font-medium text-sidebar-foreground/90"
                     />
                     <span className="min-w-0 truncate">{p.name}</span>
                   </span>
@@ -289,7 +300,7 @@ const SidebarWorkspace = ({
 }) => (
   <div>
     <SidebarGroupLabel>{t("nav.workspace")}</SidebarGroupLabel>
-    <ul className="flex flex-col gap-1" data-slot="sidebar-menu">
+    <ul className="flex flex-col gap-0.5" data-slot="sidebar-menu">
       <SidebarLink item={dashboardNav} pathname={pathname} />
       <WorkspaceProjectsRow
         pathname={pathname}
@@ -305,7 +316,7 @@ const SidebarWorkspace = ({
 const SidebarGroup = ({ group, pathname, muted }: { group: NavGroup; pathname: string; muted?: boolean }) => (
   <div>
     <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-    <ul className="flex flex-col gap-1" data-slot="sidebar-menu">
+    <ul className="flex flex-col gap-0.5" data-slot="sidebar-menu">
       {group.items.map((item) => (
         <SidebarLink key={item.href} item={item} pathname={pathname} muted={muted} />
       ))}
@@ -355,7 +366,7 @@ const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
             type="button"
             onClick={() => void handleDeploy()}
             disabled={busy}
-            className="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground outline-none ring-sidebar-ring transition-opacity hover:opacity-95 focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-60"
+            className="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground outline-none ring-sidebar-ring transition-opacity hover:opacity-90 focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-60"
             aria-label={label}
           >
             <Rocket className="size-4 shrink-0" aria-hidden />
@@ -371,7 +382,7 @@ const SidebarProjectDeploy = ({ projectId }: { projectId: string }) => {
         type="button"
         onClick={() => void handleDeploy()}
         disabled={busy}
-        className="flex w-full items-center justify-center gap-2 rounded-md bg-sidebar-primary px-2 py-2 text-sm font-medium text-sidebar-primary-foreground outline-none ring-sidebar-ring transition-opacity hover:opacity-95 focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-60"
+        className="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-sidebar-primary px-3 text-[0.8125rem] font-medium text-sidebar-primary-foreground outline-none ring-sidebar-ring transition-[opacity,transform] hover:opacity-90 focus-visible:ring-2 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-60"
         aria-label={label}
       >
         <Rocket className="size-4 shrink-0" aria-hidden />
@@ -447,13 +458,13 @@ const SidebarProjectCard = ({
   };
 
   return (
-    <div className="rounded-lg border border-sidebar-border/90 bg-sidebar-accent/25 p-2 shadow-sm ring-1 ring-sidebar-border/40 group-[.sidebar-collapsed]/shell:border-0 group-[.sidebar-collapsed]/shell:bg-transparent group-[.sidebar-collapsed]/shell:p-0 group-[.sidebar-collapsed]/shell:shadow-none group-[.sidebar-collapsed]/shell:ring-0">
+    <div className="relative overflow-hidden rounded-lg border border-sidebar-border bg-sidebar p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] group-[.sidebar-collapsed]/shell:rounded-lg group-[.sidebar-collapsed]/shell:border-0 group-[.sidebar-collapsed]/shell:bg-transparent group-[.sidebar-collapsed]/shell:p-0 group-[.sidebar-collapsed]/shell:shadow-none">
       {omitSectionHeading ? null : (
         <p className="deployher-sidebar-label mb-2 px-0.5 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 group-[.sidebar-collapsed]/shell:sr-only">
           {t("sidebar.currentProject")}
         </p>
       )}
-      <div className="space-y-2 group-[.sidebar-collapsed]/shell:space-y-1">
+      <div className="space-y-3 group-[.sidebar-collapsed]/shell:space-y-1">
         <CollapsedSidebarTooltip label={project.name}>
           <Link
             to={`/projects/${project.id}`}
@@ -462,16 +473,23 @@ const SidebarProjectCard = ({
                 ? "page"
                 : undefined
             }
-            className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-sm font-semibold text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:p-2"
+            className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[0.875rem] font-medium leading-snug text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent/70 focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:p-2 group-[.sidebar-collapsed]/shell:text-sm"
           >
-            <FolderKanban className="size-4 shrink-0 group-[.sidebar-collapsed]/shell:size-5" aria-hidden />
-            <span className="deployher-sidebar-label truncate group-[.sidebar-collapsed]/shell:sr-only">{project.name}</span>
+            <ProjectSiteGlyph
+              name={project.name}
+              siteIconUrl={project.siteIconUrl}
+              previewUrl={project.previewUrl}
+              className="size-7 shrink-0 rounded-md ring-1 ring-sidebar-border group-[.sidebar-collapsed]/shell:size-8"
+              imgClassName="size-7 object-cover group-[.sidebar-collapsed]/shell:size-8"
+              letterClassName="flex size-7 items-center justify-center rounded-md bg-sidebar-accent text-xs font-medium text-sidebar-foreground group-[.sidebar-collapsed]/shell:size-8"
+            />
+            <span className="deployher-sidebar-label min-w-0 truncate group-[.sidebar-collapsed]/shell:sr-only">{project.name}</span>
           </Link>
         </CollapsedSidebarTooltip>
 
         <SidebarProjectDeploy projectId={project.id} />
         <div className="group-[.sidebar-collapsed]/shell:hidden">
-          <div className="flex flex-col gap-0.5 border-l-2 border-sidebar-border/80 pl-2.5">
+          <div className="flex flex-col gap-0.5 border-l border-sidebar-border pl-3">
             {subLinks.map((s) => {
               const active = settingsMatch(pathname, s.section);
               return (
@@ -480,11 +498,12 @@ const SidebarProjectCard = ({
                   to={s.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline [&>svg]:size-3.5 [&>svg]:shrink-0",
+                    "flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline [&>svg]:size-3.5 [&>svg]:shrink-0",
                     s.section === "general" ? "font-medium" : "",
+                    s.section === "danger" && !active ? "text-amber-600/95 dark:text-amber-400/90" : "",
                     active
-                      ? "bg-sidebar-accent/70 text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/85"
+                      ? "bg-sidebar-accent/80 text-sidebar-accent-foreground shadow-sm"
+                      : "text-sidebar-foreground/90"
                   )}
                 >
                   {s.section === "general" ? <Settings2 className="shrink-0" aria-hidden /> : null}
@@ -497,8 +516,8 @@ const SidebarProjectCard = ({
         </div>
 
         {deployment ? (
-          <div className="border-t border-sidebar-border/60 pt-2 group-[.sidebar-collapsed]/shell:hidden">
-            <p className="mb-1 px-0.5 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/50">
+          <div className="rounded-md border border-sidebar-border/70 bg-sidebar-accent/20 p-2 group-[.sidebar-collapsed]/shell:hidden">
+            <p className="mb-1.5 px-1 text-[0.6875rem] font-medium text-sidebar-foreground/55">
               {deploymentSectionTitle(deployment)}
             </p>
             <CollapsedSidebarTooltip
@@ -508,17 +527,17 @@ const SidebarProjectCard = ({
                 to={`/deployments/${deployment.id}`}
                 aria-current={pathname === `/deployments/${deployment.id}` ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-2 rounded-md p-2 text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent focus-visible:ring-2 no-underline hover:no-underline",
+                  "flex h-7 items-center gap-2 rounded-md px-1.5 text-[0.8125rem] outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent/70 focus-visible:ring-2 no-underline hover:no-underline",
                   deployment.sidebarRole === "failed"
                     ? "text-red-300/95 hover:text-red-200"
                     : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
                 )}
               >
                 <SidebarDeploymentRowIcon deployment={deployment} />
-                <span className="truncate">
+                <span className="min-w-0 truncate font-medium">
                   {t("sidebar.runShortId", { shortId: deployment.shortId })}
                   {deployment.sidebarRole === "in_progress" ? (
-                    <span className="ml-1 text-xs opacity-80">({deployment.status})</span>
+                    <span className="ml-1.5 text-xs font-normal opacity-80">({deployment.status})</span>
                   ) : null}
                 </span>
               </Link>
@@ -580,27 +599,6 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
     [user?.role, adminNav, t]
   );
 
-  const shellCollapsed = useShellSidebarCollapsed();
-
-  const project = sidebarContext?.project ?? null;
-  const projectPrefix = project ? `/projects/${project.id}` : "";
-  const inProjectRoutes =
-    !!project && (pathname === projectPrefix || pathname.startsWith(`${projectPrefix}/`));
-
-  const [sidebarTab, setSidebarTab] = useState<"workspace" | "project">(() =>
-    inProjectRoutes ? "project" : "workspace"
-  );
-
-  useEffect(() => {
-    if (!project) return;
-    const inScope = pathname === projectPrefix || pathname.startsWith(`${projectPrefix}/`);
-    if (inScope) setSidebarTab("project");
-    else setSidebarTab("workspace");
-  }, [pathname, project, projectPrefix]);
-
-  const hasProjectContext = Boolean(project);
-  const showProjectTabs = hasProjectContext && !shellCollapsed;
-
   return (
     <TooltipProvider delayDuration={200}>
       <aside
@@ -612,17 +610,17 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
         )}
         style={{ transitionTimingFunction: softSpringEasing }}
       >
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-3 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:px-2">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-2.5 group-[.sidebar-collapsed]/shell:justify-center group-[.sidebar-collapsed]/shell:px-2">
           <CollapsedSidebarTooltip label={t("common.deployherBrand")}>
             <Link
               to="/dashboard"
-              className="deployher-sidebar-brand flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold text-sidebar-foreground no-underline outline-none ring-sidebar-ring hover:bg-sidebar-accent hover:no-underline focus-visible:ring-2 group-[.sidebar-collapsed]/shell:flex-none group-[.sidebar-collapsed]/shell:justify-center"
+              className="deployher-sidebar-brand flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-foreground no-underline outline-none ring-sidebar-ring hover:bg-sidebar-accent/70 hover:no-underline focus-visible:ring-2 group-[.sidebar-collapsed]/shell:flex-none group-[.sidebar-collapsed]/shell:justify-center"
               aria-label={t("sidebar.deployherHome")}
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-primary via-primary to-color-mix(in_oklab,var(--chart-2)_55%,var(--primary)) text-sm font-bold text-primary-foreground shadow-[0_0_24px_-4px_color-mix(in_oklab,var(--primary)_70%,transparent)] ring-1 ring-primary/40">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-[0.8125rem] font-semibold text-sidebar-primary-foreground shadow-sm">
                 d
               </span>
-              <span className="deployher-sidebar-label truncate font-serif text-base font-semibold tracking-tight group-[.sidebar-collapsed]/shell:sr-only">
+              <span className="deployher-sidebar-label truncate text-[0.875rem] font-medium group-[.sidebar-collapsed]/shell:sr-only">
                 {t("common.deployherBrand")}
               </span>
             </Link>
@@ -630,75 +628,38 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
           <button
             type="button"
             id="deployher-sidebar-close-mobile"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent focus-visible:ring-2 md:hidden"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/70 focus-visible:ring-2 md:hidden"
             aria-label={t("sidebar.closeSidebar")}
           >
             <X className="size-4" aria-hidden />
           </button>
         </div>
 
-        <div className="deployher-sidebar-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2" data-slot="sidebar-content">
-          {showProjectTabs && sidebarContext && project ? (
-            <Tabs
-              value={sidebarTab}
-              onValueChange={(v) => setSidebarTab(v === "project" ? "project" : "workspace")}
-              className="flex min-h-0 flex-1 flex-col gap-0"
+        <div className="deployher-sidebar-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-1.5" data-slot="sidebar-content">
+          <SidebarWorkspace
+            pathname={pathname}
+            sidebarProjects={sidebarProjects}
+            dashboardNav={dashboardNav}
+            projectsNav={projectsNav}
+            healthNav={healthNav}
+            t={t}
+          />
+          {sidebarContext?.project ? (
+            <section
+              className="mx-0.5 mt-3 border-t border-sidebar-border pt-3"
+              aria-labelledby="deployher-sidebar-current-project-heading"
             >
-              <TabsList
-                className="grid h-9 w-full shrink-0 grid-cols-2 gap-0.5 rounded-lg bg-muted/60 p-0.5 text-muted-foreground"
-                aria-label={t("sidebar.tabsAria")}
-              >
-                <TabsTrigger value="workspace" className="truncate px-2 text-xs sm:text-sm">
-                  {t("nav.workspace")}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="project"
-                  className="min-w-0 truncate px-2 text-xs sm:text-sm"
-                  title={project.name}
-                  aria-label={t("sidebar.tabThisProjectAria", { name: project.name })}
-                >
-                  {project.name}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="workspace" className="mt-2 min-h-0 flex-1 overflow-y-auto outline-none">
-                <SidebarWorkspace
-                  pathname={pathname}
-                  sidebarProjects={sidebarProjects}
-                  dashboardNav={dashboardNav}
-                  projectsNav={projectsNav}
-                  healthNav={healthNav}
-                  t={t}
-                />
-                {adminGroups.map((group) => (
-                  <SidebarGroup key={group.label} group={group} pathname={pathname} muted />
-                ))}
-              </TabsContent>
-              <TabsContent value="project" className="mt-2 min-h-0 flex-1 overflow-y-auto outline-none">
-                <SidebarProjectCard
-                  pathname={pathname}
-                  sidebarContext={sidebarContext}
-                  omitSectionHeading
-                />
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <>
-              <SidebarWorkspace
-                pathname={pathname}
-                sidebarProjects={sidebarProjects}
-                dashboardNav={dashboardNav}
-                projectsNav={projectsNav}
-                healthNav={healthNav}
-                t={t}
-              />
-              {sidebarContext ? (
-                <SidebarProjectCard pathname={pathname} sidebarContext={sidebarContext} />
-              ) : null}
-              {adminGroups.map((group) => (
-                <SidebarGroup key={group.label} group={group} pathname={pathname} muted />
-              ))}
-            </>
-          )}
+              <SidebarGroupLabel id="deployher-sidebar-current-project-heading" className="pt-0 text-[0.6875rem] text-sidebar-foreground/55">
+                {t("sidebar.currentProject")}
+              </SidebarGroupLabel>
+              <div className="mt-2">
+                <SidebarProjectCard pathname={pathname} sidebarContext={sidebarContext} omitSectionHeading />
+              </div>
+            </section>
+          ) : null}
+          {adminGroups.map((group) => (
+            <SidebarGroup key={group.label} group={group} pathname={pathname} muted />
+          ))}
         </div>
 
         <div className="mt-auto shrink-0 border-t border-sidebar-border p-2" data-slot="sidebar-footer">
@@ -707,13 +668,13 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
               <CollapsedSidebarTooltip label={user.name ?? user.email}>
                 <Link
                   to="/account"
-                  className="deployher-sidebar-link mb-1 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground/90 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center"
+                  className="deployher-sidebar-link mb-1 flex h-9 items-center gap-2 rounded-md px-2 text-[0.8125rem] text-sidebar-foreground/90 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 no-underline hover:no-underline group-[.sidebar-collapsed]/shell:justify-center"
                   aria-label={t("sidebar.accountLink")}
                 >
                   {user.image ? (
-                    <img src={user.image} alt="" width={28} height={28} className="size-7 shrink-0 rounded-md object-cover" />
+                    <img src={user.image} alt="" width={24} height={24} className="size-6 shrink-0 rounded-full object-cover" />
                   ) : (
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-xs font-medium">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[0.6875rem] font-medium">
                       {(user.name ?? user.email).charAt(0).toUpperCase()}
                     </span>
                   )}
@@ -722,11 +683,11 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
                   </span>
                 </Link>
               </CollapsedSidebarTooltip>
-              <form id="signout-form" method="post" action="/api/auth/sign-out" className="group-[.sidebar-collapsed]/shell:px-0">
+              <form id="signout-form" method="post" action="/logout" className="group-[.sidebar-collapsed]/shell:px-0">
                 <CollapsedSidebarTooltip label={t("common.signOut")}>
                   <button
                     type="submit"
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-[.sidebar-collapsed]/shell:justify-center"
+                    className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground group-[.sidebar-collapsed]/shell:justify-center"
                     aria-label={t("common.signOut")}
                   >
                     <LogOut className="size-4 shrink-0" aria-hidden />
@@ -738,7 +699,7 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
           ) : (
             <Link
               to="/login"
-              className="flex items-center justify-center rounded-md bg-sidebar-primary px-2 py-2 text-sm font-medium text-sidebar-primary-foreground no-underline hover:no-underline hover:opacity-90"
+              className="flex h-8 items-center justify-center rounded-md bg-sidebar-primary px-2 text-[0.8125rem] font-medium text-sidebar-primary-foreground no-underline hover:no-underline hover:opacity-90"
             >
               {t("sidebar.signInCta")}
             </Link>
@@ -751,7 +712,7 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
           tabIndex={-1}
           title={t("sidebar.toggleSidebarRail")}
           aria-label={t("sidebar.toggleSidebarRail")}
-          className="absolute inset-y-0 right-0 z-20 hidden w-3 cursor-ew-resize border-0 bg-transparent p-0 md:block group-[.sidebar-collapsed]/shell:cursor-e-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-sidebar-border"
+          className="absolute inset-y-0 right-0 z-20 hidden w-3 cursor-ew-resize border-0 bg-transparent p-0 md:block group-[.sidebar-collapsed]/shell:cursor-e-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-sidebar-foreground/30"
         />
       </aside>
     </TooltipProvider>

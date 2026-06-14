@@ -10,11 +10,17 @@ import { LayoutPrefsMenu } from "@/ui/client/LayoutPrefsMenu";
 import { ProjectSwitcher } from "@/ui/client/ProjectSwitcher";
 import type {
   LayoutUser,
+  SidebarContextProject,
   SidebarFeaturedDeployment,
   SidebarProjectSummary
 } from "@/ui/layoutUser";
 
-export type { LayoutUser, SidebarFeaturedDeployment, SidebarProjectSummary } from "@/ui/layoutUser";
+export type {
+  LayoutUser,
+  SidebarContextProject,
+  SidebarFeaturedDeployment,
+  SidebarProjectSummary
+} from "@/ui/layoutUser";
 
 export type BreadcrumbItem = {
   label: string;
@@ -29,10 +35,7 @@ export type AppShellProps = {
   breadcrumbs?: BreadcrumbItem[];
   sidebarProjects?: SidebarProjectSummary[];
   sidebarContext?: {
-    project?: {
-      id: string;
-      name: string;
-    } | null;
+    project?: SidebarContextProject | null;
     deployment?: SidebarFeaturedDeployment | null;
   };
 };
@@ -49,7 +52,7 @@ export const AppShell = ({
   const { t } = useTranslation();
 
   useEffect(() => {
-    initLayout();
+    return initLayout();
   }, [pathname]);
 
   return (
