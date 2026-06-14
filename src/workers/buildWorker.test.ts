@@ -84,7 +84,7 @@ describe("resolveDeploymentTerminalStatus", () => {
 
 describe("createServerRuntimeImageContext", () => {
   it("copies the repo into a docker context and writes a Dockerfile with WORKDIR and CMD", async () => {
-    const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "pdploy-runtime-context-"));
+    const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "deployher-runtime-context-"));
     const repoDir = path.join(tmpRoot, "repo");
     const workDir = path.join(tmpRoot, "work");
 
