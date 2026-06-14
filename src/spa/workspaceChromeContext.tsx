@@ -1,15 +1,12 @@
 import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
 import type { BreadcrumbItem } from "@/ui/AppShell";
-import type { SidebarFeaturedDeployment } from "@/ui/layoutUser";
+import type { SidebarContextProject, SidebarFeaturedDeployment } from "@/ui/layoutUser";
 
 export type WorkspaceChromeState = {
   title: string;
   breadcrumbs: BreadcrumbItem[];
   sidebarContext?: {
-    project?: {
-      id: string;
-      name: string;
-    } | null;
+    project?: SidebarContextProject | null;
     deployment?: SidebarFeaturedDeployment | null;
   };
 };
@@ -46,6 +43,8 @@ export const useWorkspaceChrome = (chrome: WorkspaceChromeState) => {
     breadcrumbsKey,
     chrome.sidebarContext?.project?.id,
     chrome.sidebarContext?.project?.name,
+    chrome.sidebarContext?.project?.siteIconUrl,
+    chrome.sidebarContext?.project?.previewUrl,
     chrome.sidebarContext?.deployment?.id,
     chrome.sidebarContext?.deployment?.shortId,
     chrome.sidebarContext?.deployment?.status,
