@@ -49,6 +49,23 @@ export const ensureAppStack = async (ctx: CliContext, onLog: (m: string) => void
   await verifyBuildWorkerDockerAccess(ctx, onLog);
 };
 
+export const restartServices = async (
+  ctx: CliContext,
+  services: string[],
+  onLog: (m: string) => void,
+): Promise<void> => {
+  const unique = [...new Set(services.map((s) => s.trim()).filter(Boolean))];
+  if (unique.length === 0) {
+    onLog("No services selected.");
+    return;
+  }
+  onLog(`Building and starting ${unique.join(", ")}...`);
+  const up = await compose(ctx, ["up", "-d", "--build", ...unique]);
+  if (!up.ok) {
+    throw new Error(up.stderr || up.stdout || "docker compose up failed");
+  }
+};
+
 export const stopStack = async (ctx: CliContext): Promise<void> => {
   await ensureGarageEnv(ctx, () => undefined);
   const down = await compose(ctx, ["down"]);

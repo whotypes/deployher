@@ -126,7 +126,14 @@ export const ensureGarageBucket = async (
   ctx: CliContext,
   log: (m: string) => void,
 ): Promise<void> => {
-  const name = ctx.garageBucketName;
+  await ensureGarageBucketByName(ctx, ctx.garageBucketName, log);
+};
+
+export const ensureGarageBucketByName = async (
+  ctx: CliContext,
+  name: string,
+  log: (m: string) => void,
+): Promise<void> => {
   log(`Ensuring bucket '${name}' exists...`);
   const bucketList = await garageExec(ctx, ["bucket", "list"]);
   const hasBucket = bucketList.split("\n").some((line) => line.trim().split(/\s+/).includes(name));
@@ -173,8 +180,38 @@ export const ensureGarageKey = async (
     );
   }
 
-  log(`Allowing key '${keyName}' on bucket '${ctx.garageBucketName}'...`);
-  await runCommand(
+  for (const bucketName of [ctx.garageBucketName, ctx.garageAvatarBucketName]) {
+    log(`Allowing key '${keyName}' on bucket '${bucketName}'...`);
+    await runCommand(
+      [
+        "docker",
+        "exec",
+        "garage",
+        "/garage",
+        "bucket",
+        "allow",
+        "--read",
+        "--write",
+        bucketName,
+        "--key",
+        keyName,
+      ],
+      { cwd: ctx.repoRoot },
+    );
+  }
+  log("Key allowed on buckets.");
+
+  return { accessKeyId, secretAccessKey };
+};
+
+export const grantGarageKeyToBucket = async (
+  ctx: CliContext,
+  bucketName: string,
+  keyName: string,
+  log: (m: string) => void,
+): Promise<void> => {
+  log(`Allowing key '${keyName}' on bucket '${bucketName}'...`);
+  const r = await runCommand(
     [
       "docker",
       "exec",
@@ -184,15 +221,16 @@ export const ensureGarageKey = async (
       "allow",
       "--read",
       "--write",
-      ctx.garageBucketName,
+      bucketName,
       "--key",
       keyName,
     ],
     { cwd: ctx.repoRoot },
   );
-  log("Key allowed on bucket.");
-
-  return { accessKeyId, secretAccessKey };
+  if (!r.ok) {
+    throw new Error(r.stderr.trim() || r.stdout.trim() || `Failed to grant key '${keyName}' on '${bucketName}'`);
+  }
+  log(`Key '${keyName}' allowed on '${bucketName}'.`);
 };
 
 export const setupGarageS3 = async (
@@ -201,12 +239,14 @@ export const setupGarageS3 = async (
 ): Promise<void> => {
   await ensureGarageLayout(ctx, log);
   await ensureGarageBucket(ctx, log);
+  await ensureGarageBucketByName(ctx, ctx.garageAvatarBucketName, log);
   const creds = await ensureGarageKey(ctx, log);
   log(`Injecting S3 credentials into ${ctx.backendEnvFile}...`);
   await injectS3IntoEnvFile(
     ctx.backendEnvFile,
     envExamplePath(ctx.repoRoot),
     ctx.garageBucketName,
+    ctx.garageAvatarBucketName,
     creds.accessKeyId,
     creds.secretAccessKey,
   );
