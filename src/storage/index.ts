@@ -17,7 +17,11 @@ export type StorageUploadOptions = {
 };
 
 function getClient(): S3Client | null {
-  const { endpoint, region, bucket, accessKeyId, secretAccessKey } = config.s3;
+  return getClientForBucket(config.s3.bucket);
+}
+
+function getClientForBucket(bucket: string | undefined): S3Client | null {
+  const { endpoint, region, accessKeyId, secretAccessKey } = config.s3;
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
   return new S3Client({
     endpoint,
@@ -30,14 +34,24 @@ function getClient(): S3Client | null {
 }
 
 let clientInstance: S3Client | null | undefined = undefined;
+let avatarClientInstance: S3Client | null | undefined = undefined;
 
 export function getStorageClient(): S3Client | null {
   if (clientInstance === undefined) clientInstance = getClient();
   return clientInstance;
 }
 
+export function getAvatarStorageClient(): S3Client | null {
+  if (avatarClientInstance === undefined) avatarClientInstance = getClientForBucket(config.s3.avatarBucket);
+  return avatarClientInstance;
+}
+
 export function isStorageConfigured(): boolean {
   return getStorageClient() !== null;
+}
+
+export function isAvatarStorageConfigured(): boolean {
+  return getAvatarStorageClient() !== null;
 }
 
 export async function checkStorageConnectivity(): Promise<{ ok: boolean; message?: string }> {
@@ -136,6 +150,32 @@ export async function upload(
     ...(contentEncoding && { contentEncoding }),
     ...(contentDisposition && { contentDisposition })
   });
+}
+
+export async function uploadAvatar(
+  key: string,
+  data: string | Buffer | Blob | ArrayBuffer,
+  options: StorageUploadOptions = {}
+): Promise<void> {
+  const client = getAvatarStorageClient();
+  if (!client) throw new Error("Avatar S3 storage is not configured");
+  await client.file(key).write(data, {
+    type: options.contentType ?? "application/octet-stream",
+    ...(options.contentEncoding && { contentEncoding: options.contentEncoding }),
+    ...(options.contentDisposition && { contentDisposition: options.contentDisposition })
+  });
+}
+
+export function getAvatarStream(key: string): ReadableStream<Uint8Array> {
+  const client = getAvatarStorageClient();
+  if (!client) throw new Error("Avatar S3 storage is not configured");
+  return client.file(key).stream();
+}
+
+export async function avatarExists(key: string): Promise<boolean> {
+  const client = getAvatarStorageClient();
+  if (!client) throw new Error("Avatar S3 storage is not configured");
+  return client.file(key).exists();
 }
 
 export function getStream(key: string): ReadableStream<Uint8Array> {
