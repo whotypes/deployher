@@ -19,9 +19,9 @@
     "e2e:queue-example": "bun queue-example-deployment.ts",
     "build:web": "bun --bun vite build",
     "build:client": "bun run build:web",
-    "dev:marketing": "astro dev --root apps/marketing --port 4321",
-    "build:marketing": "astro build --root apps/marketing",
-    "preview:marketing": "astro preview --root apps/marketing --port 4321",
+    "dev:marketing": "bun --bun astro dev --root apps/marketing --port 4321",
+    "build:marketing": "bun --bun astro build --root apps/marketing",
+    "preview:marketing": "bun --bun astro preview --root apps/marketing --port 4321",
     "build:exe": "bun run build:web && bun build --compile src/index.ts src/workers/buildWorker.ts dist/client/*.* dist/client/assets/* --outfile dist/deployher --minify --sourcemap --bytecode --asset-naming=[name].[ext]",
     "build:exe:linux-x64": "bun run build:web && bun build --compile src/index.ts src/workers/buildWorker.ts dist/client/*.* dist/client/assets/* --target bun-linux-x64 --outfile dist/deployher-linux-x64 --minify --sourcemap --bytecode --asset-naming=[name].[ext]",
     "build:exe:linux-arm64": "bun run build:web && bun build --compile src/index.ts src/workers/buildWorker.ts dist/client/*.* dist/client/assets/* --target bun-linux-arm64 --outfile dist/deployher-linux-arm64 --minify --sourcemap --bytecode --asset-naming=[name].[ext]",
@@ -100,6 +100,7 @@
     "react-use-measure": "^2.1.7",
     "recharts": "2.15.4",
     "refractor": "^5.0.0",
+    "smol-toml": "^1.6.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
@@ -122,5 +123,8 @@
     "astro": "^5.16.6",
     "typescript": "^6.0.2",
     "vite": "^8.0.3"
+  },
+  "patchedDependencies": {
+    "better-auth@1.4.18": "patches/better-auth@1.4.18.patch"
   }
 }

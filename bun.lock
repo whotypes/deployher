@@ -68,6 +68,7 @@
         "react-use-measure": "^2.1.7",
         "recharts": "2.15.4",
         "refractor": "^5.0.0",
+        "smol-toml": "^1.6.1",
         "sonner": "^2.0.7",
         "tailwind-merge": "^3.5.0",
         "tailwindcss": "^4.2.2",
@@ -92,6 +93,9 @@
         "vite": "^8.0.3",
       },
     },
+  },
+  "patchedDependencies": {
+    "better-auth@1.4.18": "patches/better-auth@1.4.18.patch",
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
