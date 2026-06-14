@@ -1,5 +1,10 @@
 ---
 import MarketingHome from "../islands/MarketingHome";
+
+const title = "Deployher - Self-hosted deploys for your own infrastructure";
+const description =
+  "Deploy from GitHub, inspect live build logs, run previews, and keep control of your server, Dockerfiles, and costs.";
+const canonical = "https://deployher.com/";
 ---
 
 <!doctype html>
@@ -8,10 +13,36 @@ import MarketingHome from "../islands/MarketingHome";
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#180505" />
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
     <link rel="icon" href="/favicon.webp" type="image/webp" />
-    <title>Deployher</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Deployher" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content="https://deployher.com/hero-bg.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://deployher.com/hero-bg.webp" />
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "Deployher",
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Linux, macOS",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD"
+      },
+      description
+    })} />
+    <title>{title}</title>
   </head>
   <body>
-    <MarketingHome client:only="react" />
+    <MarketingHome client:load />
   </body>
 </html>

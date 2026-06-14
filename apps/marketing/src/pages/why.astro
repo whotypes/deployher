@@ -1,5 +1,10 @@
 ---
 import MarketingWhy from "../islands/MarketingWhy";
+
+const title = "Why self-host Deployher";
+const description =
+  "A practical case for owning the deployment surface while keeping a clean SaaS-grade workflow.";
+const canonical = "https://deployher.com/why";
 ---
 
 <!doctype html>
@@ -8,10 +13,23 @@ import MarketingWhy from "../islands/MarketingWhy";
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#180505" />
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
     <link rel="icon" href="/favicon.webp" type="image/webp" />
-    <title>Deployher — Why</title>
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Deployher" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content="https://deployher.com/hero-bg.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://deployher.com/hero-bg.webp" />
+    <title>{title}</title>
   </head>
   <body>
-    <MarketingWhy client:only="react" />
+    <MarketingWhy client:load />
   </body>
 </html>
