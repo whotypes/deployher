@@ -15,6 +15,7 @@ import { registerRemoteDeploy } from "./commands/remote-deploy";
 import { registerWhoami } from "./commands/whoami";
 import { registerMigrate, registerSeed } from "./commands/migrate";
 import { registerNexus } from "./commands/nexus-cmd";
+import { registerOps } from "./commands/ops";
 import { registerStart } from "./commands/start";
 import { registerStatus } from "./commands/status-cmd";
 import { registerStop } from "./commands/stop";
@@ -81,6 +82,7 @@ ${pc.dim("Global flags before the subcommand:")} ${pc.cyan("bun cli/index.ts --v
   registerRemoteDeploy(program);
   registerLogs(program, getCtx);
   registerNexus(program, getCtx);
+  registerOps(program, getCtx);
   registerDoctor(program, getCtx);
   registerStatus(program, getCtx);
 

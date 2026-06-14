@@ -50,4 +50,24 @@ describe("deployher CLI", () => {
     });
     expect(await proc.exited).toBe(0);
   });
+
+  test("ops --help exits 0", async () => {
+    const proc = Bun.spawn(["bun", cliEntry, "ops", "--help"], {
+      cwd: repoRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await proc.exited).toBe(0);
+  });
+
+  test("ops storage-env-deploy dry-run exits 0", async () => {
+    const proc = Bun.spawn(["bun", cliEntry, "ops", "storage-env-deploy", "--dry-run", "--env", "local"], {
+      cwd: repoRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stderr = await new Response(proc.stderr).text();
+    expect(await proc.exited).toBe(0);
+    expect(stderr).toBe("");
+  });
 });
