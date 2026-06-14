@@ -33,6 +33,9 @@ import * as uiApi from "./routes/uiApi";
 import * as cliApi from "./routes/cliApi";
 import { requestUsesCliBearerAuth } from "./security/cliAuth";
 import { attachCsrfCookie, ensureCsrfToken, validateMutationRequest } from "./security/csrf";
+import { checkRateLimit } from "./security/rateLimit";
+import { resolveSafeRedirect } from "./security/safeRedirect";
+import { applySecurityHeaders } from "./security/securityHeaders";
 import {
   canonicalWhyOnLandingUrl,
   isDeployherApiPathOnTenantHost,
@@ -113,7 +116,7 @@ const loginSpa: PublicRouteHandler = async (req) => {
   const oauthErrorDescription = url.searchParams.get("error_description");
   const hasOauthError = oauthError !== null || oauthErrorDescription !== null;
   if (session && !hasOauthError) {
-    const redirectTo = url.searchParams.get("redirect") ?? "/dashboard";
+    const redirectTo = resolveSafeRedirect(url.searchParams.get("redirect"), "/dashboard");
     return Response.redirect(new URL(redirectTo, url.origin).toString(), 302);
   }
   const csrf = ensureCsrfToken(req);
@@ -122,6 +125,12 @@ const loginSpa: PublicRouteHandler = async (req) => {
 };
 
 const logoutPost: PublicRouteHandler = async (req) => {
+  const csrf = ensureCsrfToken(req);
+  const validation = await validateMutationRequest(req, csrf.token);
+  if (!validation.ok) {
+    return attachCsrfCookie(json({ error: validation.reason }, { status: 403 }), csrf);
+  }
+
   const url = new URL(req.url);
   const signOutUrl = new URL("/api/auth/sign-out", url.origin);
   const authResponse = await auth.handler(
@@ -308,6 +317,10 @@ const protectedRoutes: ProtectedRoute[] = [
       GET: deployments.listDeployments,
       POST: deployments.createDeployment
     }
+  },
+  {
+    pattern: "/api/projects/:id/preview-share-link",
+    methods: { GET: projects.getPreviewShareLink }
   },
   {
     pattern: "/api/projects/:id/env",
@@ -505,8 +518,11 @@ const respondDashboardApiOr404 = async (req: Request): Promise<Response> => {
 export const router = async (req: Request): Promise<Response> => {
   const preflight = corsPreflightResponse(req);
   if (preflight) return preflight;
+  const limited = await checkRateLimit(req);
+  if (limited) return applySecurityHeaders(limited, req);
   const res = await dispatchRequest(req);
-  return applyApiCorsHeaders(req, res);
+  const withCors = applyApiCorsHeaders(req, res);
+  return applySecurityHeaders(withCors, req);
 };
 
 const dispatchRequest = async (req: Request): Promise<Response> => {
