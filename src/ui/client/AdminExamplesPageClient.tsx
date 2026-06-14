@@ -52,9 +52,7 @@ const statusVariant = (status?: string): "default" | "secondary" | "destructive"
 };
 
 const notify = (message: string, variant: "success" | "error"): void => {
-  const el = document.getElementById("notification");
-  if (!el) return;
-  showPageToast(el, message, variant);
+  showPageToast(message, variant);
 };
 
 const fetchExamples = async (loadFailedMessage: string): Promise<AdminExampleRow[]> => {
