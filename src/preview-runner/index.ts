@@ -756,6 +756,7 @@ void startRedisPrewarmSubscriber();
 
 const port = parsePort(process.env.PORT, 8787);
 const sharedSecret = (process.env.RUNNER_SHARED_SECRET ?? "").trim();
+const isProduction = (process.env.APP_ENV ?? "").trim() === "production";
 const previewTtlMs = parsePositiveInt(process.env.PREVIEW_TTL_MS, 30 * 60 * 1000);
 const previewMemoryBytes = parseMemoryBytes(process.env.PREVIEW_MEMORY_BYTES, 1024 ** 3);
 const previewNanoCpus = parseNanoCpus(process.env.PREVIEW_NANO_CPUS, 1_000_000_000);
@@ -784,10 +785,19 @@ Bun.serve({
       server.timeout(req, 0);
     }
 
-    if (sharedSecret) {
-      const got = req.headers.get("x-deployher-runner-secret") ?? "";
-      if (!timingSafeEqualStr(got, sharedSecret)) {
-        return new Response("Unauthorized", { status: 401 });
+    if (url.pathname !== "/health") {
+      if (!sharedSecret) {
+        if (isProduction) {
+          return new Response(JSON.stringify({ error: "Runner shared secret is not configured" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      } else {
+        const got = req.headers.get("x-deployher-runner-secret") ?? "";
+        if (!timingSafeEqualStr(got, sharedSecret)) {
+          return new Response("Unauthorized", { status: 401 });
+        }
       }
     }
 
