@@ -10,7 +10,7 @@ import { ProjectSiteGlyph } from "@/ui/client/ProjectSiteGlyph";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ScrollText, Settings } from "lucide-react";
 import { pickFeaturedDeploymentFromSortedDesc } from "@/lib/sidebarFeaturedDeployment";
@@ -159,7 +159,9 @@ export const ProjectDetailPage = ({
       sidebarContext: {
         project: {
           id: data.project.id,
-          name: data.project.name
+          name: data.project.name,
+          siteIconUrl: data.project.siteIconUrl,
+          previewUrl: data.currentPreviewUrl
         },
         deployment: pickFeaturedDeploymentFromSortedDesc(
           deployments.map((d) => ({
@@ -170,17 +172,12 @@ export const ProjectDetailPage = ({
         )
       }
     }),
-    [t, data.project.id, data.project.name, deploymentStatusesKey]
+    [t, data.project.id, data.project.name, data.project.siteIconUrl, data.currentPreviewUrl, deploymentStatusesKey]
   );
   useWorkspaceChrome(chrome);
 
   return (
     <>
-    <div
-      id="notification"
-      aria-live="polite"
-      className="hidden fixed top-17 right-4 z-50 rounded-md px-4 py-3 text-sm font-medium shadow-lg"
-    />
     <div className="relative mb-8 overflow-hidden rounded-lg border border-border/80 border-l-4 border-l-primary/70 bg-card/30 shadow-sm ring-1 ring-black/5 dark:ring-white/5">
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-primary/40 via-transparent to-transparent"
@@ -213,15 +210,15 @@ export const ProjectDetailPage = ({
                   {data.project.name}
                 </h1>
               </div>
-              <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
+              <p className="mt-2 truncate font-mono text-sm text-muted-foreground">
                 {data.project.repoUrl.replace(/^https:\/\/github\.com\//, "")}
               </p>
             </div>
-            <dl className="grid gap-3 text-sm">
+            <dl className="grid gap-4 text-sm md:text-base">
               {data.currentPreviewUrl ? (
                 <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">
                   <dt className="text-muted-foreground">{t("projectDetail.previewLabel")}</dt>
-                  <dd className="min-w-0 truncate font-mono text-xs">
+                  <dd className="min-w-0 truncate font-mono text-sm">
                     <a
                       href={data.currentPreviewUrl}
                       target="_blank"
@@ -235,7 +232,7 @@ export const ProjectDetailPage = ({
               ) : null}
               <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">
                 <dt className="text-muted-foreground">{t("projectDetail.branch")}</dt>
-                <dd className="min-w-0 truncate font-mono text-xs">
+                <dd className="min-w-0 truncate font-mono text-sm">
                   <code>{data.project.branch}</code>
                 </dd>
               </div>
@@ -246,7 +243,7 @@ export const ProjectDetailPage = ({
                     <dd className="min-w-0">
                       <Link
                         to={`/deployments/${currentDeployment.id}`}
-                        className="font-mono text-xs font-medium no-underline hover:underline"
+                        className="font-mono text-sm font-medium no-underline hover:underline"
                       >
                         {currentDeployment.shortId}
                       </Link>
@@ -265,7 +262,7 @@ export const ProjectDetailPage = ({
                   </div>
                   <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">
                     <dt className="text-muted-foreground">{t("projectDetail.created")}</dt>
-                    <dd className="text-xs text-muted-foreground tabular-nums">
+                    <dd className="text-sm tabular-nums text-muted-foreground">
                       {new Date(currentDeployment.createdAt).toLocaleString()}
                     </dd>
                   </div>
@@ -300,19 +297,22 @@ export const ProjectDetailPage = ({
                 </a>
               </Button>
             ) : null}
-            <div className="contents" id="project-detail-deploy-main-root" />
+            <div
+              className="flex w-full min-w-0 max-w-md flex-col gap-2 sm:max-w-none sm:flex-1 sm:basis-full lg:basis-auto lg:max-w-md"
+              id="project-detail-deploy-main-root"
+            />
             <div id="project-detail-set-current-root" />
           </div>
         </div>
       </div>
 
-      <Accordion type="single" collapsible className="border-t border-border/60 bg-muted/20 px-5 md:px-6">
+      <Accordion type="single" collapsible className="border-t border-border/60 bg-muted/15 px-5 md:px-6">
         <AccordionItem value="project-details" className="border-0">
-          <AccordionTrigger className="py-3.5 text-sm font-medium hover:no-underline">
+          <AccordionTrigger className="py-4 text-base font-semibold hover:no-underline md:text-lg">
             {t("projectDetail.accordionTitle")}
           </AccordionTrigger>
-          <AccordionContent className="space-y-5 pb-5">
-            <p className="text-xs text-muted-foreground">{t("projectDetail.accordionHint")}</p>
+          <AccordionContent className="space-y-6 pb-6">
+            <p className="text-sm leading-relaxed text-muted-foreground">{t("projectDetail.accordionHint")}</p>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button variant="default" size="sm" className="justify-center gap-2 sm:justify-start" asChild>
                 <Link to={`/projects/${data.project.id}/settings`}>
@@ -324,12 +324,12 @@ export const ProjectDetailPage = ({
                 <Link to={`/projects/${data.project.id}/settings/env`}>{t("projectDetail.editEnv")}</Link>
               </Button>
             </div>
-            <div className="overflow-hidden rounded-md border border-border/80">
+            <div className="overflow-hidden rounded-xl border border-border/70 shadow-sm">
               <Table>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="w-36 text-muted-foreground font-medium">{t("projectDetail.tableRepo")}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.tableRepo")}</TableCell>
+                    <TableCell className="py-3 text-sm">
                       <a
                         href={data.project.repoUrl}
                         target="_blank"
@@ -341,75 +341,75 @@ export const ProjectDetailPage = ({
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.branch")}</TableCell>
-                    <TableCell>{data.project.branch}</TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.branch")}</TableCell>
+                    <TableCell className="py-3 text-sm">{data.project.branch}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.workspaceRoot")}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.workspaceRoot")}</TableCell>
+                    <TableCell className="py-3 text-sm">
                       <code>{data.project.workspaceRootDir}</code>
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.projectRoot")}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.projectRoot")}</TableCell>
+                    <TableCell className="py-3 text-sm">
                       <code>{data.project.projectRootDir}</code>
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.framework")}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.framework")}</TableCell>
+                    <TableCell className="py-3 text-sm">
                       {data.project.frameworkHint === "auto" ? t("projectDetail.autoDetect") : data.project.frameworkHint}
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.previewType")}</TableCell>
-                    <TableCell className="capitalize">
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.previewType")}</TableCell>
+                    <TableCell className="py-3 text-sm capitalize">
                       {data.project.previewMode === "auto" ? t("projectDetail.autoDetect") : data.project.previewMode}
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.serverTarget")}</TableCell>
-                    <TableCell>{t("projectDetail.isolatedRunner")}</TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.serverTarget")}</TableCell>
+                    <TableCell className="py-3 text-sm">{t("projectDetail.isolatedRunner")}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.runtimeImage")}</TableCell>
-                    <TableCell className="capitalize">{data.project.runtimeImageMode}</TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.runtimeImage")}</TableCell>
+                    <TableCell className="py-3 text-sm capitalize">{data.project.runtimeImageMode}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.dockerfile")}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.dockerfile")}</TableCell>
+                    <TableCell className="py-3 text-sm">
                       <code>{data.project.dockerfilePath ?? "Dockerfile"}</code>
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.dockerTarget")}</TableCell>
-                    <TableCell>{data.project.dockerBuildTarget ?? t("common.emDash")}</TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.dockerTarget")}</TableCell>
+                    <TableCell className="py-3 text-sm">{data.project.dockerBuildTarget ?? t("common.emDash")}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.hostBuild")}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.hostBuild")}</TableCell>
+                    <TableCell className="py-3 text-sm">
                       {data.project.skipHostStrategyBuild
                         ? t("projectDetail.skippedDockerfile")
                         : t("projectDetail.runStrategyBuild")}
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.previewPort")}</TableCell>
-                    <TableCell>{data.project.runtimeContainerPort}</TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.previewPort")}</TableCell>
+                    <TableCell className="py-3 text-sm">{data.project.runtimeContainerPort}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.created")}</TableCell>
-                    <TableCell>{new Date(data.project.createdAt).toLocaleString()}</TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.created")}</TableCell>
+                    <TableCell className="py-3 text-sm">{new Date(data.project.createdAt).toLocaleString()}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="text-muted-foreground font-medium">{t("projectDetail.updated")}</TableCell>
-                    <TableCell>{new Date(data.project.updatedAt).toLocaleString()}</TableCell>
+                    <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.updated")}</TableCell>
+                    <TableCell className="py-3 text-sm">{new Date(data.project.updatedAt).toLocaleString()}</TableCell>
                   </TableRow>
                   {data.currentPreviewUrl ? (
                     <TableRow>
-                      <TableCell className="text-muted-foreground font-medium">{t("projectDetail.previewUrl")}</TableCell>
-                      <TableCell>
+                      <TableCell className="w-40 py-3 text-sm font-medium text-muted-foreground">{t("projectDetail.previewUrl")}</TableCell>
+                      <TableCell className="py-3 text-sm">
                         <a
                           href={data.currentPreviewUrl}
                           target="_blank"
@@ -429,14 +429,14 @@ export const ProjectDetailPage = ({
       </Accordion>
     </div>
 
-    <div className="min-w-0 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t("projectDetail.deploymentCardTitle")}</CardTitle>
+    <div className="min-w-0 space-y-8">
+      <Card className="dashboard-surface overflow-hidden border-border/80 shadow-none">
+        <CardHeader className="space-y-1 px-5 pb-4 pt-6 md:px-6">
+          <CardTitle className="text-xl font-semibold tracking-tight md:text-2xl">{t("projectDetail.deploymentCardTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {deployments.length === 0 ? (
-            <p className="text-muted-foreground text-sm px-6 pb-4">{t("projectDetail.noDeployments")}</p>
+            <p className="text-muted-foreground px-6 pb-6 pt-2 text-base">{t("projectDetail.noDeployments")}</p>
           ) : (
             <div className="min-w-0">
               <ProjectDeploymentsPanel
@@ -456,7 +456,15 @@ export const ProjectDetailPage = ({
         </CardContent>
       </Card>
 
-      <div id="project-detail-repo-explorer-root" className="min-w-0" />
+      <Card className="dashboard-surface overflow-hidden border-border/80 shadow-none">
+        <CardHeader className="space-y-2 px-5 pb-3 pt-6 md:px-6">
+          <CardTitle className="text-xl font-semibold tracking-tight md:text-2xl">{t("repoExplorer.defaultTitle")}</CardTitle>
+          <CardDescription className="max-w-3xl text-base leading-relaxed">{t("repoExplorer.intro")}</CardDescription>
+        </CardHeader>
+        <CardContent className="px-4 pb-6 pt-0 md:px-6">
+          <div id="project-detail-repo-explorer-root" className="min-w-0" />
+        </CardContent>
+      </Card>
     </div>
     <ProjectDetailInteractiveMount bootstrap={interactiveBootstrap} onRequestDetailRefetch={onRequestDetailRefetch} />
     </>

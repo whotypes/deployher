@@ -92,12 +92,14 @@ export const ProjectSettingsPage = ({
       sidebarContext: {
         project: {
           id: project.id,
-          name: project.name
+          name: project.name,
+          siteIconUrl: project.siteIconUrl,
+          previewUrl: data.sidebarProjects.find((p) => p.id === project.id)?.previewUrl ?? null
         },
         deployment: data.sidebarFeaturedDeployment
       }
     }),
-    [t, project.id, project.name, data.sidebarFeaturedDeployment]
+    [t, project.id, project.name, project.siteIconUrl, data.sidebarFeaturedDeployment, data.sidebarProjects]
   );
   useWorkspaceChrome(chrome);
 

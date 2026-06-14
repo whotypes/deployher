@@ -48,7 +48,9 @@ export const DeploymentDetailPage = ({
 }) => {
   const { t } = useTranslation();
   const chrome = useMemo(
-    () => ({
+    () => {
+      const row = data.sidebarProjects.find((p) => p.id === data.project.id);
+      return {
       title: t("meta.deploymentTitle", { shortId: data.deployment.shortId, appName: t("common.appName") }),
       breadcrumbs: [
         { label: t("common.projects"), href: "/projects" },
@@ -58,17 +60,21 @@ export const DeploymentDetailPage = ({
       sidebarContext: {
         project: {
           id: data.project.id,
-          name: data.project.name
+          name: data.project.name,
+          siteIconUrl: row?.siteIconUrl ?? null,
+          previewUrl: row?.previewUrl ?? null
         },
         deployment: data.sidebarFeaturedDeployment
       }
-    }),
+      };
+    },
     [
       t,
       data.deployment.shortId,
       data.project.id,
       data.project.name,
-      data.sidebarFeaturedDeployment
+      data.sidebarFeaturedDeployment,
+      data.sidebarProjects
     ]
   );
   useWorkspaceChrome(chrome);

@@ -1,7 +1,7 @@
 "use client";
 
 import type { TFunction } from "i18next";
-import { Eye, EyeOff, Rocket } from "lucide-react";
+import { Camera, Eye, EyeOff, Rocket, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useSearchParams } from "@/spa/routerCompat";
@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GitHubMark } from "./GitHubMark";
+import { fetchWithCsrf } from "./client/fetchWithCsrf";
 
 const oauthDescriptionMaxLen = 280;
 const characterFill = "#050505";
@@ -224,8 +225,12 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
     oauth !== undefined ? loginOauthUserMessage(oauth.error, oauth.errorDescription, t) : null;
   const showLoggedInOauthRecovery = loggedIn && oauthMessage;
   const [showPassword, setShowPassword] = useState(false);
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [mouseX, setMouseX] = useState(0);
@@ -239,6 +244,30 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
   const blackRef = useRef<HTMLDivElement>(null);
   const yellowRef = useRef<HTMLDivElement>(null);
   const orangeRef = useRef<HTMLDivElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(avatarFile);
+    setAvatarPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [avatarFile]);
+
+  const readAuthError = async (res: Response): Promise<string> => {
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string | { message?: string };
+      message?: string;
+    };
+    if (typeof data.error === "string" && data.error.trim()) return data.error;
+    if (typeof data.error === "object" && typeof data.error.message === "string" && data.error.message.trim()) {
+      return data.error.message;
+    }
+    if (typeof data.message === "string" && data.message.trim()) return data.message;
+    return mode === "signup" ? "Could not create your account." : "Could not sign in with that email and password.";
+  };
 
   const handleSignInClick = useCallback(async () => {
     const btn = document.getElementById("sign-in");
@@ -383,9 +412,40 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
     event.preventDefault();
     setFormError("");
     setIsLoading(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 300));
-    setIsLoading(false);
-    setFormError("Email and password sign-in is not enabled yet. Please continue with GitHub.");
+    try {
+      const endpoint = mode === "signup" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email";
+      const body =
+        mode === "signup"
+          ? { name: name.trim() || email.trim(), email: email.trim(), password, callbackURL }
+          : { email: email.trim(), password, callbackURL };
+      const res = await fetch(endpoint, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        setFormError(await readAuthError(res));
+        return;
+      }
+      if (mode === "signup" && avatarFile) {
+        const upload = await fetchWithCsrf("/api/avatar", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": avatarFile.type || "application/octet-stream" },
+          body: avatarFile
+        });
+        if (!upload.ok) {
+          setFormError("Your account was created, but the profile photo could not be saved. Try changing it from Account.");
+          return;
+        }
+      }
+      window.location.href = callbackURL;
+    } catch {
+      setFormError("Something went wrong. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const purplePos = calculatePosition(purpleRef);
@@ -653,11 +713,66 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
             </div>
 
             <div className="mb-10 text-center">
-              <h1 className="mb-2 text-3xl font-bold tracking-tight">Welcome back!</h1>
-              <p className="text-sm text-muted-foreground">Please enter your details</p>
+              <h1 className="mb-2 text-3xl font-bold tracking-tight">
+                {mode === "signup" ? "Create your account" : "Welcome back!"}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {mode === "signup" ? "Add your details to get started" : "Please enter your details"}
+              </p>
             </div>
 
             <form onSubmit={handleEmailSubmit} className="space-y-5">
+              {mode === "signup" ? (
+                <div className="flex items-center gap-4 rounded-lg border border-border/60 p-3">
+                  <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted">
+                    {avatarPreview ? (
+                      <img src={avatarPreview} alt="" className="size-full object-cover" />
+                    ) : (
+                      <Camera className="size-6 text-muted-foreground" aria-hidden />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">Profile photo</p>
+                    <p className="text-xs text-muted-foreground">Optional. JPG, PNG, WebP, or GIF.</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => avatarInputRef.current?.click()}>
+                        Choose photo
+                      </Button>
+                      {avatarFile ? (
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setAvatarFile(null)} aria-label="Remove photo">
+                          <Trash2 className="size-4" aria-hidden />
+                        </Button>
+                      ) : null}
+                    </div>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {mode === "signup" ? (
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-sm font-medium">
+                    Name
+                  </Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Anna"
+                    value={name}
+                    autoComplete="name"
+                    onChange={(event) => setName(event.target.value)}
+                    required
+                    className="h-12 border-border/60 bg-background focus-visible:border-primary"
+                  />
+                </div>
+              ) : null}
+
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm font-medium">
                   Email
@@ -686,7 +801,7 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
                     type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={password}
-                    autoComplete="current-password"
+                    autoComplete={mode === "signup" ? "new-password" : "current-password"}
                     onChange={(event) => setPassword(event.target.value)}
                     onFocus={() => setIsTyping(true)}
                     onBlur={() => setIsTyping(false)}
@@ -712,7 +827,7 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
                   </Label>
                 </div>
                 <Link to="/" className="text-sm font-medium text-primary hover:underline">
-                  Forgot password?
+                  Password reset coming soon
                 </Link>
               </div>
 
@@ -739,7 +854,7 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
                 </Button>
               ) : (
                 <Button type="submit" className="h-12 w-full text-base font-medium" size="lg" disabled={isLoading}>
-                  {isLoading ? "Signing in..." : "Log in"}
+                  {isLoading ? (mode === "signup" ? "Creating..." : "Signing in...") : mode === "signup" ? "Create account" : "Log in"}
                 </Button>
               )}
             </form>
@@ -761,13 +876,16 @@ export const LoginPage = ({ callbackURL, oauth }: LoginPageProps) => {
             ) : null}
 
             <div className="mt-8 text-center text-sm text-muted-foreground">
-              Don&apos;t have an account?{" "}
+              {mode === "signup" ? "Already have an account?" : "Don’t have an account?"}{" "}
               <button
                 type="button"
-                onClick={handleSignInClick}
+                onClick={() => {
+                  setMode((current) => (current === "signup" ? "signin" : "signup"));
+                  setFormError("");
+                }}
                 className="font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                Sign Up
+                {mode === "signup" ? "Log in" : "Create account"}
               </button>
             </div>
           </div>

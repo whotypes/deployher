@@ -38,7 +38,9 @@ export const ProjectObservabilityPage = ({ data }: { data: ProjectObservabilityD
   };
 
   const chrome = useMemo(
-    () => ({
+    () => {
+      const row = data.sidebarProjects.find((p) => p.id === project.id);
+      return {
       title: t("meta.observabilityTitle", { name: project.name, appName: t("common.appName") }),
       breadcrumbs: [
         { label: t("common.projects"), href: "/projects" },
@@ -46,11 +48,17 @@ export const ProjectObservabilityPage = ({ data }: { data: ProjectObservabilityD
         { label: t("projectObservability.pageHeading") }
       ],
       sidebarContext: {
-        project: { id: project.id, name: project.name },
+        project: {
+          id: project.id,
+          name: project.name,
+          siteIconUrl: row?.siteIconUrl ?? null,
+          previewUrl: row?.previewUrl ?? null
+        },
         deployment: data.sidebarFeaturedDeployment
       }
-    }),
-    [t, project.id, project.name, data.sidebarFeaturedDeployment]
+      };
+    },
+    [t, project.id, project.name, data.sidebarFeaturedDeployment, data.sidebarProjects]
   );
   useWorkspaceChrome(chrome);
 
