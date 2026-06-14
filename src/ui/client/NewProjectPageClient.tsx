@@ -36,6 +36,7 @@ import { readOpenAfterCreate, readPreferredBranch, readProjectsCreateModeInitial
 import { cn } from "@/lib/utils";
 import { GitHubMark } from "@/ui/GitHubMark";
 import { fetchWithCsrf } from "./fetchWithCsrf";
+import { showPageToast } from "./pageNotifications";
 import { NewProjectPathExplorer } from "./NewProjectPathExplorer";
 import type { RepoScanHintsPayload, RepoScanPrimaryFramework } from "./repoScanHintsTypes";
 
@@ -195,20 +196,6 @@ export type NewProjectPageClientProps = {
   githubLinked: boolean;
 };
 
-const showToast = (message: string, variant: "success" | "error"): void => {
-  const el = document.getElementById("notification");
-  if (!el) return;
-  el.textContent = message;
-  el.className = cn(
-    "fixed top-4 right-4 z-[100] rounded-md px-4 py-3 text-sm font-medium shadow-lg",
-    variant === "success" && "bg-primary text-primary-foreground",
-    variant === "error" && "bg-destructive text-destructive-foreground"
-  );
-  window.setTimeout(() => {
-    el.className = "fixed top-17 right-4 z-50 hidden rounded-md px-4 py-3 text-sm font-medium shadow-lg";
-  }, 3200);
-};
-
 const fetchRepos = async (fallbackError: string): Promise<GitHubRepo[]> => {
   const response = await fetch("/api/github/repos", { headers: { Accept: "application/json" } });
   const data = (await response.json().catch(() => ({}))) as { repos?: GitHubRepo[]; error?: string };
@@ -257,7 +244,7 @@ const SetupStepRail = ({
   );
   const progressPct = Math.round(((completedThrough + 1) / steps.length) * 100);
   return (
-    <div className="mb-8 space-y-4">
+      <div className="mb-10 space-y-5">
       <div className="flex flex-wrap items-center gap-2 sm:gap-3" role="list" aria-label={t("newProject.stepsAria")}>
         {steps.map((step, i) => {
           const done = i < completedThrough;
@@ -273,24 +260,24 @@ const SetupStepRail = ({
                   aria-hidden
                 />
               ) : null}
-              <div
-                role="listitem"
-                className={cn(
-                  "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                  done && "border-primary/40 bg-primary/10 text-primary",
-                  current && !done && "border-primary bg-primary/5 text-foreground",
-                  !current && !done && "border-border text-muted-foreground"
-                )}
-              >
-                <span
+                <div
+                  role="listitem"
                   className={cn(
-                    "flex size-6 items-center justify-center rounded-full text-[10px]",
-                    done ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    "flex items-center gap-2.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors",
+                    done && "border-primary/45 bg-primary/12 text-primary",
+                    current && !done && "border-primary bg-primary/8 text-foreground shadow-[inset_0_1px_0_0_color-mix(in_oklab,var(--primary)_22%,transparent)]",
+                    !current && !done && "border-border text-muted-foreground"
                   )}
-                  aria-hidden
                 >
-                  {done ? <Check className="size-3.5" strokeWidth={2.5} /> : i + 1}
-                </span>
+                  <span
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-full text-xs font-semibold",
+                      done ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    )}
+                    aria-hidden
+                  >
+                    {done ? <Check className="size-4" strokeWidth={2.5} /> : i + 1}
+                  </span>
                 <span className="hidden sm:inline">{step.label}</span>
                 <span className="sm:hidden">{step.shortLabel}</span>
               </div>
@@ -298,7 +285,7 @@ const SetupStepRail = ({
           );
         })}
       </div>
-      <Progress value={progressPct} className="h-1.5" aria-label={t("newProject.progressAria")} />
+      <Progress value={progressPct} className="h-2" aria-label={t("newProject.progressAria")} />
     </div>
   );
 };
@@ -591,9 +578,9 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
         window.location.href = data.url;
         return;
       }
-      showToast(t("newProject.linkGithubFailed"), "error");
+      showPageToast(t("newProject.linkGithubFailed"), "error");
     } catch {
-      showToast(t("newProject.linkGithubFailed"), "error");
+      showPageToast(t("newProject.linkGithubFailed"), "error");
     } finally {
       setConnectLoading(false);
     }
@@ -604,12 +591,12 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     const ws = normalizeRepoRelativePathString(workspaceRootDir);
     const pr = normalizeRepoRelativePathString(projectRootDir);
     if (!ws || !pr || !isAncestorOrEqualPath(ws, pr)) {
-      showToast(t("newProject.validation.pathsInvalid"), "error");
+      showPageToast(t("newProject.validation.pathsInvalid"), "error");
       return;
     }
     const portResult = parseRuntimePortInput(runtimeContainerPort);
     if (!portResult.ok) {
-      showToast(t("newProject.validation.portInvalid"), "error");
+      showPageToast(t("newProject.validation.portInvalid"), "error");
       return;
     }
     setCreateLoading(true);
@@ -638,12 +625,12 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
       if (!response.ok) {
         throw new Error(data.error ?? t("newProject.createFailed"));
       }
-      showToast(t("newProject.projectCreated"), "success");
+      showPageToast(t("newProject.projectCreated"), "success");
       finishCreate(data.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : t("newProject.createFailed");
       setBranchesError(message);
-      showToast(message, "error");
+      showPageToast(message, "error");
     } finally {
       setCreateLoading(false);
     }
@@ -652,18 +639,18 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
   const handleManualCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!manualName.trim() || !manualRepoUrl.trim() || !manualBranch.trim()) {
-      showToast(t("newProject.fillRequired"), "error");
+      showPageToast(t("newProject.fillRequired"), "error");
       return;
     }
     const ws = normalizeRepoRelativePathString(workspaceRootDir);
     const pr = normalizeRepoRelativePathString(projectRootDir);
     if (!ws || !pr || !isAncestorOrEqualPath(ws, pr)) {
-      showToast(t("newProject.validation.pathsInvalid"), "error");
+      showPageToast(t("newProject.validation.pathsInvalid"), "error");
       return;
     }
     const portResult = parseRuntimePortInput(runtimeContainerPort);
     if (!portResult.ok) {
-      showToast(t("newProject.validation.portInvalid"), "error");
+      showPageToast(t("newProject.validation.portInvalid"), "error");
       return;
     }
 
@@ -692,20 +679,20 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
       if (!response.ok) {
         throw new Error(data.error ?? t("newProject.createFailed"));
       }
-      showToast(t("newProject.projectCreated"), "success");
+      showPageToast(t("newProject.projectCreated"), "success");
       finishCreate(data.id);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : t("newProject.createFailed"), "error");
+      showPageToast(error instanceof Error ? error.message : t("newProject.createFailed"), "error");
     } finally {
       setManualCreateLoading(false);
     }
   };
 
   const buildOptionsCard = (
-    <Card className="dashboard-surface border-border/80 shadow-sm">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{t("newProject.buildPreviewTitle")}</CardTitle>
-        <CardDescription>{t("newProject.buildPreviewCardDesc")}</CardDescription>
+    <Card className="dashboard-surface border-border/80 shadow-none">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-xl font-semibold tracking-tight md:text-2xl">{t("newProject.buildPreviewTitle")}</CardTitle>
+        <CardDescription className="text-base leading-relaxed">{t("newProject.buildPreviewCardDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -895,11 +882,15 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
     <>
       <SetupStepRail activeIndex={activeIndex} completedThrough={completedThrough} />
 
-      <div className="min-w-0 space-y-6">
+      <div className="min-w-0 space-y-8">
         <Tabs value={createMode} onValueChange={(value) => setCreateMode(value as "import" | "manual")}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="import">{t("newProject.tabImport")}</TabsTrigger>
-            <TabsTrigger value="manual">{t("newProject.tabManual")}</TabsTrigger>
+          <TabsList className="grid h-12 w-full max-w-lg grid-cols-2 rounded-xl bg-muted/55 p-1.5 shadow-inner">
+            <TabsTrigger value="import" className="rounded-lg text-sm font-semibold data-[state=active]:shadow-sm">
+              {t("newProject.tabImport")}
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="rounded-lg text-sm font-semibold data-[state=active]:shadow-sm">
+              {t("newProject.tabManual")}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="import" className="mt-6 space-y-6 outline-none">
@@ -910,15 +901,15 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                 void handleImportCreate();
               }}
             >
-              <Card className="dashboard-surface border-border/80 shadow-sm">
-                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-3">
-                  <div className="min-w-0 space-y-1">
-                    <CardTitle className="text-base">{t("newProject.repoCardTitle")}</CardTitle>
-                    <CardDescription>
+              <Card className="dashboard-surface border-border/80 shadow-none">
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4 pb-4">
+                  <div className="min-w-0 space-y-2">
+                    <CardTitle className="text-xl font-semibold tracking-tight md:text-2xl">{t("newProject.repoCardTitle")}</CardTitle>
+                    <CardDescription className="text-base leading-relaxed">
                       {hasRepoAccess ? t("newProject.repoCardDescAccess") : t("newProject.repoCardDescNoAccess")}
                     </CardDescription>
                   </div>
-                  <Badge variant={hasRepoAccess ? "default" : "secondary"} className="shrink-0 text-xs">
+                  <Badge variant={hasRepoAccess ? "default" : "secondary"} className="shrink-0 px-2.5 py-1 text-xs font-semibold">
                     {hasRepoAccess
                       ? t("newProject.badgeGithubReady")
                       : githubLinked
@@ -1058,10 +1049,10 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
                 </CardContent>
               </Card>
 
-              <Card className="dashboard-surface border-border/80 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{t("newProject.monorepoTitle")}</CardTitle>
-                  <CardDescription>{t("newProject.monorepoDesc")}</CardDescription>
+              <Card className="dashboard-surface border-border/80 shadow-none">
+                <CardHeader className="space-y-2 pb-4">
+                  <CardTitle className="text-xl font-semibold tracking-tight md:text-2xl">{t("newProject.monorepoTitle")}</CardTitle>
+                  <CardDescription className="text-base leading-relaxed">{t("newProject.monorepoDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {selectedRepo && refForHints ? (
@@ -1123,7 +1114,7 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
 
               {buildOptionsCard}
 
-              <div className="border-border bg-card/80 flex flex-col gap-3 rounded-xl border p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="border-border/80 bg-card/85 flex flex-col gap-4 rounded-xl border p-5 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
                 <Button type="button" variant="ghost" asChild className="justify-center sm:justify-start">
                   <Link to="/projects">{t("common.cancel")}</Link>
                 </Button>
@@ -1140,10 +1131,10 @@ export const NewProjectPageClient = ({ hasRepoAccess, githubLinked }: NewProject
           </TabsContent>
 
             <TabsContent value="manual" className="mt-6 space-y-6 outline-none">
-              <Card className="dashboard-surface border-border/80 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{t("newProject.manualRepoTitle")}</CardTitle>
-                  <CardDescription>{t("newProject.manualRepoDesc")}</CardDescription>
+              <Card className="dashboard-surface border-border/80 shadow-none">
+                <CardHeader className="space-y-2 pb-4">
+                  <CardTitle className="text-xl font-semibold tracking-tight md:text-2xl">{t("newProject.manualRepoTitle")}</CardTitle>
+                  <CardDescription className="text-base leading-relaxed">{t("newProject.manualRepoDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form className="flex flex-col gap-4" onSubmit={(event) => void handleManualCreate(event)}>

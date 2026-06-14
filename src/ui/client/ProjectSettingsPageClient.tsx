@@ -13,7 +13,7 @@ import { parseEnvFileContent, looksLikeEnvPaste } from "@/lib/parseEnvFileConten
 import { cn } from "@/lib/utils";
 import type { ProjectSettingsData } from "../ProjectSettingsPage";
 import { fetchWithCsrf } from "./fetchWithCsrf";
-import { PAGE_TOAST_HIDDEN_CLASS, showPageToast } from "./pageNotifications";
+import { showPageToast } from "./pageNotifications";
 import { LazyRepoCodeExplorer } from "./repo-code-explorer-lazy";
 
 type Project = ProjectSettingsData["project"];
@@ -1084,18 +1084,15 @@ export const ProjectSettingsPageClient = ({
   data: ProjectSettingsData;
   onRequestSettingsRefetch?: () => void;
 }): React.ReactElement => {
-  const notifRef = React.useRef<HTMLDivElement>(null);
   const { project, activeSection } = data;
   const projectId = project.id;
 
   const onToast = React.useCallback((message: string, variant: "success" | "error" | "warning") => {
-    const el = notifRef.current;
-    if (el) showPageToast(el, message, variant);
+    showPageToast(message, variant);
   }, []);
 
   return (
     <>
-      <div ref={notifRef} aria-live="polite" className={PAGE_TOAST_HIDDEN_CLASS} />
       {activeSection === "general" && (
         <GeneralSection
           project={project}

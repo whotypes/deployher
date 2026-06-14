@@ -1,9 +1,11 @@
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, UploadCloud } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "@/lib/utils";
 import { navigateSpa } from "@/spa/spaNavigationBridge";
 import { fetchWithCsrf } from "./fetchWithCsrf";
+import { gatherDroppedStaticFiles } from "./gatherDroppedStaticFiles";
 import { showPageToast } from "./pageNotifications";
 import { useProjectGlyphImage } from "./useProjectGlyphImage";
 
@@ -47,9 +49,7 @@ type SiteMetadataRefreshOk = {
 type ApiErrorBody = { error?: string };
 
 const notify = (message: string, variant: "success" | "error"): void => {
-  const notification = document.getElementById("notification");
-  if (!notification) return;
-  showPageToast(notification, message, variant);
+  showPageToast(message, variant);
 };
 
 export const ProjectDetailSetCurrentRoot = ({
@@ -283,5 +283,164 @@ export const ProjectDetailDeployTrigger = ({
     <Button type="button" disabled={pending} className={className} onClick={() => void handleDeploy()}>
       {label}
     </Button>
+  );
+};
+
+export const ProjectStaticBundleDropZone = ({
+  projectId,
+  onUploaded
+}: {
+  projectId: string;
+  onUploaded?: () => void;
+}): React.ReactElement => {
+  const { t } = useTranslation();
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const dragDepthRef = React.useRef(0);
+  const busyRef = React.useRef(false);
+  const [dragActive, setDragActive] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  const runUpload = React.useCallback(
+    async (gathered: { relativePath: string; file: File }[]): Promise<void> => {
+      if (!gathered.length) return;
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setBusy(true);
+      try {
+        const form = new FormData();
+        for (const { relativePath, file } of gathered) {
+          form.append("bundle", file, relativePath);
+        }
+        const response = await fetchWithCsrf(`/api/projects/${projectId}/deployments/static-upload`, {
+          method: "POST",
+          body: form
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          id?: string;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(data.error ?? t("projectDetail.staticUploadFailed"));
+        }
+        notify(t("projectDetail.staticUploadSuccess"), "success");
+        onUploaded?.();
+        window.setTimeout(() => {
+          const id = data.id ?? "";
+          if (id) navigateSpa(`/deployments/${id}`);
+        }, 400);
+      } catch (err) {
+        notify(err instanceof Error ? err.message : t("projectDetail.staticUploadFailed"), "error");
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    },
+    [onUploaded, projectId, t]
+  );
+
+  const handleDragEnter = (e: React.DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current += 1;
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setDragActive(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDrop = (e: React.DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    void (async () => {
+      const gathered = await gatherDroppedStaticFiles(e.dataTransfer);
+      await runUpload(gathered);
+    })();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      inputRef.current?.click();
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const list = e.target.files;
+    if (!list?.length) return;
+    const gathered: { relativePath: string; file: File }[] = [];
+    for (const file of [...list]) {
+      const rel =
+        typeof file.webkitRelativePath === "string" && file.webkitRelativePath.trim()
+          ? file.webkitRelativePath.trim().replace(/\\/g, "/")
+          : file.name;
+      gathered.push({ relativePath: rel, file });
+    }
+    e.target.value = "";
+    void runUpload(gathered);
+  };
+
+  return (
+    <div className="relative w-full min-w-0">
+      <input
+        ref={inputRef}
+        type="file"
+        className="sr-only"
+        tabIndex={-1}
+        multiple
+        {...{ webkitdirectory: "" }}
+        onChange={handleFileInputChange}
+        aria-hidden
+      />
+      <div
+        role="button"
+        tabIndex={0}
+        aria-disabled={busy}
+        aria-label={t("projectDetail.staticUploadAria")}
+        className={cn(
+          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-5 text-center transition-[border-color,background-color,box-shadow] duration-200 ease-out sm:py-6",
+          dragActive
+            ? "border-primary bg-primary/5 shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]"
+            : "border-muted-foreground/35 bg-muted/15 hover:border-muted-foreground/55 hover:bg-muted/25",
+          busy && "pointer-events-none opacity-60"
+        )}
+        onClick={() => {
+          if (busy) return;
+          inputRef.current?.click();
+        }}
+        onKeyDown={handleKeyDown}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        <UploadCloud
+          className={cn(
+            "size-9 shrink-0 transition-transform duration-200 ease-out",
+            dragActive ? "scale-110 text-primary" : "text-muted-foreground"
+          )}
+          aria-hidden
+        />
+        <div className="space-y-1">
+          <p className="text-sm font-medium leading-snug text-foreground">
+            {busy ? t("projectDetail.staticUploadBusy") : t("projectDetail.staticUploadTitle")}
+          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">{t("projectDetail.staticUploadHint")}</p>
+        </div>
+      </div>
+    </div>
   );
 };

@@ -133,10 +133,10 @@ export const ProjectDeploymentsPanel = ({
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 border-b border-border/60 bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
         <div className="relative min-w-0 flex-1">
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground"
             aria-hidden
           />
           <Input
@@ -147,7 +147,7 @@ export const ProjectDeploymentsPanel = ({
               setVisibleCount(PAGE_SIZE);
             }}
             placeholder={t("projectDeployments.searchPlaceholder")}
-            className="h-9 pl-9"
+            className="h-11 border-border/70 bg-background pl-10 text-base shadow-sm"
             aria-label={t("projectDeployments.searchAria")}
           />
         </div>
@@ -157,7 +157,7 @@ export const ProjectDeploymentsPanel = ({
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 shrink-0 gap-2 border-dashed sm:min-w-38"
+              className="h-11 shrink-0 gap-2 border-dashed px-4 text-sm sm:min-w-44"
               aria-label={t("projectDeployments.filterAria", {
                 selected: enabledStatuses.size,
                 total: statusOptions.length
@@ -178,12 +178,12 @@ export const ProjectDeploymentsPanel = ({
               <ChevronDown className="size-4 opacity-60" aria-hidden />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 space-y-2 p-3" align="end">
-            <p className="text-xs font-medium text-muted-foreground">{t("projectDeployments.popoverTitle")}</p>
+          <PopoverContent className="w-60 space-y-3 p-4" align="end">
+            <p className="text-sm font-semibold text-muted-foreground">{t("projectDeployments.popoverTitle")}</p>
             <ul className="space-y-2">
               {statusOptions.map((status) => (
                 <li key={status}>
-                  <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                  <label className="flex cursor-pointer items-center gap-3 text-base">
                     <Checkbox
                       checked={enabledStatuses.has(status)}
                       onCheckedChange={(v) => handleToggleStatus(status, v === true)}
@@ -206,18 +206,26 @@ export const ProjectDeploymentsPanel = ({
         </Popover>
       </div>
 
-      <div className="max-h-[min(28rem,60vh)] overflow-auto">
+      <div className="max-h-[min(32rem,65vh)] overflow-auto">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
             <TableRow className="hover:bg-transparent">
-              <TableHead className="whitespace-nowrap">{t("projectDeployments.colDeployment")}</TableHead>
-              <TableHead className="hidden md:table-cell">{t("projectDeployments.colKind")}</TableHead>
-              <TableHead className="whitespace-nowrap">{t("projectDeployments.colPreview")}</TableHead>
-              <TableHead className="hidden sm:table-cell whitespace-nowrap">
+              <TableHead className="whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("projectDeployments.colDeployment")}
+              </TableHead>
+              <TableHead className="hidden py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:table-cell">
+                {t("projectDeployments.colKind")}
+              </TableHead>
+              <TableHead className="whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("projectDeployments.colPreview")}
+              </TableHead>
+              <TableHead className="hidden py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:table-cell whitespace-nowrap">
                 {t("projectDeployments.colCreated")}
               </TableHead>
-              <TableHead className="whitespace-nowrap">{t("projectDeployments.colCurrent")}</TableHead>
-              <TableHead className="w-10 p-2 text-right">
+              <TableHead className="whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("projectDeployments.colCurrent")}
+              </TableHead>
+              <TableHead className="w-12 p-3 text-right">
                 <span className="sr-only">{t("projectDeployments.actionsSr")}</span>
               </TableHead>
             </TableRow>
@@ -225,7 +233,7 @@ export const ProjectDeploymentsPanel = ({
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="h-28 text-center text-base text-muted-foreground">
                   {enabledStatuses.size === 0
                     ? t("projectDeployments.emptyStatusOff")
                     : t("projectDeployments.emptyNoMatch")}
@@ -240,35 +248,35 @@ export const ProjectDeploymentsPanel = ({
                 return (
                   <TableRow
                     key={d.id}
-                    className="group cursor-pointer hover:bg-muted/50"
+                    className="group cursor-pointer border-border/50 hover:bg-muted/45"
                     aria-label={`${t("projectDeployments.openDeployment")}: ${d.shortId}`}
                     onClick={(e) => handleDeploymentRowNavigate(e, d.id)}
                   >
-                    <TableCell className="align-middle">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <TableCell className="align-middle py-4">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                         <span
-                          className={cn("size-2.5 shrink-0 rounded-full", statusDotClass(d.status))}
+                          className={cn("size-3 shrink-0 rounded-full", statusDotClass(d.status))}
                           title={t(`deployment.status.${d.status}`, { defaultValue: d.status })}
                           aria-hidden
                         />
-                        <span className="font-mono text-sm font-medium underline-offset-4 group-hover:underline">
+                        <span className="font-mono text-base font-semibold underline-offset-4 group-hover:underline">
                           {d.shortId}
                         </span>
                         {isCurrent ? (
-                          <Badge variant="secondary" className="text-[0.625rem]">
+                          <Badge variant="secondary" className="text-xs font-medium uppercase tracking-wide">
                             {t("projectDeployments.badgeCurrent")}
                           </Badge>
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden align-middle md:table-cell">
-                      <Badge variant="outline" className="font-normal capitalize">
+                    <TableCell className="hidden align-middle py-4 md:table-cell">
+                      <Badge variant="outline" className="px-2.5 py-1 text-sm font-normal capitalize">
                         {t(`deployment.previewMode.${deploymentPreviewModeKey(d)}`)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="align-middle">
+                    <TableCell className="align-middle py-4">
                       {d.status === "success" && d.previewUrl ? (
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2 text-xs" asChild>
+                        <Button variant="outline" size="sm" className="h-10 gap-2 px-3 text-sm" asChild>
                           <a
                             href={d.previewUrl}
                             target="_blank"
@@ -282,30 +290,30 @@ export const ProjectDeploymentsPanel = ({
                           </a>
                         </Button>
                       ) : (
-                        <span className="text-muted-foreground">Not available</span>
+                        <span className="text-sm text-muted-foreground">Not available</span>
                       )}
                     </TableCell>
-                    <TableCell className="hidden align-middle text-muted-foreground text-sm tabular-nums sm:table-cell">
+                    <TableCell className="hidden align-middle py-4 text-base tabular-nums text-muted-foreground sm:table-cell">
                       {formatCreatedShort(d.createdAt)}
                     </TableCell>
-                    <TableCell className="align-middle">
+                    <TableCell className="align-middle py-4">
                       {d.status === "success" && !isCurrent ? (
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 px-2 text-xs"
+                          className="h-10 px-3 text-sm"
                           data-set-current-deployment={d.id}
                         >
                           {t("projectDeployments.setAsCurrent")}
                         </Button>
                       ) : d.status === "success" && isCurrent ? (
-                        <span className="text-xs text-muted-foreground">{t("projectDeployments.yes")}</span>
+                        <span className="text-sm font-medium text-muted-foreground">{t("projectDeployments.yes")}</span>
                       ) : (
-                        <span className="text-muted-foreground">No</span>
+                        <span className="text-sm text-muted-foreground">No</span>
                       )}
                     </TableCell>
-                    <TableCell className="p-2 text-right align-middle">
+                    <TableCell className="p-3 text-right align-middle">
                       {hasOverflowMenu ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -313,7 +321,7 @@ export const ProjectDeploymentsPanel = ({
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="size-8 text-muted-foreground"
+                              className="size-9 text-muted-foreground"
                               aria-label={t("projectDeployments.actionsFor", { shortId: d.shortId })}
                               onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => e.stopPropagation()}
@@ -347,11 +355,11 @@ export const ProjectDeploymentsPanel = ({
       </div>
 
       {hasMore ? (
-        <div className="border-t border-border p-3">
+        <div className="border-t border-border/70 bg-muted/10 p-4">
           <Button
             type="button"
             variant="outline"
-            className="w-full"
+            className="h-11 w-full text-base font-medium"
             onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
           >
             {t("projectDeployments.loadMore")}

@@ -5,6 +5,7 @@ import {
   ProjectDetailDeployTrigger,
   ProjectDetailHeroSitePreview,
   ProjectDetailSetCurrentRoot,
+  ProjectStaticBundleDropZone,
   type ProjectDetailBootstrap
 } from "./ProjectDetailPageClient";
 import { LazyRepoCodeExplorer } from "./repo-code-explorer-lazy";
@@ -38,7 +39,16 @@ export const ProjectDetailInteractiveMount = ({ bootstrap, onRequestDetailRefetc
     const mainRoot = document.getElementById("project-detail-deploy-main-root");
     if (mainRoot) {
       const r = createRoot(mainRoot);
-      r.render(<ProjectDetailDeployTrigger projectId={projectId} label={deployMainLabel} />);
+      r.render(
+        <>
+          <ProjectDetailDeployTrigger
+            projectId={projectId}
+            label={deployMainLabel}
+            className="w-full shrink-0 sm:w-auto"
+          />
+          <ProjectStaticBundleDropZone projectId={projectId} onUploaded={onRequestDetailRefetch} />
+        </>
+      );
       roots.push(r);
     }
 
@@ -71,7 +81,7 @@ export const ProjectDetailInteractiveMount = ({ bootstrap, onRequestDetailRefetc
         r.render(
           <Suspense
             fallback={
-              <p className="text-muted-foreground text-sm" role="status">
+              <p className="text-muted-foreground rounded-lg border border-dashed border-border/70 bg-muted/20 px-4 py-8 text-center text-base" role="status">
                 Loading repository browser…
               </p>
             }
