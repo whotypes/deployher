@@ -17,13 +17,12 @@ import {
   applyLayoutDisplayPrefsToDocument,
   type LayoutDisplayPrefKey,
   readLayoutDisplayPref,
-  writeLayoutDisplayPref
+  setLayoutDisplayPreference
 } from "@/lib/layoutDisplayPrefs";
 import { cn } from "@/lib/utils";
 
 const setPref = (key: LayoutDisplayPrefKey, value: string) => {
-  writeLayoutDisplayPref(key, value);
-  applyLayoutDisplayPrefsToDocument();
+  setLayoutDisplayPreference(key, value);
 };
 
 export const LayoutPrefsMenu = () => {

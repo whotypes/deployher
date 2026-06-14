@@ -1,10 +1,9 @@
 import {
   applyLayoutDisplayPrefsToDocument,
   type LayoutDisplayPrefKey,
-  readLayoutDisplayPref,
-  writeLayoutDisplayPref
+  setLayoutDisplayPreference,
+  syncLayoutPrefChoiceDom
 } from "@/lib/layoutDisplayPrefs";
-import { navigateSpa } from "@/spa/spaNavigationBridge";
 
 const STORAGE_KEY = "deployher-sidebar-collapsed";
 const SIDEBAR_STATE_COOKIE = "sidebar_state";
@@ -23,7 +22,10 @@ const writeSidebarCookie = (expanded: boolean): void => {
   document.cookie = `${SIDEBAR_STATE_COOKIE}=${expanded}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax`;
 };
 
-export const initLayout = (): void => {
+export const initLayout = (): (() => void) => {
+  const abort = new AbortController();
+  const { signal } = abort;
+
   const shell = document.getElementById("deployher-shell");
   const sidebar = document.getElementById("deployher-sidebar");
   const backdrop = document.getElementById("deployher-sidebar-backdrop");
@@ -31,25 +33,22 @@ export const initLayout = (): void => {
   const closeBtn = document.getElementById("deployher-sidebar-close-mobile");
   const desktopToggle = document.getElementById("deployher-sidebar-toggle-desktop");
   const sidebarRail = document.getElementById("deployher-sidebar-rail");
-  const prefButtons = Array.from(
-    document.querySelectorAll<HTMLButtonElement>("[data-layout-pref][data-value]")
-  );
 
   const syncPrefButtons = () => {
-    prefButtons.forEach((button) => {
-      const pref = button.dataset.layoutPref as LayoutDisplayPrefKey | undefined;
-      const value = button.dataset.value;
-      if (!pref || !value) return;
-      const active = readLayoutDisplayPref(pref) === value;
-      button.dataset.active = active ? "true" : "false";
-      button.setAttribute("aria-pressed", active ? "true" : "false");
-    });
+    syncLayoutPrefChoiceDom();
   };
 
-  const setDisplayPref = (key: LayoutDisplayPrefKey, value: string) => {
-    writeLayoutDisplayPref(key, value);
-    applyLayoutDisplayPrefsToDocument();
-    syncPrefButtons();
+  const handleLayoutPrefClick = (e: Event) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const button = t.closest<HTMLButtonElement>("[data-layout-pref][data-value]");
+    if (!button) return;
+    const shellEl = document.getElementById("deployher-shell");
+    if (!shellEl || !shellEl.contains(button)) return;
+    const pref = button.dataset.layoutPref as LayoutDisplayPrefKey | undefined;
+    const value = button.dataset.value;
+    if (!pref || !value) return;
+    setLayoutDisplayPreference(pref, value);
   };
 
   const setMobileOpen = (open: boolean) => {
@@ -79,12 +78,30 @@ export const initLayout = (): void => {
     setDesktopCollapsed(collapsed);
   };
 
-  openBtn?.addEventListener("click", () => setMobileOpen(true));
-  closeBtn?.addEventListener("click", () => setMobileOpen(false));
-  backdrop?.addEventListener("click", () => setMobileOpen(false));
+  let prefSyncRaf = 0;
+  const schedulePrefButtonSync = () => {
+    if (prefSyncRaf !== 0) cancelAnimationFrame(prefSyncRaf);
+    prefSyncRaf = requestAnimationFrame(() => {
+      prefSyncRaf = 0;
+      syncPrefButtons();
+    });
+  };
 
-  desktopToggle?.addEventListener("click", () => toggleDesktopCollapsed());
-  sidebarRail?.addEventListener("click", () => toggleDesktopCollapsed());
+  let prefObserver: MutationObserver | null = null;
+  document.addEventListener("click", handleLayoutPrefClick, { capture: true, signal });
+  if (shell) {
+    prefObserver = new MutationObserver(() => {
+      schedulePrefButtonSync();
+    });
+    prefObserver.observe(shell, { childList: true, subtree: true });
+  }
+
+  openBtn?.addEventListener("click", () => setMobileOpen(true), { signal });
+  closeBtn?.addEventListener("click", () => setMobileOpen(false), { signal });
+  backdrop?.addEventListener("click", () => setMobileOpen(false), { signal });
+
+  desktopToggle?.addEventListener("click", () => toggleDesktopCollapsed(), { signal });
+  sidebarRail?.addEventListener("click", () => toggleDesktopCollapsed(), { signal });
 
   if (shell) {
     let collapsed: boolean;
@@ -101,42 +118,48 @@ export const initLayout = (): void => {
   applyLayoutDisplayPrefsToDocument();
   syncPrefButtons();
 
-  prefButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const pref = button.dataset.layoutPref as LayoutDisplayPrefKey | undefined;
-      const value = button.dataset.value;
-      if (!pref || !value) return;
-      setDisplayPref(pref, value);
-    });
-  });
-
-  document.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      setMobileOpen(false);
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
-      const target = e.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT" ||
-          target.isContentEditable)
-      ) {
-        return;
+  document.addEventListener(
+    "keydown",
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMobileOpen(false);
       }
-      e.preventDefault();
-      toggleDesktopCollapsed();
-    }
-  });
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+        const target = e.target;
+        if (
+          target instanceof HTMLElement &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+        e.preventDefault();
+        toggleDesktopCollapsed();
+      }
+    },
+    { signal }
+  );
 
   const signoutForm = document.getElementById("signout-form");
-  if (signoutForm) {
-    signoutForm.addEventListener("submit", (e) => {
+  signoutForm?.addEventListener(
+    "submit",
+    (e) => {
       e.preventDefault();
-      fetch("/api/auth/sign-out", { method: "POST", credentials: "include" }).then(() => {
-        navigateSpa("/login");
+      fetch("/logout", { method: "POST", credentials: "include", redirect: "manual" }).then(() => {
+        window.location.assign("/");
       });
-    });
-  }
+    },
+    { signal }
+  );
+
+  return () => {
+    if (prefSyncRaf !== 0) {
+      cancelAnimationFrame(prefSyncRaf);
+      prefSyncRaf = 0;
+    }
+    prefObserver?.disconnect();
+    abort.abort();
+  };
 };

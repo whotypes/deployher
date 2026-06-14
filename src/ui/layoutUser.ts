@@ -23,3 +23,11 @@ export type SidebarFeaturedDeployment = {
   status: "queued" | "building" | "success" | "failed";
   sidebarRole: "live" | "failed" | "in_progress";
 };
+
+/** Project identity + favicon sources for sidebar chrome and header switcher. */
+export type SidebarContextProject = {
+  id: string;
+  name: string;
+  siteIconUrl: string | null;
+  previewUrl: string | null;
+};
