@@ -8,6 +8,7 @@ export interface CliContext {
   backendEnvFile: string;
   bunImage: string;
   garageBucketName: string;
+  garageAvatarBucketName: string;
   garageKeyName: string;
   noColor: boolean;
   yes: boolean;

@@ -15,6 +15,7 @@ export type BuildContextOptions = {
   bunImage?: string;
   garageEnvFile?: string;
   garageBucketName?: string;
+  garageAvatarBucketName?: string;
   garageKeyName?: string;
 };
 
@@ -41,6 +42,8 @@ export const buildContext = (opts: BuildContextOptions): CliContext => {
     backendEnvFile: defaultBackendEnvFile(repoRoot),
     bunImage: opts.bunImage ?? process.env.BUN_IMAGE ?? "oven/bun:1.3.5",
     garageBucketName: opts.garageBucketName ?? process.env.GARAGE_BUCKET_NAME ?? "placeholder-bucket",
+    garageAvatarBucketName:
+      opts.garageAvatarBucketName ?? process.env.GARAGE_AVATAR_BUCKET_NAME ?? "deployher-avatars",
     garageKeyName: opts.garageKeyName ?? process.env.GARAGE_KEY_NAME ?? "devkey",
     noColor: noColor || process.env.NO_COLOR === "1",
     yes: Boolean(opts.yes),
