@@ -1,9 +1,15 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@/spa/routerCompat";
+import { setLayoutDisplayPreference, type LayoutDisplayPrefKey } from "@/lib/layoutDisplayPrefs";
 import { useWorkspaceChrome } from "@/spa/workspaceChromeContext";
 import type { LayoutUser, SidebarProjectSummary } from "@/ui/layoutUser";
-import { AccountDeleteSection, AccountWorkspacePreferences } from "./client/AccountPageClient";
+import {
+  AccountAvatarPicker,
+  AccountDeleteSection,
+  AccountWorkspacePreferences,
+  ConnectGitHubButton
+} from "./client/AccountPageClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export type AccountPageData = {
@@ -19,6 +25,12 @@ const providerLabel = (providerId: string, t: (key: string) => string): string =
   if (providerId.toLowerCase() === "github") return t("common.github");
   return providerId.charAt(0).toUpperCase() + providerId.slice(1);
 };
+
+const handleLayoutPref =
+  (key: LayoutDisplayPrefKey, value: string) =>
+  () => {
+    setLayoutDisplayPreference(key, value);
+  };
 
 export const AccountPage = ({ data }: { data: AccountPageData }) => {
   const { t } = useTranslation();
@@ -88,6 +100,7 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
                   data-layout-pref="contentWidth"
                   data-value="contained"
                   className="prefs-choice rounded-md border px-3 py-2 text-sm transition-colors"
+                  onClick={handleLayoutPref("contentWidth", "contained")}
                 >
                   {t("layoutPrefs.focused")}
                 </button>
@@ -96,6 +109,7 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
                   data-layout-pref="contentWidth"
                   data-value="wide"
                   className="prefs-choice rounded-md border px-3 py-2 text-sm transition-colors"
+                  onClick={handleLayoutPref("contentWidth", "wide")}
                 >
                   {t("layoutPrefs.wide")}
                 </button>
@@ -109,6 +123,7 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
                   data-layout-pref="density"
                   data-value="comfortable"
                   className="prefs-choice rounded-md border px-3 py-2 text-sm transition-colors"
+                  onClick={handleLayoutPref("density", "comfortable")}
                 >
                   {t("layoutPrefs.comfortable")}
                 </button>
@@ -117,6 +132,7 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
                   data-layout-pref="density"
                   data-value="compact"
                   className="prefs-choice rounded-md border px-3 py-2 text-sm transition-colors"
+                  onClick={handleLayoutPref("density", "compact")}
                 >
                   {t("layoutPrefs.compact")}
                 </button>
@@ -130,6 +146,7 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
                   data-layout-pref="ambient"
                   data-value="rich"
                   className="prefs-choice rounded-md border px-3 py-2 text-sm transition-colors"
+                  onClick={handleLayoutPref("ambient", "rich")}
                 >
                   {t("layoutPrefs.alive")}
                 </button>
@@ -138,6 +155,7 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
                   data-layout-pref="ambient"
                   data-value="muted"
                   className="prefs-choice rounded-md border px-3 py-2 text-sm transition-colors"
+                  onClick={handleLayoutPref("ambient", "muted")}
                 >
                   {t("layoutPrefs.muted")}
                 </button>
@@ -151,19 +169,7 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
             <CardTitle className="text-base">{t("account.profile")}</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-4">
-            {data.user.image ? (
-              <img
-                src={data.user.image}
-                alt=""
-                width={64}
-                height={64}
-                className="rounded-lg flex-shrink-0"
-              />
-            ) : null}
-            <div>
-              <p className="font-semibold">{data.user.name ?? data.user.email}</p>
-              {data.user.name ? <p className="text-sm text-muted-foreground">{data.user.email}</p> : null}
-            </div>
+            <AccountAvatarPicker image={data.user.image} name={data.user.name} email={data.user.email} />
           </CardContent>
         </Card>
 
@@ -182,6 +188,11 @@ export const AccountPage = ({ data }: { data: AccountPageData }) => {
                   </li>
                 ))}
               </ul>
+            )}
+            {data.linkedAccounts.some((acc) => acc.providerId.toLowerCase() === "github") ? null : (
+              <div className="mt-4">
+                <ConnectGitHubButton callbackURL={`${window.location.origin}/account`} />
+              </div>
             )}
           </CardContent>
         </Card>

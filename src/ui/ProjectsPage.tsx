@@ -141,7 +141,7 @@ const ProjectsStatusBar = ({ projects }: { projects: Project[] }) => {
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+      <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-muted-foreground">
         <span>
           <span className="tabular-nums text-foreground">{n}</span> {t("projects.wordProjects")}
         </span>
@@ -183,7 +183,7 @@ const GitHubToolbarBadge = ({ github }: { github: ProjectsPageData["github"] }) 
   const { t } = useTranslation();
   if (!github.linked) {
     return (
-      <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+      <Button variant="outline" size="sm" className="h-9 text-sm" asChild>
         <Link to="/account">{t("projects.githubConnect")}</Link>
       </Button>
     );
@@ -193,7 +193,7 @@ const GitHubToolbarBadge = ({ github }: { github: ProjectsPageData["github"] }) 
       <Button
         variant="outline"
         size="sm"
-        className="h-8 border-amber-500/40 text-xs text-amber-700 dark:text-amber-400"
+        className="h-9 border-amber-500/40 text-sm text-amber-700 dark:text-amber-400"
         asChild
       >
         <Link to="/account">{t("projects.githubLimited")}</Link>
@@ -201,7 +201,7 @@ const GitHubToolbarBadge = ({ github }: { github: ProjectsPageData["github"] }) 
     );
   }
   return (
-    <span className="inline-flex h-8 items-center rounded-md border border-border/60 px-2.5 text-xs text-muted-foreground">
+    <span className="inline-flex h-9 items-center rounded-md border border-border/60 px-3 text-sm text-muted-foreground">
       {t("projects.githubBadge")}
     </span>
   );
@@ -256,137 +256,153 @@ const ProjectWorkspaceCard = ({ project }: { project: Project }) => {
   return (
     <Card
       className={cn(
-        "dashboard-surface relative border-border/80 shadow-none transition-colors hover:border-border",
-        "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background"
+        "group/project-card dashboard-surface relative overflow-hidden border-border/80 shadow-none",
+        "before:pointer-events-none before:absolute before:inset-y-5 before:left-0 before:z-1 before:w-[3px] before:rounded-r-full before:bg-linear-to-b before:from-primary/55 before:to-primary/15",
+        "transition-[border-color,box-shadow] duration-300 ease-out",
+        "hover:border-primary/25 hover:shadow-[0_32px_80px_-44px_rgba(0,0,0,0.82)]",
+        "focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background"
       )}
     >
-      <CardContent className="relative p-4">
+      <CardContent className="relative p-5 md:p-6">
         <Link
           to={`/projects/${project.id}`}
-          className="absolute inset-0 z-0 rounded-lg outline-none"
+          className="absolute inset-0 z-0 rounded-[inherit] outline-none ring-offset-background transition-colors hover:bg-muted/25 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label={t("projects.openProjectAria", { name: project.name })}
         />
-        <div className="relative z-10 space-y-3 pointer-events-none">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <ProjectSiteGlyph
-                name={project.name}
-                siteIconUrl={project.siteIconUrl}
-                previewUrl={dep?.previewUrl ?? null}
-              />
-              <span className="truncate text-base font-semibold text-foreground">{project.name}</span>
+        <div className="relative z-10 space-y-5 pointer-events-none">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex min-w-0 items-start gap-3">
+                <ProjectSiteGlyph
+                  name={project.name}
+                  siteIconUrl={project.siteIconUrl}
+                  previewUrl={dep?.previewUrl ?? null}
+                  className="size-11 shrink-0 rounded-lg ring-2 ring-border/55"
+                  imgClassName="size-11 object-cover"
+                  letterClassName="flex size-11 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-muted-foreground"
+                />
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <h2 className="text-pretty text-xl font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
+                    {project.name}
+                  </h2>
+                  <a
+                    href={project.repoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="pointer-events-auto mt-1.5 block truncate font-mono text-sm leading-normal text-muted-foreground no-underline transition-colors hover:text-foreground hover:underline"
+                  >
+                    {project.repoUrl.replace("https://github.com/", "")}
+                  </a>
+                </div>
+              </div>
             </div>
-            <a
-              href={project.repoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="pointer-events-auto mt-0.5 block truncate font-mono text-xs text-muted-foreground no-underline hover:text-foreground hover:underline"
+            <time
+              className="shrink-0 pt-1 text-right text-xs font-medium leading-tight text-muted-foreground sm:text-sm sm:leading-snug"
+              dateTime={project.updatedAt}
             >
-              {project.repoUrl.replace("https://github.com/", "")}
-            </a>
+              {updatedLabel}
+            </time>
           </div>
-          <time className="shrink-0 text-right text-[0.65rem] text-muted-foreground tabular-nums" dateTime={project.updatedAt}>
-            {updatedLabel}
-          </time>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="font-mono text-[0.65rem]">
-            {project.branch}
-          </Badge>
-          <div
-            className="border-border/80 bg-background inline-flex h-7 min-w-24 max-w-48 items-center truncate rounded-md border px-2 text-[0.65rem] font-medium text-foreground"
-            title={frameworkHintLabel(project.frameworkHint)}
-            aria-label={t("projects.frameworkAria", { framework: frameworkHintLabel(project.frameworkHint) })}
-          >
-            {frameworkHintLabel(project.frameworkHint)}
-          </div>
-          {project.projectRootDir !== "." ? (
-            <Badge variant="outline" className="font-mono text-[0.65rem]">
-              {project.projectRootDir}
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="h-8 border-border/70 px-2.5 font-mono text-xs font-medium">
+              {project.branch}
             </Badge>
-          ) : null}
-        </div>
-
-        <Separator className="bg-border/60" />
-
-        {dep ? (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Link to={deploymentDetailHref(dep.id)} className="pointer-events-auto no-underline">
-                <Badge variant={statusVariant(dep.status)} className="gap-1 text-xs">
-                  {statusLabel(dep.status)}
-                </Badge>
-              </Link>
-              <Link
-                to={deploymentDetailHref(dep.id)}
-                className="pointer-events-auto font-mono text-xs text-muted-foreground no-underline hover:text-foreground hover:underline"
-              >
-                {dep.shortId}
-              </Link>
+            <div
+              className="border-border/70 bg-muted/35 inline-flex h-8 min-w-30 max-w-[min(100%,14rem)] items-center truncate rounded-lg border px-3 text-xs font-semibold text-foreground"
+              title={frameworkHintLabel(project.frameworkHint)}
+              aria-label={t("projects.frameworkAria", { framework: frameworkHintLabel(project.frameworkHint) })}
+            >
+              {frameworkHintLabel(project.frameworkHint)}
             </div>
-            <p className="text-xs text-muted-foreground">
-              {deploymentBuildTypeSummary(dep, t)}
-              {duration ? ` · ${duration}` : null}
-            </p>
-            <p className="text-[0.7rem] text-muted-foreground">
-              {t("projects.started", { time: dateFmt.format(new Date(dep.createdAt)) })}
-              {dep.finishedAt ? (
-                <>
-                  {" "}
-                  · {t("projects.finished", { time: dateFmt.format(new Date(dep.finishedAt)) })}
-                </>
-              ) : dep.status === "building" || dep.status === "queued" ? (
-                <span className="text-amber-600/90 dark:text-amber-400/90"> {t("projects.stillRunning")}</span>
-              ) : null}
-            </p>
-            {dep.status === "failed" && hint ? (
-              <p className="line-clamp-2 text-xs leading-snug text-destructive/90" title={hint}>
-                {truncateText(hint, 280)}
-              </p>
-            ) : null}
-            {dep.previewResolution?.code && dep.status !== "failed" ? (
-              <p
-                className="truncate text-[0.7rem] text-muted-foreground"
-                title={dep.previewResolution.detail ?? dep.previewResolution.code}
-              >
-                {dep.previewResolution.detail ?? dep.previewResolution.code}
-              </p>
+            {project.projectRootDir !== "." ? (
+              <Badge variant="outline" className="h-8 px-2.5 font-mono text-xs font-medium">
+                {project.projectRootDir}
+              </Badge>
             ) : null}
           </div>
-        ) : (
-          <Badge variant="secondary" className="w-fit text-xs">
-            {t("projects.noDeploys")}
-          </Badge>
-        )}
 
-        <div className="flex flex-wrap gap-2 pt-1">
-          {dep && dep.status === "failed" ? (
-            <Button variant="destructive" size="sm" className="pointer-events-auto h-8 gap-1.5" asChild>
-              <Link to={deploymentLogsHref(dep.id)}>
-                <FileTerminal className="size-3.5" aria-hidden />
-                {t("common.logs")}
-              </Link>
-            </Button>
-          ) : null}
-          {dep && dep.status === "success" && dep.previewUrl ? (
-            <Button size="sm" className="pointer-events-auto h-8 gap-1.5" asChild>
-              <a href={dep.previewUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-3.5" aria-hidden />
-                {t("common.preview")}
-              </a>
-            </Button>
-          ) : null}
-          {dep &&
-          (dep.status === "building" ||
-            dep.status === "queued" ||
-            (dep.status === "success" && !dep.previewUrl)) ? (
-            <Button variant="outline" size="sm" className="pointer-events-auto h-8" asChild>
-              <Link to={deploymentDetailHref(dep.id)}>{t("common.deployment")}</Link>
-            </Button>
-          ) : null}
-        </div>
+          <Separator className="bg-border/50" />
+
+          {dep ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2.5 gap-y-2">
+                <Link to={deploymentDetailHref(dep.id)} className="pointer-events-auto no-underline">
+                  <Badge variant={statusVariant(dep.status)} className="px-2.5 py-1 text-sm font-medium">
+                    {statusLabel(dep.status)}
+                  </Badge>
+                </Link>
+                <Link
+                  to={deploymentDetailHref(dep.id)}
+                  className="pointer-events-auto font-mono text-sm text-muted-foreground no-underline transition-colors hover:text-foreground hover:underline"
+                >
+                  {dep.shortId}
+                </Link>
+              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {deploymentBuildTypeSummary(dep, t)}
+                {duration ? ` · ${duration}` : null}
+              </p>
+              <p className="text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                {t("projects.started", { time: dateFmt.format(new Date(dep.createdAt)) })}
+                {dep.finishedAt ? (
+                  <>
+                    {" "}
+                    · {t("projects.finished", { time: dateFmt.format(new Date(dep.finishedAt)) })}
+                  </>
+                ) : dep.status === "building" || dep.status === "queued" ? (
+                  <span className="font-medium text-amber-700 dark:text-amber-400">
+                    {" "}
+                    {t("projects.stillRunning")}
+                  </span>
+                ) : null}
+              </p>
+              {dep.status === "failed" && hint ? (
+                <p className="line-clamp-2 text-sm leading-snug text-destructive" title={hint}>
+                  {truncateText(hint, 280)}
+                </p>
+              ) : null}
+              {dep.previewResolution?.code && dep.status !== "failed" ? (
+                <p
+                  className="truncate text-sm text-muted-foreground"
+                  title={dep.previewResolution.detail ?? dep.previewResolution.code}
+                >
+                  {dep.previewResolution.detail ?? dep.previewResolution.code}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <Badge variant="secondary" className="h-8 px-3 text-sm font-medium">
+              {t("projects.noDeploys")}
+            </Badge>
+          )}
+
+          <div className="flex flex-wrap gap-2.5 pt-0.5">
+            {dep && dep.status === "failed" ? (
+              <Button variant="destructive" size="sm" className="pointer-events-auto h-9 gap-2 text-sm" asChild>
+                <Link to={deploymentLogsHref(dep.id)}>
+                  <FileTerminal className="size-4" aria-hidden />
+                  {t("common.logs")}
+                </Link>
+              </Button>
+            ) : null}
+            {dep && dep.status === "success" && dep.previewUrl ? (
+              <Button size="sm" className="pointer-events-auto h-9 gap-2 text-sm" asChild>
+                <a href={dep.previewUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-4" aria-hidden />
+                  {t("common.preview")}
+                </a>
+              </Button>
+            ) : null}
+            {dep &&
+            (dep.status === "building" ||
+              dep.status === "queued" ||
+              (dep.status === "success" && !dep.previewUrl)) ? (
+              <Button variant="outline" size="sm" className="pointer-events-auto h-9 text-sm" asChild>
+                <Link to={deploymentDetailHref(dep.id)}>{t("common.deployment")}</Link>
+              </Button>
+            ) : null}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -408,12 +424,18 @@ export const ProjectsPage = ({ data }: { data: ProjectsPageData }) => {
   useWorkspaceChrome(chrome);
   return (
     <>
-      <div className="mb-6 space-y-4 rounded-lg border border-border/70 bg-card/20 p-4 md:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{t("projects.pageTitle")}</h1>
+      <div className="relative mb-8 space-y-5 overflow-hidden rounded-[calc(var(--radius)+0.25rem)] border border-border/70 bg-card/40 p-5 shadow-[0_24px_64px_-36px_rgba(0,0,0,0.85)] backdrop-blur-xl md:p-6">
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-primary/40 via-transparent to-color-mix(in_oklab,var(--chart-2)_25%,transparent)"
+          aria-hidden
+        />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-pretty text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+            {t("projects.pageTitle")}
+          </h1>
           <div className="flex flex-wrap items-center gap-2">
             <GitHubToolbarBadge github={data.github} />
-            <Button size="sm" asChild>
+            <Button size="default" className="h-10 px-5 text-sm font-medium" asChild>
               <Link to="/projects/new">{t("projects.addProject")}</Link>
             </Button>
           </div>
@@ -432,7 +454,7 @@ export const ProjectsPage = ({ data }: { data: ProjectsPageData }) => {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
           {data.projects.map((project) => (
             <ProjectWorkspaceCard key={project.id} project={project} />
           ))}

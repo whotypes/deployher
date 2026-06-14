@@ -46,11 +46,6 @@ export const AdminExamplesPage = ({ data }: { data: AdminExamplesPageData }) => 
   useWorkspaceChrome(chrome);
   return (
     <>
-      <div
-        id="notification"
-        aria-live="polite"
-        className="hidden fixed top-17 right-4 z-50 rounded-md px-4 py-3 text-sm font-medium shadow-lg"
-      />
       <AdminExamplesPageClient
         initialExamples={data.examples}
         initialBuildSettings={data.buildSettings}
