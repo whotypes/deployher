@@ -110,6 +110,10 @@ export const projects = pgTable("projects", {
     .notNull()
     .default("auto")
     .$type<"auto" | "static" | "server">(),
+  previewAccess: text("preview_access")
+    .notNull()
+    .default("public")
+    .$type<"public" | "protected">(),
   serverPreviewTarget: text("server_preview_target")
     .notNull()
     .default("isolated-runner")
