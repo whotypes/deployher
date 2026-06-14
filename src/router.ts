@@ -38,7 +38,9 @@ import { resolveSafeRedirect } from "./security/safeRedirect";
 import { applySecurityHeaders } from "./security/securityHeaders";
 import {
   canonicalWhyOnLandingUrl,
+  getCanonicalLandingOrigin,
   isDeployherApiPathOnTenantHost,
+  postAuthExitRedirectUrl,
   requestHostIsDashApp
 } from "./lib/deployherHosts";
 import { guessContentType } from "./utils/contentType";
@@ -99,6 +101,21 @@ const servePublicSpa: PublicRouteHandler = async (req) => {
   return attachCsrfCookie(res, csrf);
 };
 
+const rootPublicGet: PublicRouteHandler = async (req) => {
+  if (requestHostIsDashApp(req)) {
+    const landing = getCanonicalLandingOrigin();
+    if (landing) {
+      const session = await getSession(req);
+      const url = new URL(req.url);
+      if (session) {
+        return Response.redirect(new URL("/dashboard", url.origin).toString(), 302);
+      }
+      return Response.redirect(`${landing}/`, 302);
+    }
+  }
+  return servePublicSpa(req);
+};
+
 const whyPublicGet: PublicRouteHandler = async (req) => {
   if (requestHostIsDashApp(req)) {
     const canonical = canonicalWhyOnLandingUrl();
@@ -139,7 +156,7 @@ const logoutPost: PublicRouteHandler = async (req) => {
       headers: req.headers
     })
   );
-  const redirect = Response.redirect(new URL("/", url.origin).toString(), 303);
+  const redirect = Response.redirect(postAuthExitRedirectUrl(req), 303);
   const getSetCookie = (authResponse.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
   const cookies = getSetCookie ? getSetCookie.call(authResponse.headers) : [];
   if (cookies.length > 0) {
@@ -186,7 +203,7 @@ const deploymentDetailPageGet: ProtectedRouteHandler = async (req) => {
 };
 
 const publicRoutes: PublicRoute[] = [
-  { pattern: "/", methods: { GET: servePublicSpa } },
+  { pattern: "/", methods: { GET: rootPublicGet } },
   { pattern: "/why", methods: { GET: whyPublicGet } },
   { pattern: "/login", methods: { GET: loginSpa } },
   { pattern: "/logout", methods: { POST: logoutPost } },

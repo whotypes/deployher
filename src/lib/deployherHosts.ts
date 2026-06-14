@@ -8,18 +8,34 @@ export const requestHostIsDashApp = (req: Request): boolean => {
   return hostKey(req.headers.get("host") ?? "") === hostKey(dash);
 };
 
-export const canonicalWhyOnLandingUrl = (): string | null => {
+/** Landing origin when marketing and dash are on different hosts; null in single-host dev. */
+export const getCanonicalLandingOrigin = (): string | null => {
   const origins = getLandingOrigins();
   const base = origins[0]?.replace(/\/+$/, "");
   if (!base) return null;
   try {
     const landingHost = new URL(base).hostname.toLowerCase();
     const dash = config.deployher.dashHostname;
-    if (dash && landingHost === hostKey(dash)) return null;
+    if (!dash || landingHost === hostKey(dash)) return null;
   } catch {
     return null;
   }
-  return `${base}/why`;
+  return base;
+};
+
+export const canonicalWhyOnLandingUrl = (): string | null => {
+  const base = getCanonicalLandingOrigin();
+  return base ? `${base}/why` : null;
+};
+
+/** Where to send the browser after sign-out (marketing apex in split-domain prod). */
+export const postAuthExitRedirectUrl = (req: Request): string => {
+  const landing = getCanonicalLandingOrigin();
+  if (requestHostIsDashApp(req) && landing) {
+    return `${landing}/`;
+  }
+  const url = new URL(req.url);
+  return new URL("/", url.origin).toString();
 };
 
 /**
