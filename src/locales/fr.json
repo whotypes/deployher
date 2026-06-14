@@ -167,7 +167,7 @@
       "c3Body": "Séparez proprement les secrets de build et de runtime.",
       "c4Title": "Journaux temps réel",
       "c4Body": "Suivez les logs instantanément sans SSH.",
-      "c5Title": "Rollbacks",
+      "c5Title": "Déploiement courant",
       "c5Body": "Revenez en arrière en un clic.",
       "c6Title": "Historique des déploiements",
       "c6Body": "Suivez chaque commit et chaque release."
@@ -283,7 +283,7 @@
       "v2": "Bun + Docker",
       "l2": "Construit sur des outils que les devs utilisent déjà.",
       "v3": "Pipeline rapide",
-      "l3": "Clone, build, image, release et rollback.",
+      "l3": "Clone, build, image, aperçu et promotion.",
       "v4": "Indés + équipes",
       "l4": "Pensé pour hackers, petites équipes et propriétaires."
     },
@@ -377,7 +377,7 @@
     "signInFailed": "Échec de la connexion. Réessayez.",
     "oauth": {
       "accountAlreadyLinked": "Ce compte GitHub est déjà lié à un autre utilisateur Deployher. Déconnectez-vous sur github.com/logout ou choisissez un autre compte GitHub.",
-      "emailMismatch": "L’e-mail GitHub de cette autorisation ne correspond pas à votre e-mail Deployher. Vérifiez GitHub → Paramètres → E-mail (adresse principale et « Garder mes adresses e-mail privées »).",
+      "emailMismatch": "Impossible de lier GitHub depuis cette autorisation. Réessayez depuis le tableau de bord.",
       "unableToLink": "Impossible de lier GitHub. Réessayez depuis le tableau de bord.",
       "sessionExpired": "La session a expiré. Reconnectez-vous.",
       "invalidCallback": "Le retour OAuth est invalide. Reconnectez-vous.",
@@ -886,7 +886,13 @@
     "refreshSiteMeta": "Actualiser l’image d’aperçu",
     "siteMetaUpdated": "Mis à jour {{time}}",
     "deploymentStartedToast": "Déploiement démarré !",
-    "deployCreateFailed": "Échec de la création du déploiement"
+    "deployCreateFailed": "Échec de la création du déploiement",
+    "staticUploadAria": "Déployer un dossier de site statique",
+    "staticUploadTitle": "Déposez le dossier de build (dist/) ici",
+    "staticUploadHint": "HTML/CSS/JS statiques — index.html requis à la racine. Les dossiers « dist/ » sont retirés automatiquement.",
+    "staticUploadBusy": "Téléversement…",
+    "staticUploadSuccess": "Site statique déployé !",
+    "staticUploadFailed": "Échec du téléversement statique"
   },
   "projectObservability": {
     "intro": "Le trafic d’aperçu est échantillonné (voir le taux sur la carte). Les IP client proviennent de l’en-tête {{header}} lorsqu’il est présent (premier saut derrière un reverse proxy de confiance), sinon « unknown ».",
@@ -1219,13 +1225,13 @@
     "winProjectShell": "acme/web · bash",
     "winDeployherCli": "deployher · cli",
     "winRuntime": "acme-web · direct",
-    "winRollback": "deployher · versions",
+    "winReleases": "deployher · versions",
     "tabSsh": "connexion",
     "tabSetup": "préparation",
     "tabBuild": "build",
     "tabDeploy": "déployer",
     "tabLogs": "journaux",
-    "tabRollback": "rollback",
+    "tabPromote": "promouvoir",
     "resetAria": "Rejouer la démo terminal depuis l’onglet connexion",
     "reset": "Réinitialiser"
   },
