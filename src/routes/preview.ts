@@ -4,6 +4,10 @@ import { db } from "../db/db";
 import * as schema from "../db/schema";
 import { badRequest, json, notFound, type RequestWithParams } from "../http/helpers";
 import {
+  attachPreviewAccessCookie,
+  resolvePreviewAccess
+} from "../lib/previewAccess";
+import {
   loadPreviewManifest,
   maybeLogPreviewTraffic,
   resolvePreviewManifestEntry
@@ -56,7 +60,8 @@ const isSafeAssetPath = (assetPath: string): boolean => {
 export const serveDeploymentAsset = async (
   deployment: typeof schema.deployments.$inferSelect,
   assetPath: string,
-  req?: Request
+  req?: Request,
+  options?: { skipAssetCdnRedirect?: boolean }
 ): Promise<Response> => {
   if (!isSafeAssetPath(assetPath)) {
     return badRequest("Invalid asset path");
@@ -91,7 +96,7 @@ export const serveDeploymentAsset = async (
     }
     if (manifestEntry.cacheClass !== "document") {
       const assetBaseUrl = config.preview.assetBaseUrl?.trim();
-      if (assetBaseUrl) {
+      if (assetBaseUrl && !options?.skipAssetCdnRedirect) {
         const base = assetBaseUrl.endsWith("/") ? assetBaseUrl : `${assetBaseUrl}/`;
         return Response.redirect(
           new URL(manifestEntry.key.replace(/^\/+/, ""), base).toString(),
@@ -131,13 +136,15 @@ const PREVIEW_RUNNER_FETCH_TIMEOUT_MS = 20 * 60 * 1000;
 const serveDeploymentByStrategy = async (
   req: Request,
   deployment: typeof schema.deployments.$inferSelect,
-  assetPath: string
+  assetPath: string,
+  options?: { skipAssetCdnRedirect?: boolean }
 ): Promise<Response> => {
   const serveHandlers: Record<
     "static" | "server",
     (request: Request, d: typeof schema.deployments.$inferSelect, p: string) => Promise<Response>
   > = {
-    static: (request, d, p) => serveDeploymentAsset(d, p, request),
+    static: (request, d, p) =>
+      serveDeploymentAsset(d, p, request, { skipAssetCdnRedirect: options?.skipAssetCdnRedirect }),
     server: async (request, d, p) => {
       const previewTarget = d.buildServerPreviewTarget ?? "isolated-runner";
       if (!config.runner.previewEnabled) {
@@ -248,6 +255,51 @@ const getDeploymentByIdInfo = async (idInfo: { id: string; isShortId: boolean })
   return deployment ?? null;
 };
 
+const getProjectForDeployment = async (projectId: string) => {
+  const [project] = await db
+    .select({
+      id: schema.projects.id,
+      userId: schema.projects.userId,
+      previewAccess: schema.projects.previewAccess
+    })
+    .from(schema.projects)
+    .where(eq(schema.projects.id, projectId))
+    .limit(1);
+
+  return project ?? null;
+};
+
+const enforcePreviewAccess = async (
+  req: Request,
+  deployment: typeof schema.deployments.$inferSelect
+): Promise<Response | { attachToken?: string }> => {
+  const project = await getProjectForDeployment(deployment.projectId);
+  if (!project) {
+    return notFound("Project not found");
+  }
+
+  const access = await resolvePreviewAccess(req, project);
+  if (!access.ok) {
+    return access.response;
+  }
+
+  return { attachToken: access.attachToken };
+};
+
+const finalizePreviewResponse = (
+  req: Request,
+  response: Response,
+  accessMeta: Response | { attachToken?: string }
+): Response => {
+  if (accessMeta instanceof Response) {
+    return accessMeta;
+  }
+  if (accessMeta.attachToken) {
+    return attachPreviewAccessCookie(response, accessMeta.attachToken, req);
+  }
+  return response;
+};
+
 export const serveSubdomainPreview = async (
   req: Request,
   idInfo: { id: string; isShortId: boolean }
@@ -267,6 +319,14 @@ export const serveSubdomainPreview = async (
       { status: 400 }
     );
   }
+
+  const accessMeta = await enforcePreviewAccess(req, deployment);
+  if (accessMeta instanceof Response) {
+    return accessMeta;
+  }
+
+  const project = await getProjectForDeployment(deployment.projectId);
+  const skipAssetCdnRedirect = project?.previewAccess === "protected";
 
   const url = new URL(req.url);
   let assetPath = url.pathname.replace(/^\/+/, "");
@@ -288,11 +348,13 @@ export const serveSubdomainPreview = async (
 
   try {
     const started = Date.now();
-    const response = await serveDeploymentByStrategy(req, deployment, assetPath);
+    const response = await serveDeploymentByStrategy(req, deployment, assetPath, {
+      skipAssetCdnRedirect
+    });
     maybeLogPreviewTraffic(req, deployment, assetPath, response.status, {
       durationMs: Date.now() - started
     });
-    return response;
+    return finalizePreviewResponse(req, response, accessMeta);
   } catch (err) {
     console.error("Subdomain preview error:", err);
     return json({ error: "Failed to serve file" }, { status: 500 });
@@ -320,6 +382,14 @@ export const servePathBasedPreview = async (
     );
   }
 
+  const accessMeta = await enforcePreviewAccess(req, deployment);
+  if (accessMeta instanceof Response) {
+    return accessMeta;
+  }
+
+  const project = await getProjectForDeployment(deployment.projectId);
+  const skipAssetCdnRedirect = project?.previewAccess === "protected";
+
   const assetPath = resolvePreviewAssetPathForStrategy(
     rawPath.replace(/^\/+/, ""),
     deployment.serveStrategy
@@ -327,11 +397,13 @@ export const servePathBasedPreview = async (
 
   try {
     const started = Date.now();
-    const response = await serveDeploymentByStrategy(req, deployment, assetPath);
+    const response = await serveDeploymentByStrategy(req, deployment, assetPath, {
+      skipAssetCdnRedirect
+    });
     maybeLogPreviewTraffic(req, deployment, assetPath, response.status, {
       durationMs: Date.now() - started
     });
-    return response;
+    return finalizePreviewResponse(req, response, accessMeta);
   } catch (err) {
     console.error("Path-based preview error:", err);
     return json({ error: "Failed to serve file" }, { status: 500 });
