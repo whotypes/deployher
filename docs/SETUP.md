@@ -70,7 +70,7 @@ cp .env.example .env
 - **`BETTER_AUTH_SECRET`**: e.g. `openssl rand -base64 32`. Strongly recommended in dev and required in production. Changing it invalidates existing sessions.
 - **`NEXUS_REGISTRY`**, **`NEXUS_USER`**, **`NEXUS_PASSWORD`**: all three must be set (non-empty) for the dev script to sync base images into the local Nexus registry used by `docker build`. If any are empty, image sync is skipped but builds may still target `localhost:8082` and fail. Use a password **at least 8 characters** for Nexus bootstrap.
 
-3. Start the stack and bootstrap [garage] (creates S3 bucket and key, writes `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
+3. Start the stack and bootstrap [garage] (creates artifact and avatar S3 buckets and one key, writes `S3_BUCKET`, `S3_AVATAR_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` into `.env`):
 
 ```bash
 bun run deployher bootstrap
@@ -224,6 +224,7 @@ In the command table, **`deployher`** means **`bun run deployher`**, **`./dist/d
 | `deployher seed` | Ensure stack is up, then run `seed.ts` in Docker (`oven/bun`). |
 | `deployher logs [services...]` | `docker compose logs -f` (optional service names). |
 | `deployher nexus sync` | Repush base + builder images to Nexus (requires `NEXUS_*` in `.env`). |
+| `deployher ops` | Guided DX operations for storage buckets, `.env` changes, migrations, and targeted service redeploys. Use `deployher ops storage-env-deploy --dry-run --env local` to preview the main recipe without writing files or touching Docker. |
 | `deployher status` | `docker compose ps` for this project. |
 | `deployher doctor` | Check Docker, Compose, compose file, and `.env` presence. |
 
@@ -244,7 +245,7 @@ Load order: **`.env`** is read first (dotenv does not replace variables already 
 | `DATABASE_URL` | Yes | Postgres connection string. Use `localhost:5432` when app runs on host; use `postgres:5432` inside app container. |
 | `REDIS_URL` | Yes | Redis URL. Use `localhost:6379` on host; `redis:6379` in container. If unset or unreachable, deployment-worker cannot process deployments. |
 | `S3_ENDPOINT` | Yes | Garage/S3 endpoint. Use `http://127.0.0.1:3900` on host; `http://garage:3900` in container. |
-| `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes for storage | Injected by `deployher start` or set manually. Aliases: `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. |
+| `S3_BUCKET`, `S3_AVATAR_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes for storage | Injected by `deployher start` or set manually. `S3_BUCKET` stores artifacts; `S3_AVATAR_BUCKET` stores profile photos. Aliases for the artifact bucket and credentials: `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. |
 | `S3_REGION`, `AWS_REGION` | No | Default `garage`. |
 | `BETTER_AUTH_URL` | Optional | App base URL if your Better Auth config expects it. Auth client URL is derived from `DEV_*`/`PROD_*` and `PORT` in development (and `PROD_*` in production). |
 | `BETTER_AUTH_SECRET` | **Strongly recommended** (required in prod) | Secret for session/signing (e.g. `openssl rand -base64 32`). Set in dev to avoid flaky auth; changing it signs everyone out. |

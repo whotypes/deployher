@@ -13,9 +13,11 @@
 [better-auth]: https://www.better-auth.com/
 [github-oauth]: https://github.com/settings/developers
 
+![Deployher](./shared/hero.webp)
+
 # Deployher
 
-Deployher ([deployher.com](https://deployher.com)) is an open-source deployment platform for web applications. The public site runs the same codebase you can run on your own VPS or in your cloud account. It uses [bun], [drizzle], [postgres], [redis], [garage], and [docker]. With Deployher, you can connect GitHub repos, trigger builds, and serve web applications via subdomain or path.
+Deployher ([deployher.com](https://deployher.com)) is an open-source deployment platform for . The public site runs the same codebase you can run on your own VPS or in your cloud account. It uses [bun], [drizzle], [postgres], [redis], [garage], and [docker]. With Deployher, you can connect GitHub repos, trigger builds, and serve mobile apps via subdomain or path.
 
 ## How
 

@@ -29,6 +29,26 @@ For a consolidated checklist (DNS e.g. Spaceship, `.env`, GitHub OAuth callback,
 
 Run Compose on the server; terminate TLS on **Caddy** (or Nginx/Traefik) in front of **`deployher-edge:3000`**, or expose `:3000` only on loopback and proxy from the host. Do not replace **`edge`** with a single monolithic **app** container — routing is defined by **`docker/edge-entry.sh`** and env vars.
 
+## Auth and avatar storage checklist
+
+Use the guided ops recipe locally or on the production VPS/server repo checkout:
+
+```bash
+deployher ops storage-env-deploy
+# preview only:
+deployher ops storage-env-deploy --dry-run --env production
+```
+
+The recipe shows a masked `.env` diff, ensures Garage buckets and key grants, optionally runs migrations, then rebuilds/restarts the selected services. Production runs always ask for confirmation after showing the plan.
+
+Manual fallback, in the same order locally and in production:
+
+1. **Env parity:** Set `S3_AVATAR_BUCKET` alongside `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY`. Keep `BETTER_AUTH_URL` / `APP_BASE_URL` on the real HTTPS API origin, and keep `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` valid for OAuth.
+2. **Garage or S3:** Create the avatar bucket and grant the same API key read/write access to both the artifact bucket and the avatar bucket. For Garage, this mirrors the bootstrap commands: `bucket create <avatar-bucket>` then `bucket allow --read --write <avatar-bucket> --key <key-name>`.
+3. **Migrate:** Run the normal migration step (`bun migrate.ts` or your deploy pipeline) before the new app version starts.
+4. **Redeploy:** Deploy the API and edge containers so `/api/avatar` and `/api/public/avatars/:filename` are live with the new environment.
+5. **Smoke test:** Create an account with a photo on `/login`, confirm the photo appears after redirect, connect GitHub from `/account`, change the photo from `/account`, then reload and confirm the sidebar/account image persists.
+
 ## Workspace vs app roots
 
 Use `workspaceRootDir` for lockfiles and installs, and `projectRootDir` for strategy detection and app builds.
