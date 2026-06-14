@@ -1,8 +1,14 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const existingKeys = new Set<string>();
 const storedJson = new Map<string, unknown>();
 let currentDeployment: Record<string, unknown> | null = null;
+let currentProject: Record<string, unknown> | null = {
+  id: "project-1",
+  userId: "user-1",
+  previewAccess: "public"
+};
+let dbLimitResults: unknown[][] = [];
 const runnerConfig = {
   previewEnabled: false,
   url: undefined as string | undefined,
@@ -67,12 +73,16 @@ mock.module("../db/db", () => ({
     where() {
       return this;
     },
-    limit: async () => (currentDeployment ? [currentDeployment] : [])
+    limit: async () => dbLimitResults.shift() ?? []
   }
 }));
 
 mock.module("../redis", () => ({
   getRedisClient: async () => null
+}));
+
+mock.module("../auth/session", () => ({
+  getSession: async () => null
 }));
 
 mock.module("../storage", () => ({
@@ -89,6 +99,10 @@ const {
   serveDeploymentAsset,
   serveSubdomainPreview
 } = await import("./preview");
+
+afterAll(() => {
+  mock.restore();
+});
 
 const deployment = {
   artifactPrefix: "artifacts/deployment-1"
@@ -116,6 +130,13 @@ describe("serveDeploymentAsset", () => {
     existingKeys.clear();
     storedJson.clear();
     currentDeployment = null;
+    currentProject = {
+      id: "project-1",
+      userId: "user-1",
+      previewAccess: "public"
+    };
+    dbLimitResults = [];
+    process.env.BETTER_AUTH_SECRET = "preview-test-secret";
     runnerConfig.previewEnabled = false;
     runnerConfig.url = undefined;
     runnerConfig.sharedSecret = undefined;
@@ -193,6 +214,7 @@ describe("serveDeploymentAsset", () => {
     currentDeployment = {
       id: "94c2f168-7f58-4042-ae62-9d1837cb67d3",
       shortId: "2vp09bk3m",
+      projectId: "project-1",
       status: "success",
       serveStrategy: "server",
       buildServerPreviewTarget: "isolated-runner",
@@ -204,6 +226,7 @@ describe("serveDeploymentAsset", () => {
       },
       artifactPrefix: "artifacts/test"
     };
+    dbLimitResults = [[currentDeployment], [currentProject]];
 
     const response = await serveSubdomainPreview(
       new Request("http://2vp09bk3m.localhost:3001/"),
@@ -214,5 +237,31 @@ describe("serveDeploymentAsset", () => {
     await expect(response.json()).resolves.toEqual({
       error: "No runtime image is available for this deployment"
     });
+  });
+
+  it("returns 403 for protected previews without access", async () => {
+    currentDeployment = {
+      id: "94c2f168-7f58-4042-ae62-9d1837cb67d3",
+      shortId: "2vp09bk3m",
+      projectId: "project-1",
+      status: "success",
+      serveStrategy: "static",
+      artifactPrefix: "artifacts/protected"
+    };
+    currentProject = {
+      id: "project-1",
+      userId: "user-1",
+      previewAccess: "protected"
+    };
+    existingKeys.add("artifacts/protected/index.html");
+    dbLimitResults = [[currentDeployment], [currentProject]];
+
+    const response = await serveSubdomainPreview(
+      new Request("http://2vp09bk3m.localhost:3001/"),
+      { id: "2vp09bk3m", isShortId: true }
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Preview access required" });
   });
 });
