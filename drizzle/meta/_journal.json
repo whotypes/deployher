@@ -169,6 +169,13 @@
       "when": 1775400000000,
       "tag": "0023_preview_traffic_path_duration",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1775500000000,
+      "tag": "0024_preview_access",
+      "breakpoints": true
     }
   ]
 }
