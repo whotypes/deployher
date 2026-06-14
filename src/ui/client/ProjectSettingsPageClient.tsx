@@ -44,6 +44,7 @@ type EnvRowModel = {
   serverId?: string;
   key: string;
   value: string;
+  valueMasked?: boolean;
   manualScope: null | "build" | "runtime";
 };
 
@@ -52,6 +53,7 @@ type ProjectEnv = {
   key: string;
   value: string;
   isPublic: boolean;
+  masked?: boolean;
 };
 
 const serializeEnvRows = (rows: EnvRowModel[]): string =>
@@ -82,6 +84,7 @@ const mapApiToRows = (list: ProjectEnv[]): EnvRowModel[] =>
       serverId: env.id,
       key: env.key,
       value: env.value,
+      valueMasked: env.masked === true,
       manualScope
     };
   });
@@ -114,6 +117,8 @@ const GeneralSection = ({
     const projectRootDir = get("edit-project-root-dir");
     const frameworkHint = (document.getElementById("edit-framework-hint") as HTMLSelectElement | null)?.value ?? "";
     const previewMode = (document.getElementById("edit-preview-mode") as HTMLSelectElement | null)?.value ?? "";
+    const previewAccess =
+      (document.getElementById("edit-preview-access") as HTMLSelectElement | null)?.value ?? "";
     const serverPreviewTarget =
       (document.getElementById("edit-server-preview-target") as HTMLSelectElement | null)?.value ?? "";
     const runtimeImageMode =
@@ -136,6 +141,7 @@ const GeneralSection = ({
     if (projectRootDir) body.projectRootDir = projectRootDir;
     if (frameworkHint) body.frameworkHint = frameworkHint;
     if (previewMode) body.previewMode = previewMode;
+    if (previewAccess) body.previewAccess = previewAccess;
     if (serverPreviewTarget) body.serverPreviewTarget = serverPreviewTarget;
     if (runtimeImageMode) body.runtimeImageMode = runtimeImageMode;
     body.dockerfilePath = dockerfilePath || null;
@@ -325,6 +331,19 @@ const GeneralSection = ({
           <p className="text-xs text-muted-foreground">{t("projectSettings.general.previewHint")}</p>
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="edit-preview-access">{t("projectSettings.general.previewAccess")}</Label>
+          <select
+            id="edit-preview-access"
+            defaultValue={project.previewAccess ?? "public"}
+            aria-label={t("projectSettings.general.ariaPreviewAccess")}
+            className={selectClass}
+          >
+            <option value="public">{t("projectSettings.general.previewAccessPublic")}</option>
+            <option value="protected">{t("projectSettings.general.previewAccessProtected")}</option>
+          </select>
+          <p className="text-xs text-muted-foreground">{t("projectSettings.general.previewAccessHint")}</p>
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="edit-server-preview-target">{t("projectSettings.general.serverPreview")}</Label>
           <select
             id="edit-server-preview-target"
@@ -459,9 +478,10 @@ const EnvSection = ({
     return applied;
   };
 
-  const reloadEnvFromApi = React.useCallback(async (): Promise<void> => {
+  const reloadEnvFromApi = React.useCallback(async (reveal = false): Promise<void> => {
     try {
-      const response = await fetch(`/api/projects/${projectId}/env`);
+      const query = reveal ? "?reveal=1" : "";
+      const response = await fetch(`/api/projects/${projectId}/env${query}`);
       if (!response.ok) {
         throw new Error(await parseApiError(response, t("projectSettings.env.loadFailed")));
       }
@@ -595,7 +615,8 @@ const EnvSection = ({
         ...(row.serverId ? { id: row.serverId } : {}),
         key,
         value,
-        isPublic
+        isPublic,
+        ...(row.valueMasked && value === "" ? { preserveValue: true } : {})
       });
     }
 
@@ -759,7 +780,14 @@ const EnvSection = ({
                     type="button"
                     className={cn(envPillBtn, "shrink-0")}
                     aria-pressed={valuesRevealed}
-                    onClick={() => setValuesRevealed((v) => !v)}
+                    onClick={() => {
+                      setValuesRevealed((revealed) => {
+                        const next = !revealed;
+                        if (next) void reloadEnvFromApi(true);
+                        else void reloadEnvFromApi(false);
+                        return next;
+                      });
+                    }}
                   >
                     {valuesRevealed ? <EyeOff className="size-3.5 shrink-0" aria-hidden /> : <Eye className="size-3.5 shrink-0" aria-hidden />}
                     {valuesRevealed ? t("projectSettings.env.hideValues") : t("projectSettings.env.revealValues")}

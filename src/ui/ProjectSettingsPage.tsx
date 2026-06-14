@@ -16,6 +16,7 @@ type Project = {
   projectRootDir: string;
   frameworkHint: "auto" | "nextjs" | "node" | "python" | "static";
   previewMode: "auto" | "static" | "server";
+  previewAccess: "public" | "protected";
   serverPreviewTarget: "isolated-runner";
   runtimeImageMode: "auto" | "platform" | "dockerfile";
   dockerfilePath: string | null;
