@@ -31,6 +31,10 @@ export const auth = betterAuth({
             scope: ["user:email", "repo"]
         }
     },
+    emailAndPassword: {
+        enabled: true,
+        minPasswordLength: 8
+    },
     user: {
         additionalFields: {
             role: {
@@ -40,7 +44,12 @@ export const auth = betterAuth({
         }
     },
     account: {
-        encryptOAuthTokens: true
+        encryptOAuthTokens: true,
+        accountLinking: {
+            enabled: true,
+            allowDifferentEmails: true,
+            trustedProviders: ["github", "email-password"]
+        }
     },
     advanced: {
         useSecureCookies: config.env === "production" && new URL(clientURL).protocol === "https:",
