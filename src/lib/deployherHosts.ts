@@ -28,7 +28,7 @@ export const canonicalWhyOnLandingUrl = (): string | null => {
  * On the **main app host**, all `/api/*` (except `/api/auth`) is dispatched — new routes do not need
  * to be listed here unless they must work from the tenant origin too.
  */
-export const isPdployApiPathOnTenantHost = (pathname: string): boolean => {
+export const isDeployherApiPathOnTenantHost = (pathname: string): boolean => {
   if (!pathname.startsWith("/api/")) return false;
   if (pathname.startsWith("/api/auth")) return false;
   if (pathname === "/api/csrf" || pathname === "/api/session" || pathname === "/api/health") return true;

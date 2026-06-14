@@ -1,10 +1,10 @@
-import type { SidebarProjectSummary } from "@/ui/layoutUser";
+import type { SidebarContextProject, SidebarProjectSummary } from "@/ui/layoutUser";
 
 export type ProjectSwitcherInput = {
   pathname: string;
   sidebarProjects?: SidebarProjectSummary[];
   sidebarContext?: {
-    project?: { id: string; name: string } | null;
+    project?: Pick<SidebarContextProject, "id" | "siteIconUrl" | "previewUrl"> | null;
   };
 };
 
@@ -36,12 +36,20 @@ export const getProjectSwitcherTrigger = (
   const selectedId = deriveSelectedProjectId(input);
   const proj = selectedId ? list.find((p) => p.id === selectedId) : undefined;
   if (proj) {
+    const ctx = input.sidebarContext?.project;
+    const mergeIcons =
+      ctx && ctx.id === proj.id
+        ? {
+            siteIconUrl: ctx.siteIconUrl ?? proj.siteIconUrl ?? null,
+            previewUrl: ctx.previewUrl ?? proj.previewUrl ?? null
+          }
+        : { siteIconUrl: proj.siteIconUrl ?? null, previewUrl: proj.previewUrl ?? null };
     return {
       href: `/projects/${proj.id}`,
       label: proj.name,
       letter: letterFromLabel(proj.name),
-      siteIconUrl: proj.siteIconUrl ?? null,
-      previewUrl: proj.previewUrl ?? null
+      siteIconUrl: mergeIcons.siteIconUrl,
+      previewUrl: mergeIcons.previewUrl
     };
   }
   if (input.pathname.startsWith("/projects/new")) {

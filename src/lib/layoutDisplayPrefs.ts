@@ -30,3 +30,22 @@ export const applyLayoutDisplayPrefsToDocument = (): void => {
   body.dataset.density = readLayoutDisplayPref("density");
   body.dataset.ambient = readLayoutDisplayPref("ambient");
 };
+
+export const syncLayoutPrefChoiceDom = (): void => {
+  if (typeof document === "undefined") return;
+  const root = document.getElementById("deployher-shell") ?? document;
+  root.querySelectorAll<HTMLButtonElement>("[data-layout-pref][data-value]").forEach((button) => {
+    const pref = button.dataset.layoutPref as LayoutDisplayPrefKey | undefined;
+    const value = button.dataset.value;
+    if (!pref || !value) return;
+    const active = readLayoutDisplayPref(pref) === value;
+    button.dataset.active = active ? "true" : "false";
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+};
+
+export const setLayoutDisplayPreference = (key: LayoutDisplayPrefKey, value: string): void => {
+  writeLayoutDisplayPref(key, value);
+  applyLayoutDisplayPrefsToDocument();
+  syncLayoutPrefChoiceDom();
+};
