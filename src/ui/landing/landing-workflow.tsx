@@ -19,7 +19,7 @@ export const LandingWorkflow = () => {
       title: t("landing.workflow.s1Title"),
       body: t("landing.workflow.s1Body"),
       code: [
-        { line: "$ pdploy login", comment: "repo-scoped github oauth" },
+        { line: "$ deployher login", comment: "repo-scoped github oauth" },
         { line: "→ choose org/repo access" }
       ]
     },
@@ -28,7 +28,7 @@ export const LandingWorkflow = () => {
       title: t("landing.workflow.s2Title"),
       body: t("landing.workflow.s2Body"),
       code: [
-        { line: "$ pdploy detect" },
+        { line: "$ deployher detect" },
         { line: "framework: next.js · bun" },
         { line: "dockerfile: optional" }
       ]
@@ -38,8 +38,8 @@ export const LandingWorkflow = () => {
       title: t("landing.workflow.s3Title"),
       body: t("landing.workflow.s3Body"),
       code: [
-        { line: "$ git push origin main" },
-        { line: "build → image → release" },
+        { line: "$ deployher deploy" },
+        { line: "queued → build → image → preview" },
         { line: "live at app.acme.dev · 47.4s" }
       ]
     },
@@ -48,7 +48,7 @@ export const LandingWorkflow = () => {
       title: t("landing.workflow.s4Title"),
       body: t("landing.workflow.s4Body"),
       code: [
-        { line: "$ pdploy logs --tail" },
+        { line: "$ deployher logs --remote" },
         { line: "GET / 200 14ms" },
         { line: "health, previews, history" }
       ]
@@ -115,7 +115,7 @@ export const LandingWorkflow = () => {
                   <span className="size-2 rounded-full bg-amber-500/70" />
                   <span className="size-2 rounded-full bg-emerald-500/70" />
                   <span className="text-muted-foreground ml-auto font-mono text-xs tracking-tight">
-                    pdploy · zsh
+                    deployher · zsh
                   </span>
                 </div>
                 <pre className="m-0 overflow-hidden bg-transparent px-4 py-4 font-mono text-[13px] leading-relaxed md:px-5 md:py-5 md:text-sm">

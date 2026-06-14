@@ -84,7 +84,7 @@ export const LandingBento = () => {
             body={t("landing.bento.c5Body")}
             transition={{ duration: 0.7, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
           >
-            <RollbackMock />
+            <PromoteDeploymentMock />
           </BentoCard>
 
           <BentoCard
@@ -306,7 +306,7 @@ const LogStreamMock = () => {
   )
 }
 
-const RollbackMock = () => {
+const PromoteDeploymentMock = () => {
   const releases = [
     { id: "dpl_8a2f", commit: "b3f1c0a", state: "current" },
     { id: "dpl_77c1", commit: "9a10f21", state: "ready" },
@@ -316,8 +316,8 @@ const RollbackMock = () => {
   return (
     <div className="flex h-full min-h-64 flex-col gap-3 font-mono text-sm">
       <div className="text-muted-foreground flex items-center justify-between text-xs tracking-tight">
-        <span>production releases</span>
-        <span>rollback ready</span>
+        <span>project deployments</span>
+        <span>promote ready</span>
       </div>
       {releases.map((release) => (
         <div
@@ -344,7 +344,7 @@ const RollbackMock = () => {
         type="button"
         className="border-border/60 bg-foreground text-background mt-auto inline-flex h-10 items-center justify-center rounded-md border text-sm font-semibold"
       >
-        Roll back to dpl_77c1
+        Promote dpl_77c1
       </button>
     </div>
   )

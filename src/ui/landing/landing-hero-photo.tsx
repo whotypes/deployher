@@ -5,7 +5,7 @@ export const LandingHeroPhotoLayer = () => {
         className="animate-hero-bg-drift absolute inset-[-12%] bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: "url(/hero-bg.webp)" }}
       />
-      <div className="absolute inset-0 bg-black/45" />
+      <div className="absolute inset-0 bg-black/70" />
     </div>
   )
 }
