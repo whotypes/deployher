@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readEnvValue, readNexusEnvFromFile } from "./env-file";
+import { applyEnvPatchToContent, parseEnvKeys, readEnvValue, readNexusEnvFromFile } from "./env-file";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -48,5 +48,41 @@ NEXUS_PASSWORD=secret123
       password: "secret123",
     });
     await fs.unlink(p);
+  });
+});
+
+describe("applyEnvPatchToContent", () => {
+  test("sets, appends, and removes values while preserving unrelated lines", () => {
+    const patched = applyEnvPatchToContent(
+      "# hi\nFOO=old\nBAR=one\nSECRET_KEY=abc\n",
+      [
+        { type: "set", key: "FOO", value: "new" },
+        { type: "append", key: "BAR", value: "two", separator: "," },
+        { type: "remove", key: "SECRET_KEY" },
+        { type: "set", key: "BAZ", value: "added" },
+      ],
+    );
+    expect(patched.content).toBe("# hi\nFOO=new\nBAR=one,two\n\nBAZ=added\n");
+    expect(patched.diffs).toEqual([
+      { key: "FOO", before: "old", after: "new", type: "set" },
+      { key: "BAR", before: "one", after: "one,two", type: "append" },
+      { key: "SECRET_KEY", before: "abc", after: undefined, type: "remove" },
+      { key: "BAZ", before: undefined, after: "added", type: "set" },
+    ]);
+  });
+
+  test("does not report unchanged set operations", () => {
+    const patched = applyEnvPatchToContent("FOO=bar\n", [{ type: "set", key: "FOO", value: "bar" }]);
+    expect(patched.content).toBe("FOO=bar\n");
+    expect(patched.diffs).toEqual([]);
+  });
+});
+
+describe("parseEnvKeys", () => {
+  test("parses simple env assignments", () => {
+    expect(parseEnvKeys('FOO=bar\nQUOTED="baz"\n# nope\n')).toEqual({
+      FOO: "bar",
+      QUOTED: "baz",
+    });
   });
 });
