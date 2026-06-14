@@ -33,7 +33,8 @@ export const auth = betterAuth({
     },
     emailAndPassword: {
         enabled: true,
-        minPasswordLength: 8
+        minPasswordLength: 12,
+        maxPasswordLength: 128
     },
     user: {
         additionalFields: {
@@ -47,7 +48,7 @@ export const auth = betterAuth({
         encryptOAuthTokens: true,
         accountLinking: {
             enabled: true,
-            allowDifferentEmails: true,
+            allowDifferentEmails: false,
             trustedProviders: ["github", "email-password"]
         }
     },
