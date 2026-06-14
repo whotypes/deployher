@@ -144,6 +144,7 @@ export const config = {
     endpoint: normalizeS3Endpoint(rawEnv.S3_ENDPOINT),
     region: (rawEnv.S3_REGION ?? rawEnv.AWS_REGION ?? "garage").trim() || "garage",
     bucket: (rawEnv.S3_BUCKET ?? rawEnv.AWS_BUCKET ?? "").trim() || undefined,
+    avatarBucket: (rawEnv.S3_AVATAR_BUCKET ?? "").trim() || undefined,
     accessKeyId: (rawEnv.S3_ACCESS_KEY_ID ?? rawEnv.AWS_ACCESS_KEY_ID ?? "").trim() || undefined,
     secretAccessKey: (rawEnv.S3_SECRET_ACCESS_KEY ?? rawEnv.AWS_SECRET_ACCESS_KEY ?? "").trim() || undefined
   },
