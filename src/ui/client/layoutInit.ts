@@ -148,8 +148,12 @@ export const initLayout = (): (() => void) => {
     "submit",
     (e) => {
       e.preventDefault();
-      fetchWithCsrf("/logout", { method: "POST", redirect: "manual" }).then(() => {
-        window.location.assign("/");
+      void fetchWithCsrf("/logout", { method: "POST", redirect: "manual" }).then((res) => {
+        if (res.ok || res.status === 303 || res.status === 302) {
+          window.location.assign("/");
+          return;
+        }
+        window.alert(res.status === 403 ? "Could not sign out. Refresh the page and try again." : "Could not sign out.");
       });
     },
     { signal }

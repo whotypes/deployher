@@ -9,13 +9,34 @@ const readCookie = (name: string): string | null => {
   return null;
 };
 
+const syncMetaCsrfToken = (token: string): void => {
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]');
+  if (meta) {
+    meta.content = token;
+    return;
+  }
+  const head = document.head;
+  if (!head) return;
+  const el = document.createElement("meta");
+  el.name = "csrf-token";
+  el.content = token;
+  head.prepend(el);
+};
+
 export const getCsrfToken = (): string | null => {
+  const cookieToken = readCookie("deployher_csrf")?.trim();
   const metaToken = document
     .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
     ?.content?.trim();
-  if (metaToken) return metaToken;
-  const cookieToken = readCookie("deployher_csrf")?.trim();
-  return cookieToken || null;
+  // Cookie is authoritative for the server; meta is only seeded on the initial HTML shell.
+  // After OAuth redirects or cross-subdomain API calls the cookie can diverge from meta.
+  if (cookieToken) {
+    if (metaToken !== cookieToken) {
+      syncMetaCsrfToken(cookieToken);
+    }
+    return cookieToken;
+  }
+  return metaToken || null;
 };
 
 export const fetchWithCsrf = (
