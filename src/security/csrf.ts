@@ -76,7 +76,12 @@ const readHeaderCsrfToken = (req: Request): string | null => {
   return header ? header : null;
 };
 
-const secureCookieRequired = (url: URL): boolean => url.protocol === "https:";
+const secureCookieRequired = (req: Request): boolean => {
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  if (forwardedProto === "https") return true;
+  if (forwardedProto === "http") return false;
+  return config.env === "production" || new URL(req.url).protocol === "https:";
+};
 
 export const isSafeMethod = (method: string): boolean => SAFE_METHODS.has(method.toUpperCase());
 
@@ -94,22 +99,22 @@ export const ensureCsrfToken = (req: Request): {
 } => {
   const existing = readCsrfTokenFromRequest(req);
   const token = existing ?? crypto.randomUUID();
-  const url = new URL(req.url);
+  const secure = secureCookieRequired(req);
   const cookieValue = serializeCookie(CSRF_COOKIE_NAME, token, {
     path: "/",
     sameSite: "Lax",
-    secure: secureCookieRequired(url),
+    secure,
     httpOnly: false,
     maxAge: 60 * 60 * 24 * 30,
     domain: config.deployher.cookieDomain
   });
 
   const hostOnlyClearCookie =
-    config.deployher.cookieDomain && secureCookieRequired(url)
+    config.deployher.cookieDomain
       ? serializeCookie(CSRF_COOKIE_NAME, "", {
           path: "/",
           sameSite: "Lax",
-          secure: true,
+          secure,
           maxAge: 0
         })
       : null;

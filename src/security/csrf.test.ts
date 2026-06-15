@@ -146,4 +146,17 @@ describe("csrf validation", () => {
     expect(csrf.hostOnlyClearCookie).toContain("deployher_csrf=");
     expect(csrf.hostOnlyClearCookie).toContain("Max-Age=0");
   });
+
+  it("marks csrf cookies secure when TLS is terminated upstream", () => {
+    const request = new Request("http://dash.deployher.example.com/projects/123", {
+      headers: {
+        origin: "https://dash.deployher.example.com",
+        "x-forwarded-proto": "https"
+      }
+    });
+
+    const csrf = ensureCsrfToken(request);
+    expect(csrf.cookieValue).toContain("Secure");
+    expect(csrf.hostOnlyClearCookie).toContain("Secure");
+  });
 });
