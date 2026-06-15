@@ -86,7 +86,12 @@ export const readCsrfTokenFromRequest = (req: Request): string | null => {
   return token?.trim() ? token.trim() : null;
 };
 
-export const ensureCsrfToken = (req: Request): { token: string; cookieValue: string; shouldSetCookie: boolean } => {
+export const ensureCsrfToken = (req: Request): {
+  token: string;
+  cookieValue: string;
+  shouldSetCookie: boolean;
+  hostOnlyClearCookie: string | null;
+} => {
   const existing = readCsrfTokenFromRequest(req);
   const token = existing ?? crypto.randomUUID();
   const url = new URL(req.url);
@@ -99,19 +104,38 @@ export const ensureCsrfToken = (req: Request): { token: string; cookieValue: str
     domain: config.deployher.cookieDomain
   });
 
+  const hostOnlyClearCookie =
+    config.deployher.cookieDomain && secureCookieRequired(url)
+      ? serializeCookie(CSRF_COOKIE_NAME, "", {
+          path: "/",
+          sameSite: "Lax",
+          secure: true,
+          maxAge: 0
+        })
+      : null;
+
   return {
     token,
     cookieValue,
-    shouldSetCookie: !existing
+    shouldSetCookie: !existing,
+    hostOnlyClearCookie
   };
 };
 
 export const attachCsrfCookie = (
   response: Response,
-  csrf: { cookieValue: string; shouldSetCookie: boolean }
+  csrf: {
+    cookieValue: string;
+    shouldSetCookie: boolean;
+    hostOnlyClearCookie?: string | null;
+  }
 ): Response => {
-  if (!csrf.shouldSetCookie) return response;
-  response.headers.append("Set-Cookie", csrf.cookieValue);
+  if (csrf.shouldSetCookie) {
+    response.headers.append("Set-Cookie", csrf.cookieValue);
+  }
+  if (csrf.hostOnlyClearCookie) {
+    response.headers.append("Set-Cookie", csrf.hostOnlyClearCookie);
+  }
   return response;
 };
 

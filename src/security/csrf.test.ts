@@ -143,5 +143,7 @@ describe("csrf validation", () => {
     expect(csrf.shouldSetCookie).toBe(true);
     expect(csrf.cookieValue).toContain("deployher_csrf=");
     expect(csrf.cookieValue).toContain("Secure");
+    expect(csrf.hostOnlyClearCookie).toContain("deployher_csrf=");
+    expect(csrf.hostOnlyClearCookie).toContain("Max-Age=0");
   });
 });

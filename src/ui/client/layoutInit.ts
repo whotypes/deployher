@@ -4,7 +4,15 @@ import {
   setLayoutDisplayPreference,
   syncLayoutPrefChoiceDom
 } from "@/lib/layoutDisplayPrefs";
-import { fetchWithCsrf } from "./fetchWithCsrf";
+import { getCsrfToken } from "./fetchWithCsrf";
+
+const syncSignoutCsrfField = (): void => {
+  const form = document.getElementById("signout-form");
+  if (!form) return;
+  const field = form.querySelector<HTMLInputElement>('input[name="_csrf"]');
+  const token = getCsrfToken();
+  if (field && token) field.value = token;
+};
 
 const STORAGE_KEY = "deployher-sidebar-collapsed";
 const SIDEBAR_STATE_COOKIE = "sidebar_state";
@@ -143,18 +151,17 @@ export const initLayout = (): (() => void) => {
     { signal }
   );
 
+  syncSignoutCsrfField();
+
   const signoutForm = document.getElementById("signout-form");
   signoutForm?.addEventListener(
     "submit",
     (e) => {
-      e.preventDefault();
-      void fetchWithCsrf("/logout", { method: "POST", redirect: "manual" }).then((res) => {
-        if (res.ok || res.status === 303 || res.status === 302) {
-          window.location.assign("/");
-          return;
-        }
-        window.alert(res.status === 403 ? "Could not sign out. Refresh the page and try again." : "Could not sign out.");
-      });
+      syncSignoutCsrfField();
+      if (!getCsrfToken()) {
+        e.preventDefault();
+        window.alert("Could not sign out. Refresh the page and try again.");
+      }
     },
     { signal }
   );

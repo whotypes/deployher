@@ -2,11 +2,12 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const readCookie = (name: string): string | null => {
   const entries = document.cookie.split(";").map((item) => item.trim());
+  let last: string | null = null;
   for (const entry of entries) {
     if (!entry.startsWith(`${name}=`)) continue;
-    return decodeURIComponent(entry.slice(name.length + 1));
+    last = decodeURIComponent(entry.slice(name.length + 1));
   }
-  return null;
+  return last;
 };
 
 const syncMetaCsrfToken = (token: string): void => {

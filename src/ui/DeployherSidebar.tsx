@@ -684,6 +684,7 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
                 </Link>
               </CollapsedSidebarTooltip>
               <form id="signout-form" method="post" action="/logout" className="group-[.sidebar-collapsed]/shell:px-0">
+                <input type="hidden" name="_csrf" value="" data-signout-csrf="" />
                 <CollapsedSidebarTooltip label={t("common.signOut")}>
                   <button
                     type="submit"

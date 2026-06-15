@@ -64,6 +64,7 @@ When **`dash`** and **`api`** differ by hostname, bake public origins at **image
 ```bash
 export VITE_PUBLIC_API_ORIGIN=https://api.deployher.com
 export VITE_PUBLIC_DASH_ORIGIN=https://dash.deployher.com
+export VITE_PUBLIC_LANDING_ORIGIN=https://deployher.com
 docker compose build --no-cache app-api marketing
 docker compose up -d
 ```

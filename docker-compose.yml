@@ -7,6 +7,7 @@ services:
       args:
         VITE_PUBLIC_API_ORIGIN: ${VITE_PUBLIC_API_ORIGIN:-}
         VITE_PUBLIC_DASH_ORIGIN: ${VITE_PUBLIC_DASH_ORIGIN:-}
+        VITE_PUBLIC_LANDING_ORIGIN: ${VITE_PUBLIC_LANDING_ORIGIN:-}
     container_name: deployher-app-api
     user: "0:0"
     restart: unless-stopped
@@ -40,6 +41,7 @@ services:
       args:
         VITE_PUBLIC_API_ORIGIN: ${VITE_PUBLIC_API_ORIGIN:-}
         VITE_PUBLIC_DASH_ORIGIN: ${VITE_PUBLIC_DASH_ORIGIN:-}
+        VITE_PUBLIC_LANDING_ORIGIN: ${VITE_PUBLIC_LANDING_ORIGIN:-}
     container_name: deployher-marketing
     restart: unless-stopped
 

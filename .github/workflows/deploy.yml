@@ -29,6 +29,7 @@ jobs:
         env:
           VITE_PUBLIC_API_ORIGIN: https://api.deployher.com
           VITE_PUBLIC_DASH_ORIGIN: https://dash.deployher.com
+          VITE_PUBLIC_LANDING_ORIGIN: https://deployher.com
         run: bun run build:web && bun run build:marketing
 
   deploy:
