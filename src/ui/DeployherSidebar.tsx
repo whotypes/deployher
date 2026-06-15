@@ -4,7 +4,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ProjectSiteGlyph } from "@/ui/client/ProjectSiteGlyph";
-import { fetchWithCsrf } from "@/ui/client/fetchWithCsrf";
+import { fetchWithCsrf, getCsrfToken } from "@/ui/client/fetchWithCsrf";
 import type {
     LayoutUser,
     SidebarContextProject,
@@ -40,6 +40,18 @@ export type DeployherSidebarProps = {
     project?: SidebarContextProject | null;
     deployment?: SidebarFeaturedDeployment | null;
   };
+};
+
+const prepareSignoutForm = (event: React.FormEvent<HTMLFormElement>): void => {
+  const token = getCsrfToken();
+  const field = event.currentTarget.elements.namedItem("_csrf");
+  if (token && field instanceof HTMLInputElement) {
+    field.value = token;
+    return;
+  }
+
+  event.preventDefault();
+  window.alert("Could not sign out. Refresh the page and try again.");
 };
 
 type NavLink = {
@@ -683,7 +695,13 @@ export const DeployherSidebar = ({ pathname, user, sidebarProjects = [], sidebar
                   </span>
                 </Link>
               </CollapsedSidebarTooltip>
-              <form id="signout-form" method="post" action="/logout" className="group-[.sidebar-collapsed]/shell:px-0">
+              <form
+                id="signout-form"
+                method="post"
+                action="/logout"
+                className="group-[.sidebar-collapsed]/shell:px-0"
+                onSubmit={prepareSignoutForm}
+              >
                 <input type="hidden" name="_csrf" value="" data-signout-csrf="" />
                 <CollapsedSidebarTooltip label={t("common.signOut")}>
                   <button
