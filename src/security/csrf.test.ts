@@ -159,4 +159,17 @@ describe("csrf validation", () => {
     expect(csrf.cookieValue).toContain("Secure");
     expect(csrf.hostOnlyClearCookie).toContain("Secure");
   });
+
+  it("marks csrf cookies secure for forwarded proto chains containing https", () => {
+    const request = new Request("http://dash.deployher.example.com/projects/123", {
+      headers: {
+        origin: "https://dash.deployher.example.com",
+        "x-forwarded-proto": "http, https"
+      }
+    });
+
+    const csrf = ensureCsrfToken(request);
+    expect(csrf.cookieValue).toContain("Secure");
+    expect(csrf.hostOnlyClearCookie).toContain("Secure");
+  });
 });

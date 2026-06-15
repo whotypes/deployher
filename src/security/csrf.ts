@@ -77,10 +77,14 @@ const readHeaderCsrfToken = (req: Request): string | null => {
 };
 
 const secureCookieRequired = (req: Request): boolean => {
-  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
-  if (forwardedProto === "https") return true;
-  if (forwardedProto === "http") return false;
-  return config.env === "production" || new URL(req.url).protocol === "https:";
+  if (config.env === "production" && config.prodProtocol === "https") return true;
+  const forwardedProtos = (req.headers.get("x-forwarded-proto") ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (forwardedProtos.includes("https")) return true;
+  if (forwardedProtos.length > 0 && forwardedProtos.every((value) => value === "http")) return false;
+  return new URL(req.url).protocol === "https:";
 };
 
 export const isSafeMethod = (method: string): boolean => SAFE_METHODS.has(method.toUpperCase());
